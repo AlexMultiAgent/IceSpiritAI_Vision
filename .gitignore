@@ -91,3 +91,15 @@ logcat_output.txt
 
 # Token file (placeholder — fill in when real tokens are introduced).
 gradle.token.properties
+
+# PaddleOCR SDK build artifacts (regenerable via tools/build-ppocr-sdk.sh)
+tools/paddleocr/
+app/libs/ppocr-sdk.aar
+app/libs/ppocr-sdk-release.aar
+
+# ONNX model weights (regenerable via tools/download-ppocr-models.sh)
+app/src/main/assets/models/det/*.onnx
+app/src/main/assets/models/det/*.tar
+app/src/main/assets/models/rec/*.onnx
+app/src/main/assets/models/rec/*.tar
+app/src/main/assets/models/rec/*.yml
