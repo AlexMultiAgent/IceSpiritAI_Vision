@@ -27,6 +27,14 @@ download() {
         return
     fi
 
+    # HF failed — drop the partial file so the next run re-attempts cleanly.
+    rm -f "$target"
+
+    if [ -z "$bos_path" ]; then
+        echo "[download] ERROR: ${name} not available on HF and no BOS fallback configured" >&2
+        exit 1
+    fi
+
     echo "[download] HF failed, trying BOS..."
     if curl -fsSL --max-time 120 "${BOS_BASE}/${bos_path}" -o "${target}.tar"; then
         tar -xf "${target}.tar" -C "$(dirname "$target")"
@@ -36,6 +44,14 @@ download() {
         echo "[download] ERROR: both HF and BOS failed for $name" >&2
         exit 1
     fi
+}
+
+# Translate a model-variant slug into the on-disk suffix used by PaddlePaddle's
+# naming scheme (pp-ocrv6_small -> PP-OCRV6_SMALL). Wrapped in a function so
+# the intermediate variable stays local.
+variant_suffix() {
+    local variant="$1"
+    echo "$variant" | tr 'a-z-' 'A-Z_'
 }
 
 case "$MODEL_VARIANT" in
@@ -56,7 +72,7 @@ case "$MODEL_VARIANT" in
             "${REC_DIR}/inference.yml"
         ;;
     pp-ocrv6_small|pp-ocrv6_tiny)
-        SUFFIX=$(echo "$MODEL_VARIANT" | tr 'a-z-' 'A-Z_')  # pp-ocrv6_small -> PP-OCRV6_SMALL
+        SUFFIX=$(variant_suffix "$MODEL_VARIANT")
         download "${SUFFIX}_det" \
             "${SUFFIX}_det_onnx/resolve/main/inference.onnx" \
             "${SUFFIX}_det_onnx_infer.tar" \
