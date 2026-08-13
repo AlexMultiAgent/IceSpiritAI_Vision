@@ -2,6 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** ⚠️ **SUPERSEDED** by [`2026-08-14-icevision-phase1-ppocr.md`](./2026-08-14-icevision-phase1-ppocr.md)(2026-08-14)。
+本 plan 的 OCR 路径(RapidOCR JitPack artifact)经实测 JitPack 全面 401 不可达,改用 PaddleOCR 官方 SDK + ONNX Runtime 路径,见新 plan。
+
 **Goal:** 实现冰灵锐目 Phase 1 — 用户拍/选图 → 本地 OCR 抽文字 → AC 自动机匹配《广告法》规则 → 输出违规清单 + 法规条款引用。
 
 **Architecture:** 单 Activity(Compose UI)+ ViewModel(StateFlow<AnalysisState>)+ Repository 编排 OcrEngine + AdLawRuleMatcher。AGP 9.3 / Gradle 9.7 / Kotlin 2.4.10 / compileSdk 36 / NDK 28.2。
