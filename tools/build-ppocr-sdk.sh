@@ -20,7 +20,7 @@ fi
 
 echo "[build-ppocr-sdk] Building AAR..."
 (
-    cd "$SDK_DIR"
+    cd "${REPO_DIR}/deploy/ppocr-android"
     ./gradlew :ppocr-sdk:assembleRelease --no-daemon
 
     AAR_BUILT=$(find . -name 'ppocr-sdk-release.aar' -path '*/outputs/aar/*' | head -1)
