@@ -37,7 +37,7 @@ download() {
 
     echo "[download] HF failed, trying BOS..."
     if curl -fsSL --max-time 120 "${BOS_BASE}/${bos_path}" -o "${target}.tar"; then
-        tar -xf "${target}.tar" -C "$(dirname "$target")"
+        tar -xf "${target}.tar" --strip-components=1 -C "$(dirname "$target")"
         rm -f "${target}.tar"
         echo "[download] OK from BOS: $target"
     else
@@ -71,10 +71,10 @@ download_for_variant() {
                 "PP-OCRv5_mobile_rec_onnx_infer.tar" \
                 "${REC_DIR}/inference.onnx"
 
-            download "PP-OCRv5_mobile_rec_config" \
-                "PP-OCRv5_mobile_rec_onnx/resolve/main/inference.yml" \
-                "" \
-                "${REC_DIR}/inference.yml"
+            # The v5_mobile rec tarball already bundles inference.yml (verified),
+            # so --strip-components=1 above drops the yml straight into ${REC_DIR}.
+            # The separate HF-only download call was redundant and would fail
+            # when HF is blocked (no BOS fallback for yml).
             ;;
         pp-ocrv6_small|pp-ocrv6_tiny)
             suffix=$(variant_suffix "$variant")
