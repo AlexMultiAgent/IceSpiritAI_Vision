@@ -54,44 +54,52 @@ variant_suffix() {
     echo "$variant" | tr 'a-z-' 'A-Z_'
 }
 
-case "$MODEL_VARIANT" in
-    pp-ocrv5_mobile)
-        download "PP-OCRv5_mobile_det" \
-            "PP-OCRv5_mobile_det_onnx/resolve/main/inference.onnx" \
-            "PP-OCRv5_mobile_det_onnx_infer.tar" \
-            "${DET_DIR}/inference.onnx"
+# Run the per-variant download plan. Wrapped in a function so that
+# branch-local variables (e.g. SUFFIX) stay out of global shell scope.
+download_for_variant() {
+    local variant="$1"
+    local suffix
+    case "$variant" in
+        pp-ocrv5_mobile)
+            download "PP-OCRv5_mobile_det" \
+                "PP-OCRv5_mobile_det_onnx/resolve/main/inference.onnx" \
+                "PP-OCRv5_mobile_det_onnx_infer.tar" \
+                "${DET_DIR}/inference.onnx"
 
-        download "PP-OCRv5_mobile_rec_model" \
-            "PP-OCRv5_mobile_rec_onnx/resolve/main/inference.onnx" \
-            "PP-OCRv5_mobile_rec_onnx_infer.tar" \
-            "${REC_DIR}/inference.onnx"
+            download "PP-OCRv5_mobile_rec_model" \
+                "PP-OCRv5_mobile_rec_onnx/resolve/main/inference.onnx" \
+                "PP-OCRv5_mobile_rec_onnx_infer.tar" \
+                "${REC_DIR}/inference.onnx"
 
-        download "PP-OCRv5_mobile_rec_config" \
-            "PP-OCRv5_mobile_rec_onnx/resolve/main/inference.yml" \
-            "" \
-            "${REC_DIR}/inference.yml"
-        ;;
-    pp-ocrv6_small|pp-ocrv6_tiny)
-        SUFFIX=$(variant_suffix "$MODEL_VARIANT")
-        download "${SUFFIX}_det" \
-            "${SUFFIX}_det_onnx/resolve/main/inference.onnx" \
-            "${SUFFIX}_det_onnx_infer.tar" \
-            "${DET_DIR}/inference.onnx"
+            download "PP-OCRv5_mobile_rec_config" \
+                "PP-OCRv5_mobile_rec_onnx/resolve/main/inference.yml" \
+                "" \
+                "${REC_DIR}/inference.yml"
+            ;;
+        pp-ocrv6_small|pp-ocrv6_tiny)
+            suffix=$(variant_suffix "$variant")
+            download "${suffix}_det" \
+                "${suffix}_det_onnx/resolve/main/inference.onnx" \
+                "${suffix}_det_onnx_infer.tar" \
+                "${DET_DIR}/inference.onnx"
 
-        download "${SUFFIX}_rec_model" \
-            "${SUFFIX}_rec_onnx/resolve/main/inference.onnx" \
-            "${SUFFIX}_rec_onnx_infer.tar" \
-            "${REC_DIR}/inference.onnx"
+            download "${suffix}_rec_model" \
+                "${suffix}_rec_onnx/resolve/main/inference.onnx" \
+                "${suffix}_rec_onnx_infer.tar" \
+                "${REC_DIR}/inference.onnx"
 
-        download "${SUFFIX}_rec_config" \
-            "${SUFFIX}_rec_onnx/resolve/main/inference.yml" \
-            "" \
-            "${REC_DIR}/inference.yml"
-        ;;
-    *)
-        echo "Unknown variant: $MODEL_VARIANT" >&2
-        exit 2
-        ;;
-esac
+            download "${suffix}_rec_config" \
+                "${suffix}_rec_onnx/resolve/main/inference.yml" \
+                "" \
+                "${REC_DIR}/inference.yml"
+            ;;
+        *)
+            echo "Unknown variant: $variant" >&2
+            return 2
+            ;;
+    esac
+}
+
+download_for_variant "$MODEL_VARIANT"
 
 echo "[download] All models staged under app/src/main/assets/models/"
