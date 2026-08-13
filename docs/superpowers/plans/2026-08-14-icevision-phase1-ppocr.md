@@ -204,7 +204,7 @@ Run:
 ./tools/build-ppocr-sdk.sh
 ```
 
-Expected: AAR 出现在 `app/libs/ppocr-sdk.aar`,文件大小 5-15MB(SDK + 预编译 ONNX Runtime + OpenCV native libs)。首次 clone + build **5-15 分钟**(后续 build 因 Gradle 缓存 < 1 分钟)。
+Expected: AAR 出现在 `app/libs/ppocr-sdk.aar`,文件大小约 90 KB(PaddleOCR v3.7.0 只发布薄 Kotlin/Java stub AAR;native libs 由 app 模块的 `implementation` 依赖提供,见 Phase 1 Task 1)。首次 clone + build **4 分 24 秒**(冷缓存);后续 build 因 Gradle 缓存 < 1 分钟。
 
 - [ ] **Step 2: 验证 AAR 内容**
 
@@ -213,11 +213,11 @@ Run:
 unzip -l app/libs/ppocr-sdk.aar | head -30
 ```
 
-Expected: 看到 `AndroidManifest.xml`、`classes.jar`、`jni/arm64-v8a/libpaddle_ocr_jni.so`(或类似 native 库名)、`res/`。若 `jni/x86_64/` 也存在则正常(PaddleOCR SDK 是 multi-ABI,AAR 体积会比仅 arm64 大)。
+Expected: 看到 `AndroidManifest.xml`、`classes.jar`、`proguard.txt`,**不包含 `jni/`** 目录。PaddleOCR v3.7.0 的 AAR 是 thin stub,仅含 Kotlin/Java 类;native libs(`libonnxruntime.so`、`libopencv_java4.so`、`libc++_shared.so` 等)由 app 模块的 Maven `implementation` 依赖引入(见 Phase 1 Task 1),不打包进此 AAR。
 
 - [ ] **Step 3: 记录 AAR 路径到 plan 决策登记**
 
-AAR 实际大小、文件 hash、native 库列表 → 写入本 plan 末尾决策登记。
+AAR 实际大小(约 90 KB)、文件 hash、**不存在的 native 库列表**(因 native libs 由外部依赖提供) → 写入本 plan 末尾决策登记。
 
 ### Task 0.3: 下载 ONNX 模型
 
