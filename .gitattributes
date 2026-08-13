@@ -1,0 +1,19 @@
+# Enforce LF line endings on tracked text files across platforms.
+# Mirrors IceSpiritAI_Chat / IceSpiritAI_Translate convention.
+
+* text=auto eol=lf
+
+# Model text assets (prompt templates, vocab) — explicit LF so tokenizer
+# doesn't choke on CRLF when models are loaded cross-platform.
+app/src/main/assets/models/**/*.txt    eol=lf
+app/src/main/assets/models/**/*.utf8 eol=lf
+app/src/main/assets/models/**/*.json eol=lf
+app/src/main/assets/models/**/*.fst  eol=lf
+
+# Binary model blobs (no line-ending conversion, no diff/merge attempts).
+*.gguf         binary
+*.onnx         binary
+*.mnn          binary
+*.safetensors  binary
+*.tflite       binary
+*.bin          binary

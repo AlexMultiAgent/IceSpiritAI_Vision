@@ -1,0 +1,93 @@
+# Build / IDE / per-machine noise — common across all IceSpiritAI_* repos.
+# Domain-specific rules (model staging, mirror staging, etc.) intentionally omitted
+# for the initial Vision scaffold; add when needed.
+
+# .claude/ holds both per-machine transient state AND project-shared automation.
+# Allow the project-shared surface; ignore the rest.
+.claude/home_*.png
+.claude/main_*.png
+.claude/scheduled_tasks.lock
+.claude/worktrees/
+.claude/scratch/
+.claude/settings.local.json
+
+.kilo/
+.gradle/
+.idea/
+.kotlin/
+build/
+app/.cxx/
+local.properties
+captures/
+*.iml
+.git-backup/
+verification-results/
+hs_err_pid*.log
+replay_pid*.log
+.model-download-cache/
+tmp/
+tmp_run/
+
+# Python bytecode caches (tools/*.py and any future scripts).
+**/__pycache__/
+
+# VS Code workspace settings.
+.vscode/
+
+# Local MCP server config (per-machine bootstrap commands).
+.mcp.json
+
+# Superpowers brainstorming scratch (per-session).
+.superpowers/
+
+# Standard local-only artefacts
+.DS_Store
+Thumbs.db
+
+# Generated docs artefacts (binary derivatives of tracked sources).
+docs/*.docx
+docs/*.pdf
+*.bak
+*~
+.sw?
+
+# Build / install / debug log files.
+*.log
+install.log
+
+# Ad-hoc screenshots and UI dumps used during development.
+/current_*.png
+/v2_*.png
+/proof.png
+/final_*.png
+/home*.png
+/main*.png
+/now.png
+/state.png
+/ui[0-9]*.xml
+/d
+/dump.xml
+/garbled.*
+/smoke_test.ps1
+/check_artifacts.ps1
+
+# Claude review scratch files.
+review_committed.diff
+review_uncommitted.diff
+logcat_output.txt
+
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/usage.statistics.xml
+.idea/dictionaries/
+.idea/caches/
+.idea/libraries/
+.idea/gradle.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+
+# Release APK local archive.
+发布版历史存档/
+
+# Token file (placeholder — fill in when real tokens are introduced).
+gradle.token.properties
