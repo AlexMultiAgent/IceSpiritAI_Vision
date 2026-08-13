@@ -97,9 +97,12 @@ tools/paddleocr/
 app/libs/ppocr-sdk.aar
 app/libs/ppocr-sdk-release.aar
 
-# ONNX model weights (regenerable via tools/download-ppocr-models.sh)
-app/src/main/assets/models/det/*.onnx
-app/src/main/assets/models/det/*.tar
-app/src/main/assets/models/rec/*.onnx
-app/src/main/assets/models/rec/*.tar
-app/src/main/assets/models/rec/*.yml
+# ONNX model weights (regenerable via tools/download-ppocr-models.sh).
+# Use ** so the patterns catch nested extraction paths, not just direct
+# children of det/ and rec/.
+app/src/main/assets/models/**/*.onnx
+app/src/main/assets/models/**/*.yml
+app/src/main/assets/models/**/*.tar
+app/src/main/assets/models/**/*.md
+app/src/main/assets/models/**/.gitattributes
+app/src/main/assets/models/**/*.cache/
