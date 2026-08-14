@@ -29,10 +29,30 @@ class AnalysisStateTest {
     @Test
     fun error_carriesCauseAndRetryable() {
         val cause = IllegalStateException("boom")
-        val state = AnalysisState.Error("OCR failed", retryable = true, cause = cause)
+        val state = AnalysisState.Error(
+            message = "OCR failed",
+            errorCode = ErrorCode.OCR_FAILED,
+            retryable = true,
+            cause = cause,
+        )
         assertEquals("OCR failed", state.message)
+        assertEquals(ErrorCode.OCR_FAILED, state.errorCode)
         assertTrue(state.retryable)
         assertNotNull(state.cause)
+    }
+
+    @Test
+    fun defaultRetryable_matchesErrorCode() {
+        assertTrue(AnalysisState.Error("a", ErrorCode.OCR_UNAVAILABLE).retryable)
+        assertTrue(AnalysisState.Error("a", ErrorCode.OCR_FAILED).retryable)
+        assertTrue(AnalysisState.Error("a", ErrorCode.UNKNOWN).retryable)
+        assertFalse(AnalysisState.Error("a", ErrorCode.RULES_FAILED).retryable)
+    }
+
+    @Test
+    fun allErrorCodes_areDistinct() {
+        val codes = ErrorCode.values()
+        assertEquals(codes.size, codes.toSet().size)
     }
 
     @Test

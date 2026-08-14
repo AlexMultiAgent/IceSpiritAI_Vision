@@ -3,6 +3,17 @@ package com.icespiritai.offline.domain
 import android.graphics.Rect
 import android.net.Uri
 
+enum class ErrorCode {
+    /** OCR model missing / OpenCV native lib failed to load / model load exception. retryable=true. */
+    OCR_UNAVAILABLE,
+    /** OCR inference / image decode failed. retryable=true. */
+    OCR_FAILED,
+    /** Rules JSON load / parse failed (packaging defect). retryable=false. */
+    RULES_FAILED,
+    /** Catch-all. retryable=true. */
+    UNKNOWN,
+}
+
 sealed class AnalysisState {
     object Idle : AnalysisState()
     data class Loading(val stage: Stage) : AnalysisState() {
@@ -18,9 +29,17 @@ sealed class AnalysisState {
     data class Complete(val report: ViolationReport) : AnalysisState()
     data class Error(
         val message: String,
-        val retryable: Boolean = false,
-        val cause: Throwable? = null
-    ) : AnalysisState()
+        val errorCode: ErrorCode,
+        val retryable: Boolean = defaultRetryable(errorCode),
+        val cause: Throwable? = null,
+    ) : AnalysisState() {
+        companion object {
+            private fun defaultRetryable(code: ErrorCode): Boolean = when (code) {
+                ErrorCode.OCR_UNAVAILABLE, ErrorCode.OCR_FAILED, ErrorCode.UNKNOWN -> true
+                ErrorCode.RULES_FAILED -> false
+            }
+        }
+    }
 }
 
 data class OcrResult(

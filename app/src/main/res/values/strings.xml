@@ -13,6 +13,7 @@
     <string name="error_ocr_unavailable">OCR 模型加载失败,请检查 APK 是否完整</string>
     <string name="error_ocr_failed">图片识别失败,请换一张清晰图重试</string>
     <string name="error_rules_failed">规则库加载失败</string>
+    <string name="error_unknown">未知错误,请重试</string>
     <string name="action_retry">重试</string>
     <string name="action_exit">退出</string>
     <string name="error_permission_denied">需要相机 / 媒体权限才能分析图片</string>

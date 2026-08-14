@@ -2,6 +2,7 @@ package com.icespiritai.offline.analysis
 
 import android.net.StubUri
 import com.icespiritai.offline.domain.AnalysisState
+import com.icespiritai.offline.domain.ErrorCode
 import com.icespiritai.offline.domain.RuleHit
 import com.icespiritai.offline.domain.RuleLoadFailed
 import com.icespiritai.offline.domain.Severity
@@ -92,6 +93,7 @@ class ImageAnalyzerRepositoryTest {
         val err = states[1]
         assertTrue("second should be Error", err is AnalysisState.Error)
         err as AnalysisState.Error
+        assertEquals(ErrorCode.OCR_UNAVAILABLE, err.errorCode)
         assertTrue("OCR failure is retryable", err.retryable)
         assertNotNull("cause is preserved", err.cause)
     }
@@ -113,6 +115,7 @@ class ImageAnalyzerRepositoryTest {
         val err = states[3]
         assertTrue("fourth should be Error", err is AnalysisState.Error)
         err as AnalysisState.Error
+        assertEquals(ErrorCode.RULES_FAILED, err.errorCode)
         assertFalse("a missing/corrupt rule asset is not retryable", err.retryable)
         assertNotNull("cause is preserved", err.cause)
     }
