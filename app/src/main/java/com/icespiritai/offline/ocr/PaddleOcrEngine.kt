@@ -1,7 +1,6 @@
 package com.icespiritai.offline.ocr
 
 import android.content.Context
-import android.graphics.BitmapFactory
 import android.graphics.Rect
 import android.net.Uri
 import com.icespiritai.offline.domain.OcrEngineUnavailable
@@ -82,9 +81,9 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
             ).also { paddleOcr = it }
         }
 
-        val bitmap = appContext.contentResolver.openInputStream(uri)?.use {
-            BitmapFactory.decodeStream(it)
-        } ?: throw OcrEngineUnavailable("Failed to open image stream: $uri")
+        val raw = BitmapLoader.downsampledBitmap(appContext, uri)
+            ?: throw OcrEngineUnavailable("Failed to open image stream: $uri")
+        val bitmap = BitmapLoader.applyExifRotation(raw, BitmapLoader.exifRotationDegrees(appContext, uri))
 
         val runResult = try {
             ocr.recognize(bitmap)
