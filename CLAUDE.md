@@ -9,11 +9,9 @@
 | 源码 namespace | `com.icespiritai.offline` |
 | Gradle rootProject name | `IceSpirit` |
 | 主题样式名 | `Theme.IceSpiritOffline` |
-| minSdk / targetSdk / compileSdk | 26 / 35 / 35 |
+| minSdk / targetSdk / compileSdk | 26 / 37 / 37 |
 | ABI | `arm64-v8a` only |
-| Gradle Wrapper | 8.10.2 |
-| AGP | 8.5.2 |
-| Kotlin | 1.9.24 |
+| Gradle Wrapper | 9.7 / AGP 9.3 / Kotlin 2.4.10 (forward-path baseline,锁定于 2026-08 stack) |
 | Maven 镜像 | Aliyun 主 + Tencent/Huawei 备 |
 
 **三项目唯一不同的字段是 `applicationId`(对应设备上的独立包名身份):
@@ -27,16 +25,17 @@ Gradle property `modelProfile` 控制当前构建启用哪个模型配置:
 
 | Profile | 状态 | 含义 |
 | --- | --- | --- |
-| `shell` | **默认 / 首版** | 不引入视觉模型,仅展示骨架 |
-| `ice_vision_minimal` | 未来 | 轻量二分类模型 |
-| `ice_vision` | 未来 | 多标签 + 法规依据 |
+| `shell` | **默认 / 首版** | 仅展示骨架;UI 可跑,Fake OCR + slim rules,APK 不带模型 |
+| `ice_ocr_rules` | Phase 1(shipped) | PaddleOCR v3.7.0 SDK(走 ONNX Runtime + OpenCV)+ AdLawRuleMatcher 已接入;rules JSON 从 `assets/rules/ad_law_rules.json` 10 条 golden rules 出;ONNX 模型(bundled in APK)在 `assets/models/{det,rec}/inference.onnx` + `inference.yml` |
+| `ice_vision` | 未来 | 多标签 + 法规依据的端侧 VLM |
 
 切换方式:`./gradlew assembleDebug -PmodelProfile=<name>`
 
-## 视觉模型选型(尚未决定)
+## 视觉/OCR 模型路线(2026-08 锁定)
 
-候选:GGUF (llama.cpp Android port) / ONNX Runtime / MNN / MediaPipe Tasks。
-选型依据应来自具体判违需求(分类 vs 检测 vs 分割),首版不 hardcode。
+Phase 1 走 OCR + 规则库路线(PaddleOCR 官方 SDK v3.7.0 + HankCS AC 自动机)。候选从 PaddleOCR-slim / Paddle-Lite / ONNX Runtime / MediaPipe Tasks 收敛到:**PaddleOCR 官方 SDK** 走 **ONNX Runtime + OpenCV**(Android 端 nn 推理),不再 hardcode 视觉模型路线。
+
+二分类 / 多标签视觉模型留 Phase 2+,首版不引入。
 
 ## 构建命令
 
