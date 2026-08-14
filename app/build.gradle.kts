@@ -17,13 +17,13 @@ val modelProfile = providers.gradleProperty("modelProfile")
 
 android {
     namespace = "com.icespiritai.offline"
-    compileSdk = 36
+    compileSdk = 37
     ndkVersion = "28.2.13676358"
 
     defaultConfig {
         applicationId = "com.icespiritai.vision"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 1
         versionName = "0.1.0"
 
@@ -47,6 +47,10 @@ android {
         debug {
             isMinifyEnabled = false
         }
+    }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
 
     compileOptions {
