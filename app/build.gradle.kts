@@ -107,6 +107,19 @@ android {
     }
 
     packaging {
+        // Phase 2 / Task 4: AGP 9 defaults to useLegacyPackaging = false, which
+        // compresses native libs inside the APK. On Android 14/15 with
+        // extractNativeLibs=false, OpenCVLoader's System.loadLibrary fails to find
+        // libopencv_java4.so. Setting useLegacyPackaging = true extracts the libs
+        // to /data/app/<pkg>/lib/<abi>/ at install time.
+        //
+        // Trade-off: APK install size grows (libs are uncompressed). Acceptable
+        // for ice_ocr_rules profile where native libs are required. shell profile
+        // has no native libs so this setting is a no-op for shell.
+        jniLibs {
+            useLegacyPackaging = true
+        }
+
         resources {
             excludes += listOf(
                 "/META-INF/{AL2.0,LGPL2.1}",
