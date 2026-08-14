@@ -1,8 +1,10 @@
 package com.icespiritai.offline.analysis
 
 import android.net.StubUri
+import android.net.Uri
 import com.icespiritai.offline.domain.AnalysisState
 import com.icespiritai.offline.domain.ErrorCode
+import com.icespiritai.offline.domain.OcrFailed
 import com.icespiritai.offline.domain.RuleHit
 import com.icespiritai.offline.domain.RuleLoadFailed
 import com.icespiritai.offline.domain.Severity
@@ -96,6 +98,38 @@ class ImageAnalyzerRepositoryTest {
         assertEquals(ErrorCode.OCR_UNAVAILABLE, err.errorCode)
         assertTrue("OCR failure is retryable", err.retryable)
         assertNotNull("cause is preserved", err.cause)
+    }
+
+    @Test
+    fun `analyze emits Error with OCR_FAILED when OcrFailed is thrown`() = runTest {
+        val throwingOcr = object : com.icespiritai.offline.ocr.OcrEngine {
+            override suspend fun recognize(uri: Uri) =
+                throw OcrFailed("decode failed")
+            override suspend fun release() = Unit
+        }
+        val states = repo(ocrEngine = throwingOcr).analyze(StubUri()).toList()
+
+        assertEquals(2, states.size)
+        val err = states[1] as AnalysisState.Error
+        assertEquals(ErrorCode.OCR_FAILED, err.errorCode)
+        assertTrue("OCR runtime failure is retryable", err.retryable)
+        assertNotNull(err.cause)
+    }
+
+    @Test
+    fun `analyze emits Error with UNKNOWN when generic Exception is thrown`() = runTest {
+        val throwingOcr = object : com.icespiritai.offline.ocr.OcrEngine {
+            override suspend fun recognize(uri: Uri) =
+                throw RuntimeException("unexpected")
+            override suspend fun release() = Unit
+        }
+        val states = repo(ocrEngine = throwingOcr).analyze(StubUri()).toList()
+
+        assertEquals(2, states.size)
+        val err = states[1] as AnalysisState.Error
+        assertEquals(ErrorCode.UNKNOWN, err.errorCode)
+        assertTrue("unexpected failure is retryable", err.retryable)
+        assertNotNull(err.cause)
     }
 
     @Test
