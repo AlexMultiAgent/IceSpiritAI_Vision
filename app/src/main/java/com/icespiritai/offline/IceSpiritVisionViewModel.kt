@@ -7,9 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.icespiritai.offline.analysis.ImageAnalyzerRepository
 import com.icespiritai.offline.domain.AnalysisState
 import com.icespiritai.offline.domain.AnalysisState.Idle
-import com.icespiritai.offline.ocr.FakeOcrEngine
 import com.icespiritai.offline.ocr.OcrEngine
-import com.icespiritai.offline.ocr.PaddleOcrEngine
+import com.icespiritai.offline.ocr.OcrEngineFactoryLocator
 import com.icespiritai.offline.rules.AdLawRuleMatcher
 import com.icespiritai.offline.rules.AssetRuleLoader
 import com.icespiritai.offline.rules.RuleMatcher
@@ -23,9 +22,14 @@ import kotlinx.coroutines.launch
  * Phase 1 UI driver: maps a cold [ImageAnalyzerRepository] flow onto a
  * [StateFlow] of [AnalysisState] for the Compose layer.
  *
- * Profile gating:
- *   - `modelProfile = "ice_ocr_rules"` → [PaddleOcrEngine] (real PaddleOCR SDK)
- *   - anything else (default `shell`) → [FakeOcrEngine] returning canned text
+ * Profile gating is resolved at build time by the active `modelProfile`
+ * sourceSet (`shell/` or `ice_ocr_rules/`), which contributes one
+ * `OcrEngineFactory` via `META-INF/services/`. [OcrEngineFactoryLocator]
+ * picks the first such factory on the classpath — there is no compile-time
+ * `if (BuildConfig.MODEL_PROFILE == ...)` branch here, and the `main`
+ * sourceSet has no direct knowledge of either implementation. This keeps
+ * the `shell` APK slim: the PaddleOCR SDK, ONNX Runtime, and OpenCV never
+ * reach the classpath when the profile is `shell`.
  *
  * [ruleMatcherProvider] is a lambda (not an eager `RuleMatcher`) so that an
  * asset-load failure surfaces as [AnalysisState.Error] on first `analyze()`
@@ -42,11 +46,7 @@ import kotlinx.coroutines.launch
  */
 class IceSpiritVisionViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val ocrEngine: OcrEngine = if (BuildConfig.MODEL_PROFILE == "ice_ocr_rules") {
-        PaddleOcrEngine(application)
-    } else {
-        FakeOcrEngine(cannedText = "本店专治糖尿病,100% 有效", cannedConfidence = 0.9f)
-    }
+    private val ocrEngine: OcrEngine = OcrEngineFactoryLocator.create(application)
 
     private val ruleMatcherProvider: () -> RuleMatcher = {
         AdLawRuleMatcher(AssetRuleLoader(getApplication()).load())
