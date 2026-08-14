@@ -128,7 +128,61 @@ val prepareOcrRulesAssets = tasks.register("prepareOcrRulesAssets") {
     }
 }
 
-// Wire into preBuild so it runs before asset packaging.
+// ----- OCR model staging -------------------------------------------------
+//
+// For `ice_ocr_rules` profile only: mirror app/src/main/assets/models/ into
+// build/generated/assets/models/ so AGP picks the ONNX + YAML files up.
+//
+// Rationale: app/build.gradle.kts sets `assets.srcDirs` to ONLY
+// build/generated/assets/ (the rules JSON lives there). Without this Copy task
+// the APK would ship without models/det|inference.onnx, etc. — and any
+// `recognize()` call would throw `OCRError.ModelNotFound`.
+//
+// `shell` / `ice_vision` profiles SKIP the copy (kept via `onlyIf`) so the
+// shell APK stays small and matches its "no model bundled" intent.
+//
+// The .gitignore rule `app/src/main/assets/models/**/*.onnx` means the source
+// dir is empty (or contains only .gitkeep) unless
+// `tools/download-ppocr-models.sh` has been run; Copy with empty `from` is a
+// harmless no-op so first-build with ice_ocr_rules still succeeds.
+
+val copyOcrModelsAssets = tasks.register<Copy>("copyOcrModelsAssets") {
+    group = "build"
+    description = "Copy ONNX model assets into build/generated/assets/models/ when modelProfile == ice_ocr_rules"
+
+    val activeProfile = modelProfileValue
+    val modelSrcDir = file("src/main/assets/models")
+    val outDir = layout.buildDirectory.dir("generated/assets/models")
+
+    // Cache invalidation: switching -PmodelProfile must re-evaluate even if the
+    // source files haven't changed. Without this, a "shell" build (which
+    // skipped this task) might still be cached as UP-TO-DATE when switching to
+    // "ice_ocr_rules" — leading to a missing-models APK.
+    inputs.property("modelProfile", activeProfile)
+    outputs.dir(outDir)
+
+    // Skip entirely when profile != ice_ocr_rules.
+    onlyIf { activeProfile == "ice_ocr_rules" }
+
+    from(modelSrcDir) {
+        include("**/*.onnx")
+        include("**/*.yml")
+        // Also drop the .gitkeep placeholder so it doesn't leak into the APK.
+        exclude("**/.gitkeep")
+    }
+    into(outDir)
+
+    doLast {
+        val dir = outDir.get().asFile
+        val fileCount = if (dir.exists()) dir.walkTopDown().count { it.isFile } else 0
+        logger.lifecycle(
+            "[copyOcrModelsAssets] profile=$activeProfile copied $fileCount model files to $dir"
+        )
+    }
+}
+
+// Wire into preBuild so both rules + models are populated before package.
 tasks.named("preBuild").configure {
     dependsOn(prepareOcrRulesAssets)
+    dependsOn(copyOcrModelsAssets)
 }
