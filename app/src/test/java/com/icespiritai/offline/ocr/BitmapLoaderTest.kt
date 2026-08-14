@@ -1,9 +1,9 @@
 package com.icespiritai.offline.ocr
 
-import android.content.Context
 import android.graphics.Bitmap
-import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -15,21 +15,17 @@ import org.robolectric.annotation.Config
 @Config(sdk = [33])
 class BitmapLoaderTest {
 
-    private val context: Context get() = ApplicationProvider.getApplicationContext()
-
-    @Test
-    fun exifRotationDegrees_returnsZero_whenStreamOpenFails() {
-        val uri = android.net.Uri.parse("content://nonexistent/123")
-        assertEquals(0, BitmapLoader.exifRotationDegrees(context, uri))
+    private fun readFixtureBytes(name: String): ByteArray {
+        val stream = javaClass.classLoader!!.getResourceAsStream(name)
+            ?: error("Missing test fixture: $name on the unit-test classpath (src/test/resources/).")
+        return stream.use { it.readBytes() }
     }
 
     @Test
     fun exifRotationDegrees_returnsZero_forPngWithNoExifTag() {
-        val uri = android.net.Uri.parse("file:///android_asset/test.png")
-        val degrees = BitmapLoader.exifRotationDegrees(context, uri)
-        // test.png is a PNG with no EXIF orientation tag. If the stream failed
-        // to open under Robolectric, exifRotationDegrees returns 0 by design
-        // (its catch-all). Either way 0 is the expected result.
+        val bytes = readFixtureBytes("test.png")
+        val degrees = BitmapLoader.exifRotationDegrees(bytes)
+        // test.png is a PNG with no EXIF orientation tag, so rotation is 0.
         assertEquals(0, degrees)
     }
 
@@ -57,20 +53,21 @@ class BitmapLoaderTest {
     }
 
     @Test
-    fun downsampledBitmap_returnsNull_whenStreamOpenFails() {
-        val uri = android.net.Uri.parse("content://nonexistent/123")
-        assertEquals(null, BitmapLoader.downsampledBitmap(context, uri))
+    fun applyExifRotation_preservesDimensions_at180Degrees() {
+        val bmp = Bitmap.createBitmap(100, 200, Bitmap.Config.ARGB_8888)
+        val rotated = BitmapLoader.applyExifRotation(bmp, 180)
+        assertEquals(100, rotated.width)
+        assertEquals(200, rotated.height)
+        // rotated != bmp (different instance)
+        assertNotSame(bmp, rotated)
     }
 
     @Test
     fun downsampledBitmap_returnsBitmapWhoseLongestEdgeDoesNotExceedMaxEdge() {
-        val uri = android.net.Uri.parse("file:///android_asset/test.png")
-        val bitmap = BitmapLoader.downsampledBitmap(context, uri, maxEdgePx = 4096)
-        if (bitmap != null) {
-            val longest = maxOf(bitmap.width, bitmap.height)
-            assertTrue("Longest edge $longest should be <= 4096", longest <= 4096)
-        }
-        // If bitmap is null under Robolectric (no asset resolution), the test
-        // silently passes — the real fixture test is in androidTest/PaddleOcrExifTest.
+        val bytes = readFixtureBytes("test.png")
+        val bitmap = BitmapLoader.downsampledBitmap(bytes, maxEdgePx = 4096)
+        assertNotNull(bitmap)
+        val longest = maxOf(bitmap!!.width, bitmap.height)
+        assertTrue("Longest edge $longest should be <= 4096", longest <= 4096)
     }
 }

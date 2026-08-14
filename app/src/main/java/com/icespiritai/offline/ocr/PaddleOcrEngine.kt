@@ -81,9 +81,11 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
             ).also { paddleOcr = it }
         }
 
-        val raw = BitmapLoader.downsampledBitmap(appContext, uri)
-            ?: throw OcrEngineUnavailable("Failed to open image stream: $uri")
-        val bitmap = BitmapLoader.applyExifRotation(raw, BitmapLoader.exifRotationDegrees(appContext, uri))
+        val bytes = BitmapLoader.bytes(appContext, uri)
+            ?: throw OcrEngineUnavailable("Failed to read image stream: $uri")
+        val raw = BitmapLoader.downsampledBitmap(bytes)
+            ?: throw OcrEngineUnavailable("Failed to decode image: $uri")
+        val bitmap = BitmapLoader.applyExifRotation(raw, BitmapLoader.exifRotationDegrees(bytes))
 
         val runResult = try {
             ocr.recognize(bitmap)
