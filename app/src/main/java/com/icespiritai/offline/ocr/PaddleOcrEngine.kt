@@ -11,7 +11,9 @@ import com.icespiritai.offline.domain.TextLine
 import com.paddle.ocr.EngineConfig
 import com.paddle.ocr.PaddleOCR
 import com.paddle.ocr.PaddleOCRConfig
+import com.paddle.ocr.model.OCRBox
 import com.paddle.ocr.model.OCRError
+import com.paddle.ocr.model.OCRResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -55,10 +57,14 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
      * **skips** the OpenCV Manager APK bind. The two-arg `initDebug(true)`
      * would try OpenCV Manager and fail on stock devices; `initLocal()` does
      * not exist on this AAR (it's only on the official OpenCV 4.x SDK).
+     *
+     * Safe to call from any thread — `initDebug()` is idempotent and registers
+     * process-wide JNI bindings.
      */
     private val openCvLoaded: Boolean = OpenCVLoader.initDebug()
 
-    override suspend fun recognize(uri: Uri): OcrResult = mutex.withLock {
+    override suspend fun recognize(uri: Uri): OcrResult = withContext(Dispatchers.IO) {
+        mutex.withLock {
         val ocr = paddleOcr ?: run {
             if (!openCvLoaded) {
                 throw OcrEngineUnavailable(
@@ -107,17 +113,18 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
             avgConfidence = if (runResult.results.isEmpty()) 0f
             else runResult.results.map { it.confidence }.average().toFloat(),
         )
+        }
     }
 
-    override suspend fun release() = withContext(Dispatchers.IO) {
+    override suspend fun release() = mutex.withLock {
         paddleOcr?.release()
         paddleOcr = null
     }
 
-    private fun com.paddle.ocr.model.OCRResult.toTextLine(): TextLine =
+    private fun OCRResult.toTextLine(): TextLine =
         TextLine(text = text, box = box.toBoundingRect(), confidence = confidence)
 
-    private fun com.paddle.ocr.model.OCRBox.toBoundingRect(): Rect {
+    private fun OCRBox.toBoundingRect(): Rect {
         if (points.isEmpty()) return Rect()
         val xs = points.map { it.x }
         val ys = points.map { it.y }
