@@ -15,6 +15,8 @@ plugins {
 val modelProfile = providers.gradleProperty("modelProfile")
     .getOrElse("shell")
 
+apply(from = "prepare-ocr-rules.gradle.kts")
+
 android {
     namespace = "com.icespiritai.offline"
     compileSdk = 37
@@ -66,6 +68,31 @@ android {
         compose = true
         buildConfig = true
         // viewBinding intentionally off (use Compose)
+    }
+
+    sourceSets {
+        getByName("main") {
+            // main.assets comes ONLY from the generated dir. AGP's default
+            // is to also include src/main/assets, so we REPLACE (not append)
+            // via setSrcDirs.
+            //
+            // The source app/src/main/assets/rules/ JSON files are
+            // intentionally NOT bundled: their contents are not
+            // modelProfile-aware, and the per-profile copy under
+            // build/generated/assets/rules/ is the authoritative one for the
+            // APK. The source files remain in the repo as human-readable
+            // references for editing rules — but editing them does NOT
+            // change the bundled JSON; the Gradle constant in
+            // app/prepare-ocr-rules.gradle.kts must be updated (until we
+            // add a Sync task that mirrors source → constant).
+            //
+            // If/when non-rules assets appear under src/main/assets/
+            // (e.g. models/, fonts/), add a Copy task here that mirrors
+            // them into the generated dir before assemble.
+            assets.setSrcDirs(
+                listOf(layout.buildDirectory.dir("generated/assets").get().asFile),
+            )
+        }
     }
 
     packaging {
