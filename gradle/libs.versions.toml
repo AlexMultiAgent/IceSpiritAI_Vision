@@ -15,7 +15,7 @@ coroutines = "1.10.2"
 serialization = "1.9.0"
 hankcsAc = "1.2.3"
 onnxruntime = "1.21.1"
-opencv = "4.5.3"
+opencv = "4.10.0"
 junit = "4.13.2"
 androidxJunit = "1.3.0"
 espresso = "3.7.0"
@@ -57,7 +57,14 @@ hankcs-aho-corasick = { module = "com.hankcs:aho-corasick-double-array-trie", ve
 
 # OCR engine deps (PaddleOCR SDK + native libs)
 onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntime" }
-opencv-android = { module = "com.quickbirdstudios:opencv", version.ref = "opencv" }
+# Phase 2 / Task 4 hotfix: com.quickbirdstudios:opencv:4.5.3 ships native libs
+# built with NDK r21 (Sept 2020). With the project's locked NDK 28.2.13676358
+# (2026-08 stack), ld on Android 14/15 cannot resolve libc++ ABI symbols
+# (e.g. `__sfp_handle_exceptions`) that NDK-r21 libopencv_java4.so references
+# but the newer libc++_shared.so no longer exports. 4.10.0 ships libs built
+# with a newer NDK and resolves cleanly. Same `org.opencv.android.OpenCVLoader`
+# package, same `initDebug()` API — no source change needed.
+opencv-android = { module = "org.opencv:opencv", version.ref = "opencv" }
 
 # Test
 junit = { module = "junit:junit", version.ref = "junit" }
