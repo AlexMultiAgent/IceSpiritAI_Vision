@@ -2,6 +2,10 @@ package com.icespiritai.offline.analysis
 
 import android.net.Uri
 import com.icespiritai.offline.domain.AnalysisState
+import com.icespiritai.offline.domain.ErrorCode
+import com.icespiritai.offline.domain.OcrEngineUnavailable
+import com.icespiritai.offline.domain.OcrFailed
+import com.icespiritai.offline.domain.RuleLoadFailed
 import com.icespiritai.offline.domain.ViolationReport
 import com.icespiritai.offline.ocr.OcrEngine
 import com.icespiritai.offline.rules.RuleMatcher
@@ -50,12 +54,33 @@ class ImageAnalyzerRepository(
             ocrEngine.recognize(uri)
         } catch (e: CancellationException) {
             throw e
+        } catch (e: OcrEngineUnavailable) {
+            emit(
+                AnalysisState.Error(
+                    message = e.message ?: e.javaClass.simpleName,
+                    errorCode = ErrorCode.OCR_UNAVAILABLE,
+                    retryable = true,
+                    cause = e,
+                )
+            )
+            return@flow
+        } catch (e: OcrFailed) {
+            emit(
+                AnalysisState.Error(
+                    message = e.message ?: e.javaClass.simpleName,
+                    errorCode = ErrorCode.OCR_FAILED,
+                    retryable = true,
+                    cause = e,
+                )
+            )
+            return@flow
         } catch (e: Exception) {
             emit(
                 AnalysisState.Error(
-                    message = "OCR 识别失败：${e.message ?: "未知错误"}",
+                    message = e.message ?: e.javaClass.simpleName,
+                    errorCode = ErrorCode.UNKNOWN,
                     retryable = true,
-                    cause = e
+                    cause = e,
                 )
             )
             return@flow
@@ -76,14 +101,23 @@ class ImageAnalyzerRepository(
             withContext(Dispatchers.IO) { ruleMatcher }.scan(ocrResult.fullText)
         } catch (e: CancellationException) {
             throw e
+        } catch (e: RuleLoadFailed) {
+            emit(
+                AnalysisState.Error(
+                    message = e.message ?: e.javaClass.simpleName,
+                    errorCode = ErrorCode.RULES_FAILED,
+                    retryable = false,
+                    cause = e,
+                )
+            )
+            return@flow
         } catch (e: Exception) {
             emit(
                 AnalysisState.Error(
-                    message = "规则匹配失败：${e.message ?: "未知错误"}",
-                    // A missing or malformed rule asset is a packaging defect;
-                    // retrying the same build will fail identically.
-                    retryable = false,
-                    cause = e
+                    message = e.message ?: e.javaClass.simpleName,
+                    errorCode = ErrorCode.UNKNOWN,
+                    retryable = true,
+                    cause = e,
                 )
             )
             return@flow

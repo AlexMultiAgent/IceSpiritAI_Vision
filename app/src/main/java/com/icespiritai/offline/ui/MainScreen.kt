@@ -40,6 +40,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.icespiritai.offline.IceSpiritVisionViewModel
 import com.icespiritai.offline.R
 import com.icespiritai.offline.domain.AnalysisState
+import com.icespiritai.offline.domain.ErrorCode
 import com.icespiritai.offline.domain.RuleHit
 import com.icespiritai.offline.domain.Severity
 
@@ -139,7 +140,13 @@ fun MainScreen(viewModel: IceSpiritVisionViewModel = viewModel()) {
                 }
 
                 is AnalysisState.Error -> {
-                    Text(s.message, color = MaterialTheme.colorScheme.error)
+                    val msgRes = when (s.errorCode) {
+                        ErrorCode.OCR_UNAVAILABLE -> R.string.error_ocr_unavailable
+                        ErrorCode.OCR_FAILED -> R.string.error_ocr_failed
+                        ErrorCode.RULES_FAILED -> R.string.error_rules_failed
+                        ErrorCode.UNKNOWN -> R.string.error_unknown
+                    }
+                    Text(stringResource(msgRes), color = MaterialTheme.colorScheme.error)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (s.retryable) {
                             Button(onClick = { viewModel.reset() }) {
