@@ -181,8 +181,87 @@ val copyOcrModelsAssets = tasks.register<Copy>("copyOcrModelsAssets") {
     }
 }
 
-// Wire into preBuild so both rules + models are populated before package.
+// ----- Profile META-INF/services JAR -------------------------------------
+//
+// AGP 9.x's resource merge only picks up files under known resource
+// qualifiers (`values/`, `drawable/`, `layout/`, ...) from custom `res`
+// source dirs; arbitrary `META-INF/services/...` files added via
+// `res.directories.add(...)` are silently dropped. And `assets/` ships
+// every file under `assets/META-INF/services/...` — which is NOT scanned
+// by ServiceLoader on Android (the classloader enumerates the APK's
+// `META-INF/services/` root, not `assets/META-INF/services/`).
+//
+// The reliable way to bundle a ServiceLoader registration into an Android
+// APK is therefore to ship the file inside a JAR and add it as a runtime
+// dependency: AGP's `processJavaResources` task merges the JAR's
+// `META-INF/` into the APK's root `META-INF/`, which IS where ServiceLoader
+// looks.
+//
+// We generate one tiny JAR per build containing only the active profile's
+// `META-INF/services/com.icespiritai.offline.ocr.OcrEngineFactory` file.
+// `app/build.gradle.kts` adds it as a `runtimeOnly files(...)` dependency
+// gated on the active profile.
+//
+// `shell` is the default profile: any unknown `-PmodelProfile` value falls
+// through to it so the build still produces a working APK.
+
+data class ProfileServices(val profile: String, val factoryFqn: String)
+
+val profileServices: ProfileServices = when (modelProfileValue) {
+    "ice_ocr_rules" -> ProfileServices("ice_ocr_rules", "com.icespiritai.offline.ocr.PaddleOcrEngineFactory")
+    else -> ProfileServices("shell", "com.icespiritai.offline.ocr.FakeOcrEngineFactory")
+}
+
+val servicesJarDir = layout.buildDirectory.dir("generated/services-jar")
+
+val buildProfileServicesJar = tasks.register("buildProfileServicesJar") {
+    group = "build"
+    description = "Build a JAR containing the active profile's META-INF/services/OcrEngineFactory registration"
+
+    val outDir = servicesJarDir
+    val active = profileServices
+    val srcDir = file("src/${active.profile}/resources")
+
+    inputs.property("modelProfile", active.profile)
+    inputs.dir(srcDir).withPropertyName("srcDir")
+    outputs.dir(outDir)
+
+    doLast {
+        val dst = outDir.get().asFile
+        dst.mkdirs()
+
+        // Write the service file directly. We don't need to consult the
+        // source dir at runtime because each profile's services file is
+        // single-line and contains exactly one FQN — we know it from
+        // `profileServices.factoryFqn` above, derived from the active
+        // profile. This keeps the task deterministic without relying on
+        // `src/<profile>/resources/META-INF/services/...` existing on disk
+        // (which is committed to the repo for readability but isn't the
+        // authoritative source).
+        val services = java.io.File(dst, "META-INF/services")
+        services.mkdirs()
+        java.io.File(services, "com.icespiritai.offline.ocr.OcrEngineFactory")
+            .writeText("${active.factoryFqn}\n")
+
+        // Bundle into a JAR. The JAR layout puts META-INF/services/... at
+        // the JAR root, which is what `processJavaResources` extracts.
+        val jarFile = java.io.File(dst, "ocr-engine-services.jar")
+        java.util.jar.JarOutputStream(java.io.FileOutputStream(jarFile)).use { jos ->
+            val entry = java.util.jar.JarEntry("META-INF/services/com.icespiritai.offline.ocr.OcrEngineFactory")
+            jos.putNextEntry(entry)
+            jos.write("${active.factoryFqn}\n".toByteArray())
+            jos.closeEntry()
+        }
+
+        logger.lifecycle(
+            "[buildProfileServicesJar] profile=${active.profile} -> ${jarFile.absolutePath}"
+        )
+    }
+}
+
+// Wire into preBuild so the JAR exists before package / processJavaResources.
 tasks.named("preBuild").configure {
     dependsOn(prepareOcrRulesAssets)
     dependsOn(copyOcrModelsAssets)
+    dependsOn(buildProfileServicesJar)
 }

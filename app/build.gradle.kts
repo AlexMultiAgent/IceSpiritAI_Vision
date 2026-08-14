@@ -93,6 +93,17 @@ android {
                 listOf(layout.buildDirectory.dir("generated/assets").get().asFile),
             )
         }
+        // Per-profile java srcDirs are wired up via
+        // `androidComponents.onVariants { ... addStaticSourceDirectory(...) }`
+        // below. AGP 9.x no longer permits `create("name")` / `register("name")`
+        // for arbitrary sourceSet names inside `sourceSets {}` — only
+        // variant-tied sources are accepted.
+        //
+        // Per-profile META-INF/services/... is packaged as a tiny JAR by the
+        // `buildProfileServicesJar` task in prepare-ocr-rules.gradle.kts and
+        // added as a `runtimeOnly files(...)` dependency below — the only
+        // reliable way to get a ServiceLoader registration into an Android
+        // APK via AGP 9 (see that task's KDoc for the full rationale).
     }
 
     packaging {
@@ -105,6 +116,27 @@ android {
                 "/META-INF/*.kotlin_module"
             )
         }
+    }
+}
+
+// Per-profile java source directory wiring: AGP 9.x no longer permits
+// arbitrary `sourceSets { create("shell") }` declarations — only
+// variant-tied java sources are accepted. We attach the active profile's
+// java src dir to every variant so Kotlin/Javac compile picks up the
+// profile-specific `OcrEngineFactory` (and `PaddleOcrEngine` for the
+// `ice_ocr_rules` profile). META-INF/services/... is packaged as a tiny
+// JAR via `buildProfileServicesJar` and added as a `runtimeOnly` dependency
+// below — see that task's KDoc for why a JAR is the only reliable
+// ServiceLoader registration mechanism in AGP 9.
+androidComponents {
+    onVariants { variant ->
+        val javaDir = when (modelProfile) {
+            "ice_ocr_rules" -> "src/ice_ocr_rules/java"
+            else -> "src/shell/java" // default profile is `shell`
+        }
+        variant.sources.java?.addStaticSourceDirectory(
+            project.projectDir.resolve(javaDir).absolutePath,
+        )
     }
 }
 
@@ -134,10 +166,20 @@ dependencies {
     // Domain
     implementation(libs.hankcs.aho.corasick)
 
-    // OCR engine: PaddleOCR official SDK + native runtime
-    implementation(files("libs/ppocr-sdk.aar"))
-    implementation(libs.onnxruntime.android)
-    implementation(libs.opencv.android)
+    // OCR engine: PaddleOCR official SDK + native runtime (ice_ocr_rules only)
+    if (modelProfile == "ice_ocr_rules") {
+        implementation(files("libs/ppocr-sdk.aar"))
+        implementation(libs.onnxruntime.android)
+        implementation(libs.opencv.android)
+    }
+
+    // ServiceLoader registration for the per-profile `OcrEngineFactory`.
+    // The `buildProfileServicesJar` task (in prepare-ocr-rules.gradle.kts)
+    // emits a one-entry JAR containing only
+    // `META-INF/services/com.icespiritai.offline.ocr.OcrEngineFactory` so
+    // AGP's `processJavaResources` pipeline extracts it into the APK at
+    // `META-INF/services/...` — exactly where ServiceLoader looks.
+    runtimeOnly(files(layout.buildDirectory.dir("generated/services-jar/ocr-engine-services.jar").get().asFile))
 
     // Unit tests
     testImplementation(libs.junit)
