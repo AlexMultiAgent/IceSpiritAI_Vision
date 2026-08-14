@@ -261,10 +261,18 @@ Expected: v6_small 模型总体积比 v5_mobile 小约 30-40%(更轻量但准确
 
 **Files:**
 - Create: `app/src/androidTest/java/com/icespiritai/offline/ocr/PaddleOcrSmokeTest.kt`(临时,Phase 1 Task 7 后改/删)
+- Create: `app/src/androidTest/assets/test.png`(真实中文测试图,含广告极限词)
+- Create: `tools/gen-test-image.py`(可重新生成 fixture)
 
 - [ ] **Step 1: 临时集成测试**
 
-> **注意**:此 task 在 Phase 1 Task 7(PaddleOcrEngine)完成**之前**作为可行性验证。若 SDK 已能 load 模型 + recognize 单张图,后续 Task 7 直接基于此 API 包 OcrEngine interface。
+> **重要**:此 task 的可执行验证(`./gradlew connectedDebugAndroidTest`)需在 Phase 1 Task 1(baseline 升级到 Kotlin 2.4.10)**之后**才可编译 — `ppocr-sdk.aar` 用 Kotlin 2.1.0 编译,当前项目 Kotlin 1.9.24 metadata 不兼容。
+>
+> **执行顺序**:Step 1 写测试代码 + Step 2 commit 可在 Phase 0 完成;**实际测试运行(`./gradlew connectedDebugAndroidTest`)留到 Phase 1 Task 1 完成后再做**(作为 Task 1 验证步骤之一,或 Task 7 PaddleOcrEngine 落地后跑)。
+>
+> Phase 0 仅承诺:**测试代码 + test.png 已交付 + 已 commit**;**真实运行验证延迟到 Phase 1**。
+>
+> 若 SDK 已能 load 模型 + recognize 单张图,后续 Task 7 直接基于此 API 包 OcrEngine interface。
 
 `app/src/androidTest/java/com/icespiritai/offline/ocr/PaddleOcrSmokeTest.kt`:
 
@@ -353,8 +361,10 @@ git commit -m "test: add PaddleOCR SDK smoke test (Phase 0 verification)"
 
 ### Task 5: RuleMatcher + AdLawRuleMatcher + FakeRuleMatcher
 
-- 与原 plan Task 5 一致,**import 修正**:
-  - `import com.hankcs.aho_corasick.AhoCorasickDoubleArrayTrie`(主类名,不是 `AhoCorasick`)
+- 与原 plan Task 5 一致,**import 修正**(相对原 plan 的 `com.hankcs.aho_corasick.AhoCorasick`):
+  - `import com.hankcs.algorithm.AhoCorasickDoubleArrayTrie`(`com.hankcs:aho-corasick-double-array-trie:1.2.3` 的实际包名)
+  - `build(Map<String, V>)` — 直接传入 `TreeMap<String, String>`,无需 cast
+  - `parseText(CharSequence, IHit<V>)` — Kotlin lambda 与 `IHitCancellable` SAM 重载歧义,需显式 `AhoCorasickDoubleArrayTrie.IHit<String> { ... }` SAM 构造
 
 ### Task 6: OcrEngine interface + FakeOcrEngine
 
@@ -373,11 +383,14 @@ package com.icespiritai.offline.ocr
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Rect
 import android.net.Uri
 import com.icespiritai.offline.domain.OcrResult
 import com.icespiritai.offline.domain.TextLine
+import com.paddle.ocr.EngineConfig
 import com.paddle.ocr.PaddleOCR
+import com.paddle.ocr.PaddleOCRConfig
 import com.paddle.ocr.model.OCRError
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -393,6 +406,8 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
     override suspend fun recognize(uri: Uri): OcrResult = mutex.withLock {
         val ocr = paddleOcr ?: PaddleOCR.create(
             context = appContext,
+            config = PaddleOCRConfig(),
+            engineConfig = EngineConfig(numThreads = 4),
             detModelAssetPath = "models/det/inference.onnx",
             recModelAssetPath = "models/rec/inference.onnx",
             recConfigAssetPath = "models/rec/inference.yml",
