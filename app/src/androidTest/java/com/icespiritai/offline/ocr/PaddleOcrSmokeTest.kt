@@ -10,8 +10,10 @@ import com.paddle.ocr.PaddleOCRConfig
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.opencv.android.OpenCVLoader
 
 /**
  * Phase 0 feasibility smoke test for the PaddleOCR official SDK.
@@ -34,6 +36,11 @@ class PaddleOcrSmokeTest {
 
     @Test
     fun sdk_loadsModelsAndRecognizes_chineseTestImage() = runBlocking {
+        assumeTrue(
+            "OpenCV native libs must load on the test device (com.quickbirdstudios:opencv:4.5.3)",
+            OpenCVLoader.initDebug(),
+        )
+
         val context = ApplicationProvider.getApplicationContext<Context>()
 
         val ocr = PaddleOCR.create(
