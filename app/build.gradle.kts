@@ -142,6 +142,9 @@ dependencies {
     // Unit tests
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.arch.core.testing)
+    testImplementation(libs.androidx.test.core)
 
     // Instrumentation tests (for SDK smoke test + Compose UI test)
     androidTestImplementation(platform(libs.compose.bom))
