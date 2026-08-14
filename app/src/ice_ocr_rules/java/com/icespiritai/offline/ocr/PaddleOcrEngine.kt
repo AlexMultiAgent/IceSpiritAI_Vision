@@ -49,18 +49,16 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
      * [recognize] so callers see a typed [OcrEngineUnavailable] instead of an
      * exception bubbled up from a constructor.
      *
-     * On `com.quickbirdstudios:opencv:4.5.3` the no-arg `initDebug()` is the
-     * correct entry point: its bytecode forwards to
-     * `StaticHelper.initOpenCV(false)`, which loads the bundled
-     * `libopencv_java4.so` (present in the AAR's `jni/<abi>/`) and explicitly
-     * **skips** the OpenCV Manager APK bind. The two-arg `initDebug(true)`
-     * would try OpenCV Manager and fail on stock devices; `initLocal()` does
-     * not exist on this AAR (it's only on the official OpenCV 4.x SDK).
-     *
-     * Safe to call from any thread — `initDebug()` is idempotent and registers
-     * process-wide JNI bindings.
+     * Phase 2 / Task 4 hotfix: switched to `org.opencv:opencv:4.10.0` (the
+     * previous `com.quickbirdstudios:opencv:4.5.3` was built with NDK r21,
+     * which references removed libc++ ABI symbols like `__sfp_handle_exceptions`
+     * — incompatible with our locked NDK 28.2.13676358). `initDebug()` is
+     * deprecated in 4.10.0; `initLocal()` is the recommended entry point for
+     * bundled native libs (no OpenCV Manager dependency). Safe to call from
+     * any thread — `initLocal()` is idempotent and registers process-wide
+     * JNI bindings.
      */
-    private val openCvLoaded: Boolean = OpenCVLoader.initDebug()
+    private val openCvLoaded: Boolean = OpenCVLoader.initLocal()
 
     override suspend fun recognize(uri: Uri): OcrResult = withContext(Dispatchers.IO) {
         mutex.withLock {
