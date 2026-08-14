@@ -241,37 +241,37 @@ com.icespiritai.offline.ocr.PaddleOcrEngineFactory
 - `dependencies` 里 ONNX Runtime / OpenCV / AAR 全部从 `implementation` 改为仅在 `ice_ocr_rules` profile 引入
 - 用 `androidComponents.beforeVariants` 或 `sourceSets` 按 profile 激活 sourceSet
 
-最简形式(`android.sourceSets`):
+`AGP 9.x` 实际形式(`sourceSets { create("name") }` 在 AGP 9 已被拒绝,只能通过 `androidComponents.onVariants` 挂 source dir):
 
 ```kotlin
-android {
-    val profile = modelProfile  // "shell" or "ice_ocr_rules"
-    sourceSets {
-        getByName("main") { /* 既有 */ }
-        if (profile == "ice_ocr_rules") {
-            create("ice_ocr_rules") {
-                java.srcDirs("src/ice_ocr_rules/java")
-                res.srcDirs("src/ice_ocr_rules/res")
-                assets.srcDirs("src/ice_ocr_rules/assets")
-            }
-        } else {
-            create("shell") {
-                java.srcDirs("src/shell/java")
-                res.srcDirs("src/shell/res")
-                assets.srcDirs("src/shell/assets")
-            }
+androidComponents {
+    onVariants { variant ->
+        val javaDir = when (modelProfile) {
+            "ice_ocr_rules" -> "src/ice_ocr_rules/java"
+            else -> "src/shell/java"
         }
+        variant.sources.java?.addStaticSourceDirectory(
+            project.projectDir.resolve(javaDir).absolutePath,
+        )
     }
 }
 
 dependencies {
     // 既有 lifecycle / compose / coroutines / serialization — 不动
     // 仅 ice_ocr_rules 才有:
-    if (profile == "ice_ocr_rules") {
+    if (modelProfile == "ice_ocr_rules") {
         implementation(files("libs/ppocr-sdk.aar"))
         implementation(libs.onnxruntime.android)
         implementation(libs.opencv.android)
     }
+    // ServiceLoader: META-INF/services/... 打成 JAR 走 runtimeOnly ——
+    // AGP 9 不支持把 META-INF/services/ 挂到 res sourceSet。详情见
+    // app/prepare-ocr-rules.gradle.kts 的 `buildProfileServicesJar` KDoc。
+    runtimeOnly(files(layout.buildDirectory.dir("generated/services-jar/ocr-engine-services.jar").get().asFile))
+}
+```
+
+`META-INF/services/com.icespiritai.offline.ocr.OcrEngineFactory` 走 `buildProfileServicesJar` 任务打包到 `build/generated/services-jar/ocr-engine-services.jar`,然后在 `dependencies` 里加为 `runtimeOnly files(...)` — AGP 的 `processJavaResources` 会把 JAR 里的 `META-INF/services/...` 抽到 APK 根目录,ServiceLoader 就能找到。`res`/`assets` sourceSet 路径在 AGP 9 会被跳过(`META-INF/` 不是 Android 资源类型)。
     // hankcs AC automaton — main 始终需要
     implementation(libs.hankcs.aho.corasick)
 }
