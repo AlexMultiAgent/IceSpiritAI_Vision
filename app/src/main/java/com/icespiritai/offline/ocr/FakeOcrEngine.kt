@@ -23,4 +23,6 @@ class FakeOcrEngine(
             avgConfidence = cannedConfidence
         )
     }
+
+    override suspend fun release() = Unit
 }

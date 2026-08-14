@@ -5,4 +5,5 @@ import com.icespiritai.offline.domain.OcrResult
 
 interface OcrEngine {
     suspend fun recognize(uri: Uri): OcrResult
+    suspend fun release()
 }
