@@ -2,6 +2,11 @@ package com.icespiritai.offline
 
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.test.core.app.ActivityScenario
+import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.assertion.ViewAssertions.matches
+import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
+import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
 import org.junit.Test
@@ -36,5 +41,20 @@ class IceSpiritVisionActivityTest {
     @Test
     fun take_photo_button_is_present() {
         composeRule.onNodeWithText("拍照").assertExists()
+    }
+
+    /**
+     * Espresso-on-Compose smoke (Task 19). Exercises the alternative match
+     * path (androidx.test.espresso + androidx.compose.ui.test) to ensure the
+     * home affordances surface to Espresso's view tree. Launching via
+     * ActivityScenario (rather than the Compose test rule) confirms the
+     * activity's `setContent` wiring too.
+     */
+    @Test
+    fun homeScreen_opensAndShowsCapture() {
+        val scenario = ActivityScenario.launch(IceSpiritVisionActivity::class.java)
+        onView(withText("拍照")).check(matches(isDisplayed()))
+        onView(withText("选图")).check(matches(isDisplayed()))
+        scenario.close()
     }
 }

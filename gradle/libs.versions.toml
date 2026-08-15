@@ -74,8 +74,13 @@ opencv-android = { module = "org.opencv:opencv", version.ref = "opencv" }
 junit = { module = "junit:junit", version.ref = "junit" }
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxJunit" }
 androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "androidxJunit" }
-# androidx-espresso-core was declared but never referenced — androidTest uses
-# androidx-test-ext-junit instead.
+# Espresso is required by androidTest/.../IceSpiritVisionActivityTest.kt
+# (`homeScreen_opensAndShowsCapture`) which launches the activity via
+# ActivityScenario and matches UI with `onView(withText(...))`. Espresso on
+# Compose works because `compose.ui.test.junit4` adds the
+# `ComposeViewActionInterop` runtime hook that bridges Espresso's view tree
+# into Compose semantics.
+androidx-espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref = "espresso" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 androidx-arch-core-testing = { module = "androidx.arch.core:core-testing", version.ref = "androidxArchCoreTesting" }
 androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTestCore" }

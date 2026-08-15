@@ -221,5 +221,9 @@ dependencies {
     androidTestImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
+    // Espresso on Compose: `onView(withText(...))` in IceSpiritVisionActivityTest
+    // requires espresso-core alongside compose.ui.test.junit4 (which provides
+    // the Espresso <-> Compose interop hook).
+    androidTestImplementation(libs.androidx.espresso.core)
     debugImplementation(libs.compose.ui.test.manifest)
 }
