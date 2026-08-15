@@ -14,6 +14,10 @@ class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
     val themeMode: StateFlow<ThemeMode> = source.themeMode.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
+        // Matches ThemeMode.fromName(null) so a brand-new install's first
+        // composition doesn't briefly flip through a different value before
+        // DataStore's first read lands. Factory default is SYSTEM (follow
+        // the OS); the user can pin to DARK/LIGHT from settings.
         initialValue = ThemeMode.SYSTEM,
     )
 

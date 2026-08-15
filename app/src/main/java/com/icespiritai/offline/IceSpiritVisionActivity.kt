@@ -26,7 +26,11 @@ class IceSpiritVisionActivity : ComponentActivity() {
 
         setContent {
             val themeMode by settings.themeMode.collectAsStateWithLifecycle(
-                initialValue = com.icespiritai.offline.ui.theme.ThemeMode.SYSTEM,
+                // First-frame placeholder before the first DataStore read
+                // returns. Matches the factory default (SYSTEM) so a
+                // freshly installed user does not see a one-frame flash
+                // before the first read lands.
+                initialValue = ThemeMode.SYSTEM,
             )
             IceSpiritVisionTheme(themeMode = themeMode) {
                 IceSpiritNavHost()

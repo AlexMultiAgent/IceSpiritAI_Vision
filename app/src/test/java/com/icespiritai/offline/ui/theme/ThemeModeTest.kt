@@ -23,6 +23,11 @@ class ThemeModeTest {
 
     @Test
     fun `fromName falls back to SYSTEM on unknown`() {
+        // SYSTEM is the out-of-the-box default: the app follows the host
+        // OS until the user explicitly pins to DARK or LIGHT. Absent or
+        // unparseable persisted values must not silently fall back to
+        // DARK or LIGHT — that would override a user who just hasn't
+        // opened the settings screen yet.
         assertEquals(ThemeMode.SYSTEM, ThemeMode.fromName(null))
         assertEquals(ThemeMode.SYSTEM, ThemeMode.fromName("nonsense"))
     }
