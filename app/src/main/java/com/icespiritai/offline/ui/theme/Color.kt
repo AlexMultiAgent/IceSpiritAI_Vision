@@ -9,8 +9,11 @@ val DarkSurfaceVariant = Color(0xFF1E293B)
 val DarkOutline = Color(0xFF334155)
 val DarkOnSurface = Color(0xFFE2E8F0)
 val DarkOnSurfaceVariant = Color(0xFF94A3B8)
-val DarkPrimary = Color(0xFF3B82F6)
-val DarkOnPrimary = Color(0xFFEFF6FF)
+// Primary: slate-200 (cool off-white) — gives Buttons/Tab indicator a
+// neutral "ice" accent that stays out of the family-blue family. Pairs
+// with slate-900 text via DarkOnPrimary.
+val DarkPrimary = Color(0xFFE2E8F0)
+val DarkOnPrimary = Color(0xFF0F172A)
 val DarkError = Color(0xFFF87171)
 val DarkOnError = Color(0xFF7F1D1D)
 val DarkWarning = Color(0xFFFBBF24)
@@ -25,7 +28,9 @@ val LightSurfaceVariant = Color(0xFFF1F5F9)
 val LightOutline = Color(0xFFE2E8F0)
 val LightOnSurface = Color(0xFF0F172A)
 val LightOnSurfaceVariant = Color(0xFF64748B)
-val LightPrimary = Color(0xFF1E40AF)
+// Primary: slate-900 (deep cool gray) — "ice" dark accent for archive mode,
+// matches LightOnSurface so buttons feel grounded rather than branded.
+val LightPrimary = Color(0xFF0F172A)
 val LightOnPrimary = Color(0xFFFFFFFF)
 val LightError = Color(0xFFDC2626)
 val LightOnError = Color(0xFFFEE2E2)
