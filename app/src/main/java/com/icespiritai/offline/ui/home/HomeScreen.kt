@@ -235,3 +235,16 @@ private fun AnalysisState.Loading.Stage.toLoadingStage(): AnalysisStateLoadingSt
     AnalysisState.Loading.Stage.OcrRunning -> AnalysisStateLoadingStage.OcrRunning
     AnalysisState.Loading.Stage.RuleScanning -> AnalysisStateLoadingStage.RuleScanning
 }
+
+@Composable
+fun HomeScreenBare(onCapture: () -> Unit, onPick: () -> Unit) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Text("冰灵锐目", style = MaterialTheme.typography.titleLarge)
+        Text(
+            text = "请对正图片后点击拍照",
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(16.dp),
+        )
+        CaptureBar(onCapture = onCapture, onPick = onPick)
+    }
+}
