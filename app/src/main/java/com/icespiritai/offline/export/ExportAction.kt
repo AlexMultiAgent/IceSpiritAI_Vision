@@ -3,6 +3,8 @@ package com.icespiritai.offline.export
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
+import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.icespiritai.offline.R
 import com.icespiritai.offline.domain.ViolationReport
@@ -12,21 +14,35 @@ object ExportAction {
 
     private const val FILE_PROVIDER_SUFFIX = ".fileprovider"
     private const val EVIDENCE_DIR = "evidence"
+    private const val TAG = "ExportAction"
 
     fun share(
         context: Context,
         report: ViolationReport,
         appVersion: String = "0.1.0",
     ) {
-        val bytes = EvidencePackageBuilder.toFile(
-            report = report,
-            imageProvider = ImageBytesProvider.from(context),
-            appVersion = appVersion,
-        )
+        val bytes: ByteArray
+        try {
+            bytes = EvidencePackageBuilder.toFile(
+                report = report,
+                imageProvider = ImageBytesProvider.from(context),
+                appVersion = appVersion,
+            )
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to build evidence package", t)
+            Toast.makeText(context, "导出失败", Toast.LENGTH_SHORT).show()
+            return
+        }
 
         val dir = File(context.cacheDir, EVIDENCE_DIR).apply { mkdirs() }
         val file = File(dir, "evidence_${report.timestampMs}.zip")
-        file.writeBytes(bytes)
+        try {
+            file.writeBytes(bytes)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to write evidence zip", t)
+            Toast.makeText(context, "导出失败", Toast.LENGTH_SHORT).show()
+            return
+        }
 
         val authority = context.packageName + FILE_PROVIDER_SUFFIX
         val uri: Uri = FileProvider.getUriForFile(context, authority, file)
