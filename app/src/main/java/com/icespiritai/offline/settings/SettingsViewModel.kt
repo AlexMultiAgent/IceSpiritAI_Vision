@@ -1,5 +1,6 @@
 package com.icespiritai.offline.settings
 
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.icespiritai.offline.ui.theme.ThemeMode
@@ -17,7 +18,15 @@ class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
     )
 
     fun setThemeMode(mode: ThemeMode) {
-        viewModelScope.launch { source.setThemeMode(mode) }
+        // Persist to DataStore first, then push the new night mode to AppCompat.
+        // Order matters: if we flipped night mode before the write landed, an
+        // Activity recreate could read the previous value from DataStore and
+        // snap the theme back. Both calls run on the main dispatcher because
+        // viewModelScope defaults to Dispatchers.Main.immediate.
+        viewModelScope.launch {
+            source.setThemeMode(mode)
+            AppCompatDelegate.setDefaultNightMode(mode.toNightMode())
+        }
     }
 
     companion object {
