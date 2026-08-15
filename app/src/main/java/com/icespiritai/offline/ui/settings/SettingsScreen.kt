@@ -48,7 +48,7 @@ fun SettingsScreen(
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.action_grant_permission),
+                            contentDescription = stringResource(R.string.action_back),
                         )
                     }
                 },

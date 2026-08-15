@@ -18,6 +18,7 @@
     <string name="action_exit">退出</string>
     <string name="error_permission_denied">需要相机 / 媒体权限才能分析图片</string>
     <string name="action_grant_permission">去授权</string>
+    <string name="action_back">返回</string>
     <string name="hit_card_category">分类: %1$s</string>
     <string name="hit_card_regulation">依据: %1$s</string>
     <string name="hit_card_severity">严重等级: %1$s</string>
