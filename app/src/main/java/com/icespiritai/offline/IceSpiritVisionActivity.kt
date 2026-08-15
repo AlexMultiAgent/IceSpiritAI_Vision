@@ -4,19 +4,27 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.icespiritai.offline.ui.MainScreen
+import androidx.appcompat.app.AppCompatDelegate
+import com.icespiritai.offline.settings.SettingsRepository
+import com.icespiritai.offline.ui.nav.IceSpiritNavHost
+import com.icespiritai.offline.ui.theme.IceSpiritVisionTheme
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 
-/**
- * Entry Activity of IceSpiritAI_Vision (冰灵锐目).
- *
- * Compose host — wires [MainScreen] as the root composition. Phase 1 UI is a
- * text-only summary of the analysis pipeline; future tasks add image preview,
- * rule-edit, and history screens.
- */
 class IceSpiritVisionActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { MainScreen() }
+
+        val settings = SettingsRepository(applicationContext)
+        runBlocking {
+            AppCompatDelegate.setDefaultNightMode(settings.themeMode.first().toNightMode())
+        }
+
+        setContent {
+            IceSpiritVisionTheme {
+                IceSpiritNavHost()
+            }
+        }
     }
 }
