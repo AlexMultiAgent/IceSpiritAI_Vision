@@ -10,7 +10,7 @@ import com.icespiritai.offline.ui.theme.ThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
+internal val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 interface ThemeSettingsSource {
     val themeMode: Flow<ThemeMode>
