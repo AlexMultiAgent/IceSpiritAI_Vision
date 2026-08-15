@@ -21,4 +21,38 @@
     <string name="hit_card_category">分类: %1$s</string>
     <string name="hit_card_regulation">依据: %1$s</string>
     <string name="hit_card_severity">严重等级: %1$s</string>
+    <string name="tab_ad_law">广告法</string>
+    <string name="tab_food_label">食品标签</string>
+    <string name="tab_disabled_toast">食品标签 OCR 即将上线</string>
+
+    <string name="status_image_hint">请对正图片后点击拍照</string>
+    <string name="status_no_violation_card">未发现违规用语</string>
+    <string name="status_violation_count">违规 %1$d 处</string>
+    <string name="status_warning_count">警告 %1$d 处</string>
+
+    <string name="action_reshoot">重拍</string>
+    <string name="action_export">导出取证包</string>
+    <string name="action_export_report">导出报告</string>
+    <string name="action_report_issue">上报问题</string>
+
+    <string name="settings_title">设置</string>
+    <string name="settings_appearance">外观</string>
+    <string name="settings_appearance_system">跟随系统</string>
+    <string name="settings_appearance_dark">深色</string>
+    <string name="settings_appearance_light">浅色</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_about_version">版本: %1$s</string>
+
+    <string name="hit_severity_info">信息</string>
+    <string name="hit_severity_warning">警告</string>
+    <string name="hit_severity_violation">违规</string>
+
+    <string name="image_preview_desc">待分析图片</string>
+    <string name="capture_button_desc">拍照</string>
+    <string name="select_image_button_desc">从相册选图</string>
+    <string name="settings_button_desc">设置</string>
+    <string name="tab_switch_desc">切换业务模式</string>
+
+    <string name="export_share_subject">冰灵锐目 取证包</string>
+    <string name="export_share_chooser">分享取证包</string>
 </resources>
