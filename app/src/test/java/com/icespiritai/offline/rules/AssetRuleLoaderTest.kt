@@ -9,26 +9,45 @@ class AssetRuleLoaderTest {
 
     @Test
     fun load_parsesValidJsonIntoRules() {
-        // Context-based testing requires Android framework; we'll use a tiny in-memory JSON parser
-        // via Robolectric-free path: skip the Context dep and test the JSON parser logic indirectly.
-        // For unit testability, instantiate the json parser portion separately.
+        // Mirror the actual on-disk shape: `{ "version": N, "rules": [...] }`.
+        // The previous test used a bare top-level array and so missed the
+        // wrapper mismatch that surfaced on-device as ErrorCode.RULES_FAILED.
         val json = kotlinx.serialization.json.Json {
             ignoreUnknownKeys = true
             isLenient = true
         }
         val src = """
-            [
-              {"id":"a","category":"x","regulation":"r","keywords":["k1","k2"],"severity":"Violation"},
-              {"id":"b","category":"y","regulation":"r","keywords":["k3"],"severity":"Warning"}
-            ]
+            {
+              "version": 1,
+              "rules": [
+                {"id":"a","category":"x","regulation":"r","keywords":["k1","k2"],"severity":"Violation"},
+                {"id":"b","category":"y","regulation":"r","keywords":["k3"],"severity":"Warning"}
+              ]
+            }
         """.trimIndent()
-        val rules = json.decodeFromString(
-            kotlinx.serialization.builtins.ListSerializer(AdLawRule.serializer()),
-            src
-        )
-        assertEquals(2, rules.size)
-        assertEquals("a", rules[0].id)
-        assertEquals(listOf("k1", "k2"), rules[0].keywords)
+        val set = json.decodeFromString(AdLawRuleSet.serializer(), src)
+        assertEquals(2, set.rules.size)
+        assertEquals(1, set.version)
+        assertEquals("a", set.rules[0].id)
+        assertEquals(listOf("k1", "k2"), set.rules[0].keywords)
+    }
+
+    @Test
+    fun load_parsesActualBundledAssetShape() {
+        // Parses the exact JSON we ship in app/src/main/assets/rules/ad_law_rules.json.
+        // Catches drift between the build-time constant in
+        // prepare-ocr-rules.gradle.kts and the loader's expected shape.
+        val json = kotlinx.serialization.json.Json {
+            ignoreUnknownKeys = true
+            isLenient = true
+        }
+        val src = java.io.File(
+            "src/main/assets/rules/ad_law_rules.json"
+        ).readText(Charsets.UTF_8)
+        val set = json.decodeFromString(AdLawRuleSet.serializer(), src)
+        assertEquals(1, set.version)
+        assertEquals(10, set.rules.size)
+        assertEquals("medical_absolute", set.rules[0].id)
     }
 
     @Test
@@ -36,7 +55,7 @@ class AssetRuleLoaderTest {
         val bad = "{ not valid json"
         try {
             kotlinx.serialization.json.Json.decodeFromString(
-                kotlinx.serialization.builtins.ListSerializer(AdLawRule.serializer()),
+                AdLawRuleSet.serializer(),
                 bad
             )
             fail("expected SerializationException")
