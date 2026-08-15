@@ -16,6 +16,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.icespiritai.offline.R
 import com.icespiritai.offline.domain.RuleHit
+import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.ui.components.SeverityBadge
 
 @Composable
@@ -24,7 +25,14 @@ fun HitCard(hit: RuleHit, modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxWidth()
             .semantics(mergeDescendants = true) {
-                contentDescription = "违规条目: ${hit.matchedText}, 严重等级 ${hit.severity.name}"
+                val severityLabel = stringResource(
+                    when (hit.severity) {
+                        Severity.Violation -> R.string.hit_severity_violation
+                        Severity.Warning -> R.string.hit_severity_warning
+                        Severity.Info -> R.string.hit_severity_info
+                    }
+                )
+                contentDescription = "${hit.matchedText}, $severityLabel"
             },
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
