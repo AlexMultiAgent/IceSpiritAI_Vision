@@ -21,17 +21,17 @@ import com.icespiritai.offline.ui.components.SeverityBadge
 
 @Composable
 fun HitCard(hit: RuleHit, modifier: Modifier = Modifier) {
+    val severityLabel = stringResource(
+        when (hit.severity) {
+            Severity.Violation -> R.string.hit_severity_violation
+            Severity.Warning -> R.string.hit_severity_warning
+            Severity.Info -> R.string.hit_severity_info
+        }
+    )
     Card(
         modifier = modifier
             .fillMaxWidth()
             .semantics(mergeDescendants = true) {
-                val severityLabel = stringResource(
-                    when (hit.severity) {
-                        Severity.Violation -> R.string.hit_severity_violation
-                        Severity.Warning -> R.string.hit_severity_warning
-                        Severity.Info -> R.string.hit_severity_info
-                    }
-                )
                 contentDescription = "${hit.matchedText}, $severityLabel"
             },
     ) {
