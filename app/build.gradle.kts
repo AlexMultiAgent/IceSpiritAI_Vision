@@ -53,6 +53,12 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        // Required for Robolectric + Compose UI tests. When true, AGP generates
+        // `com/android/tools/test_config.properties` on the unit-test classpath
+        // pointing at the merged manifest + assets — without this, Robolectric
+        // can't find `androidx.activity.ComponentActivity` and the no-arg
+        // `createComposeRule()` (used by SeverityBadgeTest) fails to launch.
+        unitTests.isIncludeAndroidResources = true
     }
 
     compileOptions {
@@ -204,6 +210,11 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.arch.core.testing)
     testImplementation(libs.androidx.test.core)
+    // Compose UI test rule + matchers for Robolectric-driven unit tests
+    // (e.g. SeverityBadgeTest). `ui-test-manifest` stays `debugImplementation`
+    // because Compose reads it only in debug variants.
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
 
     // Instrumentation tests (for SDK smoke test + Compose UI test)
     androidTestImplementation(platform(libs.compose.bom))
