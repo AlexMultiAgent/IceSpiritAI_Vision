@@ -12,15 +12,20 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
-class SettingsRepository(private val context: Context) {
+interface ThemeSettingsSource {
+    val themeMode: Flow<ThemeMode>
+    suspend fun setThemeMode(mode: ThemeMode)
+}
+
+class SettingsRepository(private val context: Context) : ThemeSettingsSource {
 
     private val themeModeKey = stringPreferencesKey("theme_mode")
 
-    val themeMode: Flow<ThemeMode> = context.dataStore.data.map { prefs ->
+    override val themeMode: Flow<ThemeMode> = context.dataStore.data.map { prefs ->
         ThemeMode.fromName(prefs[themeModeKey])
     }
 
-    suspend fun setThemeMode(mode: ThemeMode) {
+    override suspend fun setThemeMode(mode: ThemeMode) {
         context.dataStore.edit { prefs ->
             prefs[themeModeKey] = mode.name
         }
