@@ -19,4 +19,13 @@ class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch { source.setThemeMode(mode) }
     }
+
+    companion object {
+        fun factory(repository: SettingsRepository) = object : androidx.lifecycle.ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                return SettingsViewModel(repository) as T
+            }
+        }
+    }
 }
