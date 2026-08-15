@@ -34,13 +34,25 @@ private val LightScheme = lightColorScheme(
     onError = LightOnError,
 )
 
+/**
+ * Resolves the user's [ThemeMode] preference into a concrete dark/light
+ * boolean for [MaterialTheme]. Must be `@Composable` because the SYSTEM
+ * branch reads `isSystemInDarkTheme()` from the active composition.
+ */
+@Composable
+fun ThemeMode.toDarkTheme(): Boolean = when (this) {
+    ThemeMode.DARK -> true
+    ThemeMode.LIGHT -> false
+    ThemeMode.SYSTEM -> isSystemInDarkTheme()
+}
+
 @Composable
 fun IceSpiritVisionTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeMode: ThemeMode,
     content: @Composable () -> Unit,
 ) {
     MaterialTheme(
-        colorScheme = if (darkTheme) DarkScheme else LightScheme,
+        colorScheme = if (themeMode.toDarkTheme()) DarkScheme else LightScheme,
         typography = IceSpiritTypography,
         content = content,
     )

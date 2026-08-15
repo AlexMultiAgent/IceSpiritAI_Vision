@@ -4,6 +4,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import com.icespiritai.offline.ui.home.HomeScreenBare
 import com.icespiritai.offline.ui.theme.IceSpiritVisionTheme
+import com.icespiritai.offline.ui.theme.ThemeMode
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -40,7 +41,7 @@ class HomeScreenScreenshotTest {
     @Test
     fun home_idle_dark() {
         composeRule.setContent {
-            IceSpiritVisionTheme(darkTheme = true) {
+            IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
                 HomeScreenBare(onCapture = {}, onPick = {})
             }
         }
@@ -51,7 +52,7 @@ class HomeScreenScreenshotTest {
     @Test
     fun home_idle_light() {
         composeRule.setContent {
-            IceSpiritVisionTheme(darkTheme = false) {
+            IceSpiritVisionTheme(themeMode = ThemeMode.LIGHT) {
                 HomeScreenBare(onCapture = {}, onPick = {})
             }
         }
