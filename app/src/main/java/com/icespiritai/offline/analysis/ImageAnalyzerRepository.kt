@@ -131,7 +131,8 @@ class ImageAnalyzerRepository(
                     imageUri = uri,
                     ocrText = ocrResult.fullText,
                     hits = hits,
-                    timestampMs = System.currentTimeMillis()
+                    timestampMs = System.currentTimeMillis(),
+                    avgConfidence = ocrResult.avgConfidence,
                 )
             )
         )

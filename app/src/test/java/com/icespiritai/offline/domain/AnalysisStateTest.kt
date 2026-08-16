@@ -68,4 +68,26 @@ class AnalysisStateTest {
         assertEquals(1, report.hits.size)
         assertEquals(Severity.Violation, report.hits[0].severity)
     }
+
+    @Test
+    fun violationReport_derivesHasTextAndLowConfidence() {
+        val uri: Uri = StubUri()
+        val noText = ViolationReport(uri, "  ", emptyList(), 1L, avgConfidence = 0f)
+        assertFalse(noText.hasText)
+        assertFalse(noText.lowConfidence)
+
+        val lowConfidence = ViolationReport(uri, "最佳品牌", emptyList(), 1L, avgConfidence = 0.4f)
+        assertTrue(lowConfidence.hasText)
+        assertTrue(lowConfidence.lowConfidence)
+
+        val confident = ViolationReport(uri, "最佳品牌", emptyList(), 1L, avgConfidence = 0.9f)
+        assertTrue(confident.hasText)
+        assertFalse(confident.lowConfidence)
+    }
+
+    @Test
+    fun violationReport_avgConfidenceDefaultsToZeroForBackwardCompat() {
+        val report = ViolationReport(StubUri(), "text", emptyList(), 1L)
+        assertEquals(0f, report.avgConfidence, 0.0001f)
+    }
 }

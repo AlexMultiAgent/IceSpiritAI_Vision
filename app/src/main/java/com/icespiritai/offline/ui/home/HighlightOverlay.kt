@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import com.icespiritai.offline.domain.RuleHit
 import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.domain.TextLine
+import com.icespiritai.offline.domain.TextNormalizer
 import com.icespiritai.offline.ui.theme.DarkError
 import com.icespiritai.offline.ui.theme.DarkWarning
 import com.icespiritai.offline.ui.theme.LightError
@@ -28,11 +29,16 @@ fun HighlightOverlay(
 ) {
     val isDark = MaterialTheme.colorScheme.background.red < 0.3f
     val strokePx = 4f
+    // Keywords are matched on normalized text (whitespace/full-width removed),
+    // so the containment check must run on normalized lines as well — otherwise
+    // "100%有效" in a line would not match the "100% 有效" hit.
+    val normalizedHits = hits.map { TextNormalizer.forMatching(it.matchedText) to it.severity }
     Canvas(modifier = modifier) {
         lines.forEach { line ->
-            val lineSeverity = hits
-                .filter { line.text.contains(it.matchedText) }
-                .maxOfOrNull { it.severity }
+            val normalizedLine = TextNormalizer.forMatching(line.text)
+            val lineSeverity = normalizedHits
+                .filter { normalizedLine.contains(it.first) }
+                .maxOfOrNull { it.second }
                 ?: return@forEach
             val color = when (lineSeverity) {
                 Severity.Violation -> if (isDark) DarkError else LightError

@@ -5,6 +5,7 @@ import android.net.Uri
 import com.icespiritai.offline.domain.AnalysisState
 import com.icespiritai.offline.domain.ErrorCode
 import com.icespiritai.offline.domain.OcrFailed
+import com.icespiritai.offline.domain.OcrResult
 import com.icespiritai.offline.domain.RuleHit
 import com.icespiritai.offline.domain.RuleLoadFailed
 import com.icespiritai.offline.domain.Severity
@@ -81,6 +82,8 @@ class ImageAnalyzerRepositoryTest {
             assertSame("report carries the analyzed uri", uri, report.imageUri)
             assertEquals(cannedText, report.ocrText)
             assertEquals(cannedHits, report.hits)
+            assertEquals(0.9f, report.avgConfidence, 0.0001f)
+            assertTrue("non-empty OCR text must be flagged as hasText", report.hasText)
             assertTrue("timestamp should be populated", report.timestampMs > 0L)
         }
 
@@ -163,6 +166,26 @@ class ImageAnalyzerRepositoryTest {
         val complete = states[4] as AnalysisState.Complete
         assertTrue(complete.report.hits.isEmpty())
         assertEquals(cannedText, complete.report.ocrText)
+    }
+
+    @Test
+    fun `analyze with empty OCR text completes with hasText false`() = runTest {
+        val emptyOcr = object : com.icespiritai.offline.ocr.OcrEngine {
+            override suspend fun recognize(uri: Uri) = OcrResult(
+                fullText = "",
+                lineBoxes = emptyList(),
+                avgConfidence = 0f,
+            )
+
+            override suspend fun release() = Unit
+        }
+        val states = repo(ocrEngine = emptyOcr, ruleMatcherProvider = { FakeRuleMatcher() })
+            .analyze(StubUri()).toList()
+
+        val complete = states[4] as AnalysisState.Complete
+        assertFalse("empty OCR text must not claim hasText", complete.report.hasText)
+        assertEquals(0f, complete.report.avgConfidence, 0.0001f)
+        assertTrue("no text means no hits", complete.report.hits.isEmpty())
     }
 
     @Test

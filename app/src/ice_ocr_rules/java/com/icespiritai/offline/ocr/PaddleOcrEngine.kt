@@ -13,6 +13,7 @@ import com.paddle.ocr.PaddleOCRConfig
 import com.paddle.ocr.model.OCRBox
 import com.paddle.ocr.model.OCRError
 import com.paddle.ocr.model.OCRResult
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -62,56 +63,77 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
 
     override suspend fun recognize(uri: Uri): OcrResult = withContext(Dispatchers.IO) {
         mutex.withLock {
-        val ocr = paddleOcr ?: run {
-            if (!openCvLoaded) {
-                throw OcrEngineUnavailable(
-                    "OpenCV native libs failed to load — check that the opencv-android " +
-                        "AAR's native libs are bundled in the APK (arm64-v8a)"
-                )
+            val ocr = paddleOcr ?: run {
+                if (!openCvLoaded) {
+                    throw OcrEngineUnavailable(
+                        "OpenCV native libs failed to load — check that the opencv-android " +
+                            "AAR's native libs are bundled in the APK (arm64-v8a)"
+                    )
+                }
+                val created = try {
+                    PaddleOCR.create(
+                        context = appContext,
+                        config = PaddleOCRConfig(),
+                        engineConfig = EngineConfig(numThreads = 4),
+                        detModelAssetPath = "models/det/inference.onnx",
+                        recModelAssetPath = "models/rec/inference.onnx",
+                        recConfigAssetPath = "models/rec/inference.yml",
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: OCRError.ModelLoadFailed) {
+                    throw OcrEngineUnavailable("OCR model load failed: ${e.message}", e)
+                } catch (e: OCRError.ModelNotFound) {
+                    throw OcrEngineUnavailable("OCR model missing in assets: ${e.message}", e)
+                } catch (e: OCRError.ConfigParseFailed) {
+                    throw OcrEngineUnavailable("OCR config parse failed: ${e.message}", e)
+                } catch (e: Exception) {
+                    // Engine construction failure is a packaging/device problem,
+                    // not a bad image: retrying with another photo won't help.
+                    throw OcrEngineUnavailable("OCR engine init failed: ${e.message}", e)
+                }
+                created.also { paddleOcr = it }
             }
-            PaddleOCR.create(
-                context = appContext,
-                config = PaddleOCRConfig(),
-                engineConfig = EngineConfig(numThreads = 4),
-                detModelAssetPath = "models/det/inference.onnx",
-                recModelAssetPath = "models/rec/inference.onnx",
-                recConfigAssetPath = "models/rec/inference.yml",
-            ).also { paddleOcr = it }
-        }
 
-        val bytes = BitmapLoader.bytes(appContext, uri)
-            ?: throw OcrEngineUnavailable("Failed to read image stream: $uri")
-        val raw = BitmapLoader.downsampledBitmap(bytes)
-            ?: throw OcrEngineUnavailable("Failed to decode image: $uri")
-        val bitmap = BitmapLoader.applyExifRotation(raw, BitmapLoader.exifRotationDegrees(bytes))
+            val bytes = BitmapLoader.bytes(appContext, uri)
+                ?: throw OcrFailed("Failed to read image stream: $uri")
+            val loaded = BitmapLoader.downsampledBitmapWithScale(bytes)
+                ?: throw OcrFailed("Failed to decode image: $uri")
+            val raw = loaded.bitmap
+            val degrees = BitmapLoader.exifRotationDegrees(bytes)
+            val bitmap = BitmapLoader.applyExifRotation(raw, degrees)
+            // Rotation allocates a second bitmap; the unrotated one is dead.
+            if (bitmap !== raw) raw.recycle()
 
-        val runResult = try {
-            ocr.recognize(bitmap)
-        } catch (e: OCRError) {
-            throw when (e) {
-                is OCRError.ModelLoadFailed ->
-                    OcrEngineUnavailable("OCR model load failed: ${e.message}", e)
-                is OCRError.ModelNotFound ->
-                    OcrEngineUnavailable("OCR model missing in assets: ${e.message}", e)
-                is OCRError.ConfigParseFailed ->
-                    OcrEngineUnavailable("OCR config parse failed: ${e.message}", e)
-                is OCRError.InvalidImage ->
-                    OcrFailed("Invalid image", e)
-                is OCRError.DecodeError ->
-                    OcrFailed("OCR decode failed: ${e.message}", e)
-                is OCRError.InferenceFailed ->
-                    OcrFailed("OCR inference failed: ${e.message}", e)
+            val runResult = try {
+                ocr.recognize(bitmap)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: OCRError) {
+                throw when (e) {
+                    is OCRError.ModelLoadFailed ->
+                        OcrEngineUnavailable("OCR model load failed: ${e.message}", e)
+                    is OCRError.ModelNotFound ->
+                        OcrEngineUnavailable("OCR model missing in assets: ${e.message}", e)
+                    is OCRError.ConfigParseFailed ->
+                        OcrEngineUnavailable("OCR config parse failed: ${e.message}", e)
+                    is OCRError.InvalidImage ->
+                        OcrFailed("Invalid image", e)
+                    is OCRError.DecodeError ->
+                        OcrFailed("OCR decode failed: ${e.message}", e)
+                    is OCRError.InferenceFailed ->
+                        OcrFailed("OCR inference failed: ${e.message}", e)
+                }
+            } catch (e: Exception) {
+                throw OcrFailed("OCR runtime error: ${e.message}", e)
             }
-        } catch (e: Exception) {
-            throw OcrFailed("OCR runtime error: ${e.message}", e)
-        }
 
-        OcrResult(
-            fullText = runResult.results.joinToString("\n") { it.text },
-            lineBoxes = runResult.results.map { it.toTextLine() },
-            avgConfidence = if (runResult.results.isEmpty()) 0f
-            else runResult.results.map { it.confidence }.average().toFloat(),
-        )
+            OcrResult(
+                fullText = runResult.results.joinToString("\n") { it.text },
+                lineBoxes = runResult.results.map { it.toTextLine(loaded.sampleSize) },
+                avgConfidence = if (runResult.results.isEmpty()) 0f
+                else runResult.results.map { it.confidence }.average().toFloat(),
+            )
         }
     }
 
@@ -120,17 +142,17 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
         paddleOcr = null
     }
 
-    private fun OCRResult.toTextLine(): TextLine =
-        TextLine(text = text, box = box.toBoundingRect(), confidence = confidence)
+    private fun OCRResult.toTextLine(scale: Int): TextLine =
+        TextLine(text = text, box = box.toBoundingRect(scale), confidence = confidence)
 
-    private fun OCRBox.toBoundingRect(): Rect {
+    private fun OCRBox.toBoundingRect(scale: Int): Rect {
         if (points.isEmpty()) return Rect()
         val xs = points.map { it.x }
         val ys = points.map { it.y }
-        val left = xs.min().toInt()
-        val top = ys.min().toInt()
-        val right = xs.max().toInt()
-        val bottom = ys.max().toInt()
+        val left = xs.min().toInt() * scale
+        val top = ys.min().toInt() * scale
+        val right = xs.max().toInt() * scale
+        val bottom = ys.max().toInt() * scale
         return Rect(left, top, right, bottom)
     }
 }

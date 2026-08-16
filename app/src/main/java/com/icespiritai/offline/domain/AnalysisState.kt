@@ -68,5 +68,18 @@ data class ViolationReport(
     val imageUri: Uri,
     val ocrText: String,
     val hits: List<RuleHit>,
-    val timestampMs: Long
-)
+    val timestampMs: Long,
+    /**
+     * Average per-line OCR confidence from the run that produced [ocrText].
+     * `0f` means no text was detected (or the engine does not expose scores).
+     * Used to surface the "low confidence, treat as reference only" hint
+     * instead of silently trusting a noisy recognition result.
+     */
+    val avgConfidence: Float = 0f,
+) {
+    /** True when OCR found at least one non-blank character. */
+    val hasText: Boolean get() = ocrText.isNotBlank()
+
+    /** Low-confidence OCR should be surfaced as a hint, not hidden. */
+    val lowConfidence: Boolean get() = hasText && avgConfidence < 0.5f
+}

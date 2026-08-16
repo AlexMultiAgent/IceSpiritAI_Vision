@@ -86,11 +86,10 @@ android {
             // intentionally NOT bundled: their contents are not
             // modelProfile-aware, and the per-profile copy under
             // build/generated/assets/rules/ is the authoritative one for the
-            // APK. The source files remain in the repo as human-readable
-            // references for editing rules — but editing them does NOT
-            // change the bundled JSON; the Gradle constant in
-            // app/prepare-ocr-rules.gradle.kts must be updated (until we
-            // add a Sync task that mirrors source → constant).
+            // APK. Editing app/src/main/assets/rules/ad_law_rules.json is the
+            // only place rules change: prepare-ocr-rules.gradle.kts reads that
+            // file at execution time for the ice_ocr_rules profile (and the
+            // file is tracked as a task input for cache invalidation).
             //
             // If/when non-rules assets appear under src/main/assets/
             // (e.g. models/, fonts/), add a Copy task here that mirrors

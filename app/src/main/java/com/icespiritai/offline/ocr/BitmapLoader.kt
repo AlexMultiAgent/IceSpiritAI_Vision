@@ -12,6 +12,14 @@ object BitmapLoader {
 
     private const val DEFAULT_MAX_EDGE_PX = 2048
 
+    /**
+     * A decoded bitmap plus the power-of-two [inSampleSize] that was applied
+     * during downsampling. OCR box coordinates are produced in the
+     * downsampled space, so callers need [sampleSize] to map them back onto
+     * the original image that the preview shows.
+     */
+    data class DownsampledBitmap(val bitmap: Bitmap, val sampleSize: Int)
+
     fun bytes(context: Context, uri: Uri): ByteArray? = try {
         context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
     } catch (e: Exception) {
@@ -21,15 +29,22 @@ object BitmapLoader {
     fun downsampledBitmap(
         bytes: ByteArray,
         maxEdgePx: Int = DEFAULT_MAX_EDGE_PX,
-    ): Bitmap? = try {
+    ): Bitmap? = downsampledBitmapWithScale(bytes, maxEdgePx)?.bitmap
+
+    fun downsampledBitmapWithScale(
+        bytes: ByteArray,
+        maxEdgePx: Int = DEFAULT_MAX_EDGE_PX,
+    ): DownsampledBitmap? = try {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
 
+        val sample = sampleSize(bounds.outWidth, bounds.outHeight, maxEdgePx)
         val opts = BitmapFactory.Options().apply {
-            inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, maxEdgePx)
+            inSampleSize = sample
         }
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts) ?: return null
+        DownsampledBitmap(bitmap = bitmap, sampleSize = sample)
     } catch (e: Exception) {
         null
     }

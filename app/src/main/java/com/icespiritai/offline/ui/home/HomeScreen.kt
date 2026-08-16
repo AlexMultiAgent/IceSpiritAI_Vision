@@ -1,10 +1,6 @@
 package com.icespiritai.offline.ui.home
 
-import android.Manifest
-import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
-import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -29,7 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.icespiritai.offline.IceSpiritVisionViewModel
 import com.icespiritai.offline.R
@@ -58,25 +53,14 @@ fun HomeScreen(onOpenSettings: () -> Unit) {
         }
     }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { /* denied — UI shows banner below */ }
-
-    fun ensurePermissionThenLaunchCamera() {
-        val needsCamera = ContextCompat.checkSelfPermission(
-            context, Manifest.permission.CAMERA,
-        ) != PackageManager.PERMISSION_GRANTED
-        if (needsCamera) {
-            permissionLauncher.launch(Manifest.permission.CAMERA)
-        }
-        // Phase 1 stub: PickVisualMedia instead of TakePicture (no extra
-        // Activity result handling). Real camera capture is a follow-up.
-        pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-    }
-
     fun pickFromGallery() {
         pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
     }
+
+    // Phase 1 stub: real TakePicture capture is a follow-up, so "拍照" currently
+    // opens the system photo picker. The picker needs no CAMERA permission —
+    // prompting for it here would ask for a capability the stub never uses.
+    fun launchCapture() = pickFromGallery()
 
     fun reset() {
         pendingUri = null
@@ -143,13 +127,8 @@ fun HomeScreen(onOpenSettings: () -> Unit) {
                 ErrorPanel(
                     code = s.errorCode,
                     retryable = s.retryable,
-                    onRetry = ::reset,
-                    onGrantPermission = {
-                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                            data = Uri.fromParts("package", context.packageName, null)
-                        }
-                        context.startActivity(intent)
-                    },
+                    onRetry = { pendingUri?.let(viewModel::startAnalysis) },
+                    onReset = ::reset,
                 )
             }
             else -> { /* OcrDone / RuleScanned bridge — transient */ }
@@ -169,7 +148,7 @@ fun HomeScreen(onOpenSettings: () -> Unit) {
             else -> {}
         }
         CaptureBar(
-            onCapture = ::ensurePermissionThenLaunchCamera,
+            onCapture = ::launchCapture,
             onPick = ::pickFromGallery,
             enabled = state !is AnalysisState.Loading,
         )
@@ -182,21 +161,42 @@ private fun StatusBannerFor(state: AnalysisState) {
         AnalysisState.Idle -> StatusBanner(StatusBannerKind.Idle, text = "")
         is AnalysisState.Loading -> StatusBanner(StatusBannerKind.Loading, text = "")
         is AnalysisState.Complete -> {
-            val hits = state.report.hits
-            val maxSev = hits.maxOfOrNull { it.severity }
-            val kind = when (maxSev) {
-                Severity.Violation -> StatusBannerKind.Violation
-                Severity.Warning -> StatusBannerKind.Warning
-                Severity.Info -> StatusBannerKind.Warning
-                null -> StatusBannerKind.Success
+            val report = state.report
+            val hits = report.hits
+            if (!report.hasText) {
+                StatusBanner(
+                    StatusBannerKind.Warning,
+                    text = stringResource(R.string.status_no_text_banner),
+                )
+            } else {
+                val maxSev = hits.maxOfOrNull { it.severity }
+                val kind = when (maxSev) {
+                    Severity.Violation -> StatusBannerKind.Violation
+                    Severity.Warning -> StatusBannerKind.Warning
+                    Severity.Info -> StatusBannerKind.Warning
+                    null -> StatusBannerKind.Success
+                }
+                val text = when (kind) {
+                    StatusBannerKind.Success -> stringResource(R.string.status_no_violation_card)
+                    else -> {
+                        val violations = hits.count { it.severity == Severity.Violation }
+                        val warnings = hits.count { it.severity == Severity.Warning }
+                        when {
+                            violations > 0 ->
+                                stringResource(R.string.status_violation_count, violations)
+                            warnings > 0 ->
+                                stringResource(R.string.status_warning_count, warnings)
+                            else -> stringResource(R.string.status_info_count, hits.size)
+                        }
+                    }
+                }
+                StatusBanner(kind = kind, text = text)
             }
-            val text = when (kind) {
-                StatusBannerKind.Success -> stringResource(R.string.status_no_violation_card)
-                else -> stringResource(R.string.status_violation_count, hits.size)
-            }
-            StatusBanner(kind = kind, text = text)
         }
-        is AnalysisState.Error -> StatusBanner(StatusBannerKind.Violation, text = state.message)
+        is AnalysisState.Error -> StatusBanner(
+            StatusBannerKind.Violation,
+            text = stringResource(R.string.status_error_banner),
+        )
         else -> StatusBanner(StatusBannerKind.Idle, text = "")
     }
 }
@@ -206,29 +206,31 @@ private fun ErrorPanel(
     code: ErrorCode,
     retryable: Boolean,
     onRetry: () -> Unit,
-    onGrantPermission: () -> Unit,
+    onReset: () -> Unit,
 ) {
-    val msgRes = when (code) {
-        ErrorCode.OCR_UNAVAILABLE -> R.string.error_ocr_unavailable
-        ErrorCode.OCR_FAILED -> R.string.error_ocr_failed
-        ErrorCode.RULES_FAILED -> R.string.error_rules_failed
-        ErrorCode.UNKNOWN -> R.string.error_unknown
-    }
     Column(modifier = Modifier.padding(16.dp)) {
         Text(
-            text = stringResource(msgRes),
+            text = stringResource(errorMessageRes(code)),
             color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodyMedium,
         )
         Row(modifier = Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (retryable) {
                 Button(onClick = onRetry) { Text(stringResource(R.string.action_retry)) }
-            }
-            TextButton(onClick = onGrantPermission) {
-                Text(stringResource(R.string.action_grant_permission))
+            } else {
+                // Non-retryable (packaging defect, e.g. missing rules): the only
+                // useful escape hatch is going back to pick a new image.
+                TextButton(onClick = onReset) { Text(stringResource(R.string.action_back)) }
             }
         }
     }
+}
+
+private fun errorMessageRes(code: ErrorCode): Int = when (code) {
+    ErrorCode.OCR_UNAVAILABLE -> R.string.error_ocr_unavailable
+    ErrorCode.OCR_FAILED -> R.string.error_ocr_failed
+    ErrorCode.RULES_FAILED -> R.string.error_rules_failed
+    ErrorCode.UNKNOWN -> R.string.error_unknown
 }
 
 private fun AnalysisState.Loading.Stage.toLoadingStage(): AnalysisStateLoadingStage = when (this) {

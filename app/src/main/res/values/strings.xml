@@ -30,6 +30,11 @@
     <string name="status_no_violation_card">未发现违规用语</string>
     <string name="status_violation_count">违规 %1$d 处</string>
     <string name="status_warning_count">警告 %1$d 处</string>
+    <string name="status_info_count">提示 %1$d 处</string>
+    <string name="status_no_text_banner">未检测到文字,无法判断</string>
+    <string name="status_no_text_card">未检测到文字,请上传包含广告文字的海报、招牌或截图</string>
+    <string name="status_error_banner">分析失败</string>
+    <string name="ocr_text_label">识别文字: %1$s</string>
 
     <string name="action_reshoot">重拍</string>
     <string name="action_export">导出取证包</string>
