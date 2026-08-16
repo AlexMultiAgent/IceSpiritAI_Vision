@@ -22,6 +22,8 @@
     <string name="hit_card_category">分类: %1$s</string>
     <string name="hit_card_regulation">依据: %1$s</string>
     <string name="hit_card_severity">严重等级: %1$s</string>
+    <string name="hit_card_show_law">查看法条原文</string>
+    <string name="hit_card_hide_law">收起法条原文</string>
     <string name="tab_ad_law">广告法</string>
     <string name="tab_food_label">食品标签</string>
     <string name="tab_disabled_toast">食品标签 OCR 即将上线</string>
@@ -61,4 +63,19 @@
 
     <string name="export_share_subject">冰灵锐目 取证包</string>
     <string name="export_share_chooser">分享取证包</string>
+
+    <!-- In-app update (Phase 1: minimum variant, release-signed) -->
+    <string name="update_section_title">更新</string>
+    <string name="update_check_button">检查更新</string>
+    <string name="update_checking">正在检查…</string>
+    <string name="update_up_to_date">已是最新 v%1$s</string>
+    <string name="update_available_banner">新版本 v%1$s 可用</string>
+    <string name="update_download_button">下载并安装</string>
+    <string name="update_downloading">下载中 %1$.1f / %2$.1f MB</string>
+    <string name="update_ready_to_install">下载完成,点击安装</string>
+    <string name="update_failed_no_network">无法连接服务器,请检查网络</string>
+    <string name="update_failed_server">服务器返回 HTTP %1$d</string>
+    <string name="update_failed_parse">更新信息格式错误</string>
+    <string name="update_failed_download">下载失败,请重试</string>
+    <string name="update_retry_button">重试</string>
 </resources>
