@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches the off-white backdrop of the mascot source art so the
+         adaptive icon background blends seamlessly with the foreground. -->
+    <color name="launcher_icon_bg">#FDFDFD</color>
+</resources>
