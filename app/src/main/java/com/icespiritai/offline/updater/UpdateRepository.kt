@@ -7,10 +7,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URL
@@ -103,9 +106,58 @@ object UpdateRepository {
     }
 
     // downloadApk / requestInstall land in Tasks 5 and 6.
-    fun downloadApk(@Suppress("UNUSED_PARAMETER") info: AppVersionInfo) {
-        error("downloadApk implemented in Task 5")
+
+    /**
+     * Pure file-IO download path (no Context). Production callers should use
+     * `downloadApk`; tests can drive this variant directly with a
+     * `Files.createTempDirectory`.
+     */
+    fun downloadApkTo(info: AppVersionInfo, updateDir: File): File = runBlocking {
+        withContext(Dispatchers.IO) {
+            updateDir.mkdirs()
+            val outFile = File(updateDir, "icespiritai-vision-update.apk")
+            val conn = openConnection(info.apkUrl).apply {
+                connectTimeout = 15_000
+                readTimeout = 60_000
+            }
+            try {
+                if (conn.responseCode !in 200..299) {
+                    throw IOException("http_${conn.responseCode}")
+                }
+                conn.inputStream.use { input ->
+                    FileOutputStream(outFile).use { output ->
+                        val buf = ByteArray(8192)
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n <= 0) break
+                            output.write(buf, 0, n)
+                        }
+                    }
+                }
+                outFile
+            } finally {
+                conn.disconnect()
+            }
+        }
     }
+
+    /** Coroutine entry: writes to `cacheDir/update/`, publishes progress to [state]. */
+    fun downloadApk(info: AppVersionInfo, appContext: android.content.Context) {
+        val updateDir = File(appContext.cacheDir, "update")
+        _state.value = UpdateState.Downloading(0L, info.apkSize)
+        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val file = downloadApkTo(info, updateDir)
+                _state.value = UpdateState.ReadyToInstall(file)
+            } catch (e: Throwable) {
+                Log.w(TAG, "downloadApk failed: ${e.javaClass.simpleName}")
+                _state.value = UpdateState.Failed(UpdateCheckResult.Failed.DownloadInterrupted(e))
+            }
+        }
+    }
+
+    private fun <T> runBlocking(block: suspend () -> T): T =
+        kotlinx.coroutines.runBlocking { block() }
 
     fun requestInstall(@Suppress("UNUSED_PARAMETER") context: android.content.Context, @Suppress("UNUSED_PARAMETER") file: File) {
         error("requestInstall implemented in Task 6")
