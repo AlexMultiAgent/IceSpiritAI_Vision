@@ -12,6 +12,21 @@
 // implicit context (the DSL imports `org.gradle.api.*` for some types
 // but not all).
 import org.gradle.api.GradleException
+// v9.5: `project.exec { ... }` was removed in Gradle 9.x. Use the
+// `ExecOperations` service, obtained inside `doLast { ... }` via
+// `project.the<ExecOperations>()` — the only Kotlin DSL helper that
+// resolves a service in the `tasks.register("name") { ... }` scope,
+// since the `Task` receiver doesn't expose `services` (only `DefaultTask`
+// does, and that's an internal API in Gradle 9).
+import org.gradle.process.ExecOperations
+import java.io.ByteArrayOutputStream
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.security.DigestInputStream
+import java.security.MessageDigest
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
+import java.util.zip.ZipFile
 
 plugins {
     alias(libs.plugins.android.application)
@@ -280,6 +295,421 @@ androidComponents {
         variant.sources.java?.addStaticSourceDirectory(
             project.projectDir.resolve(javaDir).absolutePath,
         )
+    }
+}
+
+// =============================================================================
+// v9.5: release pipeline for in-app updates. Mirrors translate's
+// generateLatestJson -> archiveLatestRelease -> uploadToGitea chain at
+// translate/app/build.gradle.kts:1039-1479, but for vision:
+//
+//   assembleRelease
+//     -> generateVisionLatestJson  (verifies cert + emits vision-latest.json)
+//     -> archiveVisionRelease       (copies APK to archive + stages for upload)
+//     -> uploadVisionReleaseToGitea (curl.exe idempotent upload to Gitea)
+//
+// All three are remote-side-effect-tasks (the upload one) or produce
+// files outside the source tree (archive + JSON staging), so they live
+// in the project repo root `发布版历史存档/` dir (gitignored — translate's
+// same convention). MUST STAY IN SYNC with translate's pipeline + with
+// the JVM-mirrored helpers in LatestJsonGenerator.kt + ApkSignatureVerifier.kt.
+//
+// Phase 1 differences from translate:
+//   - No CHANGELOG.md parsing (vision's CHANGELOG doesn't exist yet)
+//     → hardcode changelog = "" for now
+//   - No DownloadStats mirror → pass apkCumulativeDownloads = 0L
+//     (translate's pipeline queries Gitea dl_counts; vision Phase 2+
+//     can adopt this once a CHANGELOG/DownloadStats track is needed)
+// =============================================================================
+
+/**
+ * SHA-256 hex of a file. MUST STAY IN SYNC with LatestJsonGenerator.sha256Hex
+ * (build scripts cannot import app/src/main/java/ — see CLAUDE.md Gotchas).
+ */
+fun sha256HexForBuild(file: java.io.File): String {
+    val md = MessageDigest.getInstance("SHA-256")
+    FileInputStream(file).use { fis ->
+        DigestInputStream(fis, md).use { dis ->
+            val buf = ByteArray(64 * 1024)
+            while (dis.read(buf) >= 0) { /* drain */ }
+        }
+    }
+    return md.digest().joinToString("") { "%02x".format(it) }
+}
+
+/**
+ * Reads the v1 signing certificate from META-INF/CERT.{RSA,DSA,EC} and
+ * returns its SHA-256 fingerprint. MUST STAY IN SYNC with
+ * ApkSignatureVerifier.readFirstSignerCert (build scripts cannot import
+ * app/src/main/java/).
+ *
+ * Required because the in-app update verifier uses the v1 path
+ * (META-INF/CERT.RSA via JarFile); AGP defaults to v2-only when
+ * enableV1Signing is unset, so without `enableV1Signing = true` in
+ * signingConfigs.release, the verifier returns null and every legitimate
+ * in-app update is blocked.
+ *
+ * Returns null if no v1 cert is present (i.e. APK is v2/v3-only).
+ */
+fun extractApkCertificateSha256(apkFile: java.io.File): String? {
+    if (!apkFile.exists()) return null
+    val zip = try { ZipFile(apkFile) } catch (_: Exception) { return null }
+    zip.use { z ->
+        for (ext in listOf("RSA", "DSA", "EC")) {
+            val entry = z.entries().toList().firstOrNull { it.name == "META-INF/CERT.$ext" }
+                ?: continue
+            val certs = try {
+                val bytes = z.getInputStream(entry).use { it.readBytes() }
+                CertificateFactory.getInstance("X.509")
+                    .generateCertificates(bytes.inputStream())
+            } catch (_: Exception) {
+                continue
+            }
+            val first = certs.firstOrNull() as? X509Certificate ?: continue
+            val digest = MessageDigest.getInstance("SHA-256")
+            digest.update(first.encoded)
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
+    }
+    return null
+}
+
+// ----- generateVisionLatestJson -----
+//
+// Reads the versioned APK from outputs/apk/release/, verifies its
+// signing cert matches the pinned ReleaseSigningCert.DEFAULT_SHA256
+// (defense-in-depth against a debug-signed APK slipping through to the
+// in-app update channel), and emits vision-latest.json next to it.
+val giteaBaseUrl = "http://125.211.45.14:3000"
+val giteaRepo = "giteaadmin/vision-app"
+
+tasks.register("generateVisionLatestJson") {
+    group = "build"
+    description = "Verify the signed release APK cert + emit vision-latest.json next to it."
+    val apkDir = layout.buildDirectory.dir("outputs/apk/release")
+    inputs.dir(apkDir)
+    val outJson = apkDir.map { it.file("vision-latest.json") }
+    outputs.file(outJson)
+    doLast {
+        val dir = apkDir.get().asFile
+        // AGP 9.x default release output filename is `app-release.apk`. We
+        // keep that name (no in-place rename — AGP 9 removed
+        // `android.applicationVariants.all`); the versioned archive copy in
+        // `archiveVisionRelease` carries the `icespiritai-vision-vX.Y.Z.apk`
+        // convention for archaeology / rollback.
+        val apk = dir.listFiles { f -> f.name == "app-release.apk" }
+            ?.singleOrNull()
+            ?: error("generateVisionLatestJson: expected app-release.apk in $dir, found ${dir.listFiles()?.size ?: 0} files")
+        require(apk.exists()) {
+            "generateVisionLatestJson: expected ${apk.absolutePath} but it does not exist. Did assembleRelease run first?"
+        }
+
+        // Cert-pin defense-in-depth: refuse to emit JSON if the APK's
+        // signing cert doesn't match the pinned SHA-256. This is a
+        // SECOND gate after signingConfigs.release's fail-closed
+        // signing check — protects against a future signing-config
+        // regression or someone manually swapping in a debug-signed
+        // APK at this path.
+        val expectedReleaseCertSha256 = providers
+            .environmentVariable("ICESPIRITAI_RELEASE_CERT_SHA256")
+            .orElse(providers.gradleProperty("ICESPIRITAI_RELEASE_CERT_SHA256"))
+            .orElse(ReleaseSigningCert.DEFAULT_SHA256)
+            .get()
+            .lowercase()
+        require(expectedReleaseCertSha256.matches(Regex("[0-9a-f]{64}"))) {
+            "ICESPIRITAI_RELEASE_CERT_SHA256 must be 64 lowercase hex characters"
+        }
+        val apkCertSha256 = extractApkCertificateSha256(apk)
+            ?: throw GradleException(
+                "generateVisionLatestJson: no signing certificate in ${apk.name}; " +
+                    "the APK must be v1-signed (META-INF/CERT.RSA)."
+            )
+        if (apkCertSha256 != expectedReleaseCertSha256) {
+            throw GradleException(
+                "generateVisionLatestJson: APK signing certificate fingerprint mismatch. " +
+                    "expected=$expectedReleaseCertSha256 actual=$apkCertSha256. Upload aborted."
+            )
+        }
+
+        val vc = android.defaultConfig.versionCode
+        val vn = android.defaultConfig.versionName
+        val size = apk.length()
+        val sha = sha256HexForBuild(apk)
+        val url = "http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/icespiritai-vision-update.apk"
+        // Phase 1: no CHANGELOG.md → empty changelog. Phase 2+: read
+        // the first `## vX.Y.Z` block from CHANGELOG.md (translate's
+        // extractLatestChangelogForBuild pattern).
+        val cl = ""
+        // Phase 1: no DownloadStats mirror → 0L. Phase 2+: query Gitea
+        // dl_counts and snapshot + commit (translate's
+        // loadAndAccumulateDownloadStats pattern).
+        val apkCumulative = 0L
+
+        val payload = mapOf(
+            "versionCode" to vc,
+            "versionName" to vn,
+            "apkUrl" to url,
+            "apkSize" to size,
+            "apkSha256" to sha,
+            "changelog" to cl,
+            "apkCumulativeDownloads" to apkCumulative,
+        )
+        outJson.get().asFile.writeText(
+            groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(payload)) + "\n"
+        )
+        logger.lifecycle(
+            "generateVisionLatestJson: ${outJson.get().asFile.name} versionCode=$vc " +
+                "versionName=$vn apkSize=$size sha256=${sha.take(16)}… cumulativeApk=$apkCumulative"
+        )
+    }
+}
+
+// ----- archiveVisionRelease -----
+//
+// Copies the signed release APK to 发布版历史存档/ (versioned archive)
+// and stages a renamed copy (icespiritai-vision-update.apk) +
+// vision-latest.json into 发布版历史存档/最新版改名上传/ for the Gitea
+// upload. The versioned archive preserves every release's APK; the
+// upload staging dir holds only the latest release's renamed APK + JSON.
+val archiveDir = rootProject.file("发布版历史存档")
+val uploadStagingDir = rootProject.file("发布版历史存档/最新版改名上传")
+
+tasks.register("archiveVisionRelease") {
+    group = "build"
+    description = "Copy the signed release APK to 发布版历史存档/ + stage renamed APK + JSON into 最新版改名上传/."
+    val apkDir = layout.buildDirectory.dir("outputs/apk/release")
+    inputs.dir(apkDir)
+    val outJson = apkDir.map { it.file("vision-latest.json") }
+    inputs.file(outJson)
+    outputs.dir(archiveDir)
+    outputs.dir(uploadStagingDir)
+    dependsOn("generateVisionLatestJson")
+    doLast {
+        val dir = apkDir.get().asFile
+        val apk = dir.listFiles { f -> f.name == "app-release.apk" }
+            ?.singleOrNull()
+            ?: error("archiveVisionRelease: expected app-release.apk in $dir")
+        val json = dir.resolve("vision-latest.json")
+        require(json.exists()) {
+            "archiveVisionRelease: expected ${json.absolutePath} but it does not exist. Did generateVisionLatestJson run first?"
+        }
+
+        // 1. Versioned archive: APK only (preserves per-release history).
+        if (!archiveDir.exists()) archiveDir.mkdirs()
+        require(archiveDir.isDirectory) {
+            "archiveVisionRelease: ${archiveDir.absolutePath} exists but is not a directory"
+        }
+        // Archive filename uses the versioned convention
+        // (icespiritai-vision-vX.Y.Z.apk) so multiple releases can coexist in
+        // the archive dir without overwriting each other. We don't rename the
+        // source APK (AGP 9 removed applicationVariants.all); the renamed
+        // archive copy preserves archaeology + rollback.
+        val versionedName = "icespiritai-vision-v${android.defaultConfig.versionName}.apk"
+        val apkArchiveDest = archiveDir.resolve(versionedName)
+        // Byte-for-byte copy via buffered streams so the APK signature
+        // stays intact (Windows File.copy can mangle binary writes if
+        // not opened in binary mode).
+        FileInputStream(apk).use { ins ->
+            FileOutputStream(apkArchiveDest).use { out ->
+                ins.copyTo(out, bufferSize = 64 * 1024)
+            }
+        }
+
+        // 2. Upload staging: APK renamed to icespiritai-vision-update.apk + JSON.
+        if (!uploadStagingDir.exists()) uploadStagingDir.mkdirs()
+        require(uploadStagingDir.isDirectory) {
+            "archiveVisionRelease: ${uploadStagingDir.absolutePath} exists but is not a directory"
+        }
+        val apkUploadDest = uploadStagingDir.resolve("icespiritai-vision-update.apk")
+        FileInputStream(apk).use { ins ->
+            FileOutputStream(apkUploadDest).use { out ->
+                ins.copyTo(out, bufferSize = 64 * 1024)
+            }
+        }
+        val jsonUploadDest = uploadStagingDir.resolve(json.name)
+        json.copyTo(jsonUploadDest, overwrite = true)
+
+        logger.lifecycle(
+            "archiveVisionRelease: copied ${apk.name} -> ${apkArchiveDest.absolutePath} " +
+                "(apkSize=${apk.length()}); staged icespiritai-vision-update.apk -> ${apkUploadDest.absolutePath}, " +
+                "vision-latest.json -> ${jsonUploadDest.absolutePath}"
+        )
+    }
+}
+
+// ----- uploadVisionReleaseToGitea -----
+//
+// Idempotent upload of APK + JSON to giteaadmin/vision-app tag `latest`.
+// Same algorithm as translate's uploadToGitea (translate/app/build.gradle.kts
+// :1330-1479):
+//   1. GET tag/latest (200 = found, 404 = create)
+//   2. DELETE any existing assets matching our two filenames
+//   3. POST APK + JSON as multipart attachments
+//
+// Required: gradle.token.properties must contain GITEA_TOKEN=<pat>.
+// Fails fast with a clear error if missing/blank.
+//
+// outputs.upToDateWhen { false } — Gradle would otherwise mark this task
+// up-to-date after the first successful run and silently skip re-uploads
+// (a remote side-effect task needs explicit "never skip").
+tasks.register("uploadVisionReleaseToGitea") {
+    group = "build"
+    description = "Push APK + vision-latest.json to giteaadmin/vision-app 'latest' release."
+    val giteaTokenFile = rootProject.file("gradle.token.properties")
+    inputs.dir(uploadStagingDir)
+    // NOTE: do NOT declare inputs.file(giteaTokenFile) — Gradle
+    // validates declared input files exist before running the task,
+    // and the resulting "input file does not exist" error is opaque.
+    // We do the existence + content check inside doLast with a clear
+    // error message pointing to the .example template.
+    outputs.upToDateWhen { false }
+
+    doLast {
+        // Gradle 9.x removed `project.exec`; use the `ExecOperations`
+        // service. Inside `tasks.register("name") { doLast { ... } }` the
+        // closure receiver is `Task` (not `DefaultTask`), so the `services`
+        // shortcut on the receiver and `Project.getServices()` are both
+        // invisible. `project.the<T>()` is the Kotlin DSL helper that
+        // resolves a service from the current build scope via the build's
+        // own ServiceRegistry — exactly the public API Gradle 9 ships for
+        // this case. Local helpers (`curl`, `splitStatus`) below capture
+        // `execOps` from this enclosing doLast scope.
+        val execOps = project.the<ExecOperations>()
+
+        val tag = "latest"
+
+        if (!giteaTokenFile.exists()) {
+            throw GradleException(
+                "uploadVisionReleaseToGitea: gradle.token.properties not found at ${giteaTokenFile.absolutePath}. " +
+                "Copy gradle.token.properties.example -> gradle.token.properties and fill in your Gitea PAT."
+            )
+        }
+        val token = giteaTokenFile.readLines()
+            .mapNotNull { line ->
+                val stripped = line.substringBefore("#").trim()
+                if (stripped.startsWith("GITEA_TOKEN=")) stripped.removePrefix("GITEA_TOKEN=") else null
+            }
+            .singleOrNull()
+        require(!token.isNullOrBlank()) {
+            "uploadVisionReleaseToGitea: GITEA_TOKEN missing in gradle.token.properties. " +
+            "Set GITEA_TOKEN=<your-pat> in that file."
+        }
+
+        val api = "$giteaBaseUrl/api/v1/repos/$giteaRepo/releases"
+        val authHeader = "Authorization: token $token"
+
+        // Single curl wrapper. `-w "\n%{http_code}"` appends the status
+        // code as the last line so we can branch on it without separate
+        // exec calls. isIgnoreExitValue lets 4xx/5xx not fail the exec;
+        // we surface those via the parsed status code instead.
+        // --http1.1: force HTTP/1.1 (HTTP/2 large-multipart uploads to
+        // Gitea 1.22.3 hit a mid-stream reset on this Windows host).
+        // --expect100-timeout 60: wait up to 60s for the server's 100
+        // Continue before sending the multipart body.
+        fun curl(extraArgs: List<String>): String {
+            val stdout = ByteArrayOutputStream()
+            execOps.exec {
+                commandLine("curl.exe", "-sS", "-w", "\n%{http_code}",
+                    "--http1.1", "--expect100-timeout", "60",
+                    "--connect-timeout", "30", "--max-time", "600",
+                    "-H", authHeader, *extraArgs.toTypedArray())
+                standardOutput = stdout
+                isIgnoreExitValue = true
+            }
+            return stdout.toString(Charsets.UTF_8)
+        }
+
+        fun splitStatus(raw: String): Pair<String, String> {
+            val lastNl = raw.lastIndexOf('\n')
+            return if (lastNl < 0) raw to "" else raw.substring(0, lastNl) to raw.substring(lastNl + 1)
+        }
+
+        // 1. Lookup existing release by tag.
+        val (lookupBody, lookupCode) = splitStatus(curl(listOf("$api/tags/$tag")))
+        val releaseId = when (lookupCode) {
+            "200" -> {
+                Regex("\"id\"\\s*:\\s*(\\d+)").find(lookupBody)?.groupValues?.get(1)
+                    ?: throw GradleException("uploadVisionReleaseToGitea: GET tag/$tag body has no id: $lookupBody")
+            }
+            "404" -> {
+                logger.lifecycle("uploadVisionReleaseToGitea: tag $tag not found, creating new release...")
+                val postBody = "{" +
+                    "\"tag_name\":\"$tag\"," +
+                    "\"name\":\"$tag\"," +
+                    "\"draft\":false," +
+                    "\"prerelease\":false" +
+                    "}"
+                val (createBody, createCode) = splitStatus(curl(listOf(
+                    "-X", "POST", "-H", "Content-Type: application/json",
+                    "-d", postBody, api)))
+                require(createCode == "201") {
+                    "uploadVisionReleaseToGitea: POST release returned HTTP $createCode: $createBody"
+                }
+                Regex("\"id\"\\s*:\\s*(\\d+)").find(createBody)?.groupValues?.get(1)
+                    ?: throw GradleException("uploadVisionReleaseToGitea: POST release body has no id: $createBody")
+            }
+            else -> throw GradleException("uploadVisionReleaseToGitea: GET tag/$tag returned HTTP $lookupCode: $lookupBody")
+        }
+
+        // 2. Idempotent replace: delete existing assets with matching names.
+        val (assetsBody, assetsCode) = splitStatus(curl(listOf("$api/$releaseId/assets")))
+        require(assetsCode == "200") {
+            "uploadVisionReleaseToGitea: GET release assets returned HTTP $assetsCode: $assetsBody"
+        }
+        val targetNames = setOf("icespiritai-vision-update.apk", "vision-latest.json")
+        val idPattern = Regex(""""id"\s*:\s*(\d+)""")
+        val namePattern = Regex(""""name"\s*:\s*"([^"]+)"""")
+        Regex("""\{[^{}]*\}""").findAll(assetsBody).forEach { objMatch ->
+            val obj = objMatch.value
+            val idM = idPattern.find(obj)
+            val nameM = namePattern.find(obj)
+            if (idM != null && nameM != null) {
+                val assetId = idM.groupValues[1]
+                val assetName = nameM.groupValues[1]
+                if (assetName in targetNames) {
+                    logger.lifecycle("uploadVisionReleaseToGitea: deleting existing asset $assetName (id=$assetId)")
+                    val (delBody, delCode) = splitStatus(curl(listOf(
+                        "-X", "DELETE", "$api/$releaseId/assets/$assetId")))
+                    require(delCode == "204") {
+                        "uploadVisionReleaseToGitea: DELETE asset $assetName returned HTTP $delCode: $delBody"
+                    }
+                }
+            }
+        }
+
+        // 3. Upload two new assets.
+        val stagedApk = uploadStagingDir.resolve("icespiritai-vision-update.apk")
+        val stagedJson = uploadStagingDir.resolve("vision-latest.json")
+        require(stagedApk.exists()) {
+            "uploadVisionReleaseToGitea: missing staged APK ${stagedApk.absolutePath}. Run archiveVisionRelease first."
+        }
+        require(stagedJson.exists()) {
+            "uploadVisionReleaseToGitea: missing staged JSON ${stagedJson.absolutePath}. Run generateVisionLatestJson first."
+        }
+        listOf(stagedApk, stagedJson).forEach { f ->
+            val (upBody, upCode) = splitStatus(curl(listOf(
+                "-X", "POST", "-F", "attachment=@${f.absolutePath}",
+                "$api/$releaseId/assets")))
+            require(upCode == "201") {
+                "uploadVisionReleaseToGitea: upload ${f.name} returned HTTP $upCode: $upBody"
+            }
+            logger.lifecycle("uploadVisionReleaseToGitea: uploaded ${f.name} (${f.length()} bytes)")
+        }
+        logger.lifecycle("uploadVisionReleaseToGitea: pushed 2 assets to tag $tag (release id=$releaseId)")
+    }
+}
+
+afterEvaluate {
+    tasks.named("assembleRelease").configure {
+        finalizedBy("generateVisionLatestJson")
+        finalizedBy("archiveVisionRelease")
+    }
+    // Chain uploadVisionReleaseToGitea after archiveVisionRelease so a
+    // single ./gradlew assembleRelease produces APK + JSON + pushes to
+    // Gitea. uploadVisionReleaseToGitea has outputs.upToDateWhen { false }
+    // so it always re-runs even when its inputs haven't changed.
+    tasks.named("archiveVisionRelease").configure {
+        finalizedBy("uploadVisionReleaseToGitea")
     }
 }
 
