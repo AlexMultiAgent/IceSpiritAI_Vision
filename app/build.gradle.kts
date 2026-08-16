@@ -36,6 +36,9 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("String", "MODEL_PROFILE", "\"$modelProfile\"")
+
+        buildConfigField("String", "UPDATE_JSON_URL",
+            "\"http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/vision-latest.json\"")
     }
 
     buildTypes {
