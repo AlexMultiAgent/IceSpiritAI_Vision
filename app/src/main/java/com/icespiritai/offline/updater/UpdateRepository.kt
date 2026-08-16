@@ -1,5 +1,6 @@
 package com.icespiritai.offline.updater
 
+import android.content.Intent
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -172,7 +173,23 @@ object UpdateRepository {
         }
     }
 
-    fun requestInstall(@Suppress("UNUSED_PARAMETER") context: android.content.Context, @Suppress("UNUSED_PARAMETER") file: File) {
-        error("requestInstall implemented in Task 6")
+    /**
+     * Build an `ACTION_VIEW` intent for the given APK file, mediated by
+     * FileProvider. The caller is responsible for `startActivity(intent)` —
+     * keeping that call out of the Repository makes it Robolectric-testable.
+     */
+    fun buildInstallIntent(context: android.content.Context, file: File): Intent {
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context, context.packageName + ".fileprovider", file,
+        )
+        return Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    }
+
+    /** Convenience: build + startActivity. */
+    fun requestInstall(context: android.content.Context, file: File) {
+        context.startActivity(buildInstallIntent(context, file))
     }
 }
