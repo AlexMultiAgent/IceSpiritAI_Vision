@@ -1,11 +1,12 @@
 package com.icespiritai.offline.updater
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
+@OptIn(ExperimentalSerializationApi::class)
 class AppVersionInfoSerializationTest {
 
     private val parser = Json { ignoreUnknownKeys = true }
@@ -45,14 +46,10 @@ class AppVersionInfoSerializationTest {
     }
 
     @Test
-    fun requiredFieldsMissing_throwsSerializationException() {
+    fun requiredFieldsMissing_throwsMissingFieldException() {
         val text = """{"versionCode": 1}"""
-        var threw = false
-        try {
+        assertThrows(kotlinx.serialization.MissingFieldException::class.java) {
             parser.decodeFromString(AppVersionInfo.serializer(), text)
-        } catch (e: kotlinx.serialization.MissingFieldException) {
-            threw = true
         }
-        assertTrue("MissingFieldException expected for required-field absence", threw)
     }
 }
