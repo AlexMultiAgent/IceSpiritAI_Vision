@@ -7,6 +7,12 @@
 
 plugins {
     `kotlin-dsl`
+    // LatestJsonGeneratorTest (Task 2) pins the JSON shape via a local
+    // @Serializable mirror of AppVersionInfo. The annotation needs the
+    // kotlin-serialization compiler plugin + kotlinx-serialization-json
+    // runtime. Kept testImplementation only — production build scripts
+    // that consume LatestJsonGenerator do not touch the serialization API.
+    kotlin("plugin.serialization") version "2.4.10"
 }
 
 repositories {
@@ -17,6 +23,7 @@ repositories {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
 }
 
 kotlin {
