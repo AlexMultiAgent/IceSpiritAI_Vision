@@ -89,7 +89,10 @@ logcat_output.txt
 # Release APK local archive.
 发布版历史存档/
 
-# Token file (placeholder — fill in when real tokens are introduced).
+# uploadVisionReleaseToGitea Gradle task reads this for the Gitea PAT.
+# Tracked: gradle.token.properties.example (template).
+# Untracked: gradle.token.properties (contains the real PAT).
+# gradle.properties remains tracked (shared JVM args + Kotlin config).
 gradle.token.properties
 
 # PaddleOCR SDK build artifacts (regenerable via tools/build-ppocr-sdk.sh)

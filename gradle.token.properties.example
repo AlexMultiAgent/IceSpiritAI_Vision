@@ -1,0 +1,41 @@
+# Gitea personal access token for the `uploadVisionReleaseToGitea` Gradle task.
+#
+# This file is a TEMPLATE — the real config lives in `gradle.token.properties`
+# which is gitignored. To enable the upload task:
+#
+#   1. Copy this file -> gradle.token.properties
+#      (Windows:    copy gradle.token.properties.example gradle.token.properties
+#       bash/POSIX: cp gradle.token.properties.example gradle.token.properties)
+#
+#   2. Mint a Gitea PAT at http://125.211.45.14:3000/user/settings/applications
+#      with `write:repository` scope (enough to create releases + upload
+#      assets on the giteaadmin/vision-app repo).
+#
+#   3. Paste the token below, replacing `<your-token-here>`.
+#
+#   4. Run `./gradlew uploadVisionReleaseToGitea` after a successful
+#      `assembleRelease` (or just `./gradlew assembleRelease` which
+#      chains the upload via finalizedBy).
+#      The task is idempotent: re-running does NOT create duplicate
+#      releases or duplicate assets — it deletes assets with matching
+#      filenames first, then uploads fresh.
+#
+# SECURITY:
+#  - gradle.token.properties is gitignored. Do not commit it.
+#  - The PAT grants write access to giteaadmin/vision-app. Scope to
+#    that one repo when minting (Settings -> Applications -> Generate Token).
+#  - Revoke at http://125.211.45.14:3000/user/settings/applications if
+#    the token leaks (e.g. accidental paste in chat, accidental commit
+#    before the gitignore catches it).
+#
+# Example values: do NOT put a real (or real-looking) PAT here. The
+# `git push` hook and CI logs would surface it. Replace `<your-token-here>`
+# in the untracked `gradle.token.properties` copy, never in this template.
+#
+# Gitea PATs are 40-char lowercase hex. ANY hex token pasted into this
+# template (even commented out, even as a placeholder) will be flagged
+# by the upload task as a probable leak — keep only `<your-token-here>`.
+# If you need to document a PAT shape for a changelog or commit message,
+# redact it (e.g. write "7e0...b56" with the middle elided) — never
+# paste a real-looking hex string into any tracked file.
+GITEA_TOKEN=<your-token-here>
