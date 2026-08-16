@@ -165,6 +165,10 @@ object UpdateRepository {
                 }
                 _state.value = UpdateState.ReadyToInstall(file)
             } catch (e: kotlinx.coroutines.CancellationException) {
+                // CancellationException is a subclass of Exception; re-throw before the broader
+                // catch so structured-concurrency cancellation propagates instead of surfacing
+                // as a "download failed" UI banner. Dormant today because GlobalScope.launch
+                // has no external cancellation source, but defensive against future callers.
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "downloadApk failed: ${e.javaClass.simpleName}")

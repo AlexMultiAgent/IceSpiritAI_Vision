@@ -5,6 +5,8 @@ import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assume
+import org.junit.BeforeClass
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -14,6 +16,17 @@ import java.io.File
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
 class UpdateRepositoryInstallTest {
+
+    companion object {
+        @JvmStatic
+        @BeforeClass
+        fun assumeNotWindows() {
+            Assume.assumeTrue(
+                "Skipped on Windows: AndroidX FileProvider path-separator bug — see issuetracker.google.com/issues/79845",
+                !System.getProperty("os.name").lowercase().startsWith("windows")
+            )
+        }
+    }
 
     @Test
     fun requestInstall_buildsActionViewIntent_withFileProviderUri() {
