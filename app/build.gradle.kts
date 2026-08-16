@@ -6,6 +6,13 @@
 // model-loading code in IceSpiritVisionActivity.kt via build-time
 // constants (BuildConfig.MODEL_PROFILE).
 
+// v9.5 release signing uses GradleException for fail-closed behavior on
+// missing ICESPIRITAI_RELEASE_* credentials. Imported explicitly because
+// Gradle's Kotlin DSL doesn't always resolve `GradleException` from the
+// implicit context (the DSL imports `org.gradle.api.*` for some types
+// but not all).
+import org.gradle.api.GradleException
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -16,6 +23,19 @@ val modelProfile = providers.gradleProperty("modelProfile")
     .getOrElse("shell")
 
 apply(from = "prepare-ocr-rules.gradle.kts")
+
+// v9.5: expected release APK signing certificate SHA-256. Mirrors
+// translate's same-name constant. Gradle Kotlin DSL scripts reject
+// top-level `const val` ("Const 'val' are only allowed on top level,
+// in named objects, or in companion objects"), so we wrap the default
+// cert SHA-256 in a named object. The reference value
+// `4a21f417782d561dccd31ff0a10e4d643d13d00a8a2be77b4e9eeee0660b3043`
+// (alias `icespiritai`, locked since 2026-06-25 per translate) is
+// overridable per-build via `ICESPIRITAI_RELEASE_CERT_SHA256` env var
+// or Gradle property — Task 15's generateVisionLatestJson reads it.
+object ReleaseSigningCert {
+    const val DEFAULT_SHA256 = "4a21f417782d561dccd31ff0a10e4d643d13d00a8a2be77b4e9eeee0660b3043"
+}
 
 android {
     namespace = "com.icespiritai.offline"
@@ -41,6 +61,98 @@ android {
             "\"http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/vision-latest.json\"")
     }
 
+    signingConfigs {
+        // ICESPIRITAI_RELEASE_* are read with env var first (not logged by
+        // Gradle, ideal for CI secrets) and gradle property as fallback
+        // (-P flag or ~/.gradle/gradle.properties for local dev).
+        // See tools/create-release-keystore.ps1 for one-time setup.
+        create("release") {
+            val storeFileProp = providers.environmentVariable("ICESPIRITAI_RELEASE_STORE_FILE")
+                .orElse(providers.gradleProperty("ICESPIRITAI_RELEASE_STORE_FILE"))
+            val storePasswordProp = providers.environmentVariable("ICESPIRITAI_RELEASE_STORE_PASSWORD")
+                .orElse(providers.gradleProperty("ICESPIRITAI_RELEASE_STORE_PASSWORD"))
+            val keyAliasProp = providers.environmentVariable("ICESPIRITAI_RELEASE_KEY_ALIAS")
+                .orElse(providers.gradleProperty("ICESPIRITAI_RELEASE_KEY_ALIAS"))
+            val keyPasswordProp = providers.environmentVariable("ICESPIRITAI_RELEASE_KEY_PASSWORD")
+                .orElse(providers.gradleProperty("ICESPIRITAI_RELEASE_KEY_PASSWORD"))
+
+            // v9.5 fail-closed release signing. Pre-v9.5 this block only
+            // configured itself when the store file happened to be present,
+            // and `buildTypes.release` silently fell back to the DEBUG signing
+            // key otherwise — a debug-signed APK could therefore flow through
+            // generateVisionLatestJson -> archiveVisionRelease ->
+            // uploadVisionReleaseToGitea and land on the in-app update channel.
+            // Now the release build type binds to this config unconditionally,
+            // so an incomplete credential set must fail the build, never
+            // downgrade the signer.
+            //
+            // ALL FOUR inputs are required: a store file without its password
+            // (or without the key alias) produced a half-configured signing
+            // config that failed much later with an opaque AGP error.
+            //
+            // Provider.isPresent is true even for empty-string Gradle properties
+            // (`-PICESPIRITAI_RELEASE_STORE_FILE=`); also reject blank values so
+            // the throw below fires with the helpful "missing X" message instead
+            // of the opaque `file("")` IllegalArgumentException from the
+            // storeFile = file(storeFileProp.get()) line further down.
+            val missingSigningInputs = listOf(
+                "ICESPIRITAI_RELEASE_STORE_FILE" to storeFileProp,
+                "ICESPIRITAI_RELEASE_STORE_PASSWORD" to storePasswordProp,
+                "ICESPIRITAI_RELEASE_KEY_ALIAS" to keyAliasProp,
+                "ICESPIRITAI_RELEASE_KEY_PASSWORD" to keyPasswordProp,
+            ).filter { (_, value) -> value.orNull.isNullOrBlank() }.map { (name, _) -> name }
+
+            if (missingSigningInputs.isNotEmpty()) {
+                // `signingConfigs` is configured EAGERLY on every Gradle
+                // invocation of :app, so an unconditional throw would brick
+                // assembleDebug / testDebugUnitTest / lintDebug / IDE sync for
+                // every contributor who does not hold the production keystore.
+                // Scope the hard failure to invocations that actually ask for
+                // release artifacts.
+                val wantsReleaseArtifacts = gradle.startParameter.taskNames.any { taskName ->
+                    taskName.contains("release", ignoreCase = true) ||
+                        taskName.contains("uploadVisionReleaseToGitea", ignoreCase = true) ||
+                        taskName.contains("generateVisionLatestJson", ignoreCase = true) ||
+                        taskName.contains("archiveVisionRelease", ignoreCase = true)
+                }
+                if (wantsReleaseArtifacts) {
+                    // Names ONLY. Gradle prints exception messages verbatim to
+                    // the console and to any CI log; the values here are the
+                    // keystore path, the store password and the key password.
+                    throw GradleException(
+                        "Release signing is not configured: missing " +
+                            missingSigningInputs.joinToString(", ") +
+                            ". Set every ICESPIRITAI_RELEASE_* value as an environment variable " +
+                            "or a Gradle property before running a release task " +
+                            "(one-time setup: tools/create-release-keystore.ps1). " +
+                            "assembleRelease no longer falls back to the debug signing key.",
+                    )
+                }
+                // Non-release invocation: leave the config unpopulated. Any
+                // release packaging that slips past the heuristic above still
+                // fails closed — AGP's ValidateSigningTask aborts on the
+                // missing store file instead of emitting a debug-signed APK.
+                return@create
+            }
+
+            storeFile = file(storeFileProp.get())
+            storePassword = storePasswordProp.get()
+            keyAlias = keyAliasProp.get()
+            keyPassword = keyPasswordProp.get()
+            // Re-enable v1 alongside v2+v3 (translate's same rationale).
+            // minSdk=26 (Android 8) verifies v2/v3 first, so v1 acts as a
+            // fallback path for legacy verifiers and tooling. AGP defaults
+            // to v2-only when these are not explicitly set; without
+            // enableV3Signing=true a direct ./gradlew assembleRelease
+            // produces a v2-only APK and ApkSignatureVerifier (the v1-only
+            // META-INF/CERT.RSA reader used by the in-app update channel)
+            // returns null, blocking every legitimate in-app update.
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -48,6 +160,16 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // v9.5 fail-closed: bind unconditionally to the release signing
+            // config. The previous shape (an `if (hasReleaseStoreFile) release
+            // else signingConfigs.debug` fallback) existed so `assembleRelease`
+            // stayed runnable in CI without secrets — but it meant a
+            // DEBUG-signed APK could reach generateVisionLatestJson ->
+            // archiveVisionRelease -> uploadVisionReleaseToGitea and be
+            // served as an in-app update. `signingConfigs.release` now
+            // raises a GradleException when its inputs are missing, so a
+            // missing keystore fails the build instead of downgrading the key.
+            signingConfig = signingConfigs.getByName("release")
         }
         debug {
             isMinifyEnabled = false
