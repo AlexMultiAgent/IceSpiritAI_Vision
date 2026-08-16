@@ -8,6 +8,7 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.icespiritai.offline.BuildConfig
 import com.icespiritai.offline.settings.SettingsRepository
 import com.icespiritai.offline.ui.nav.IceSpiritNavHost
 import com.icespiritai.offline.ui.theme.IceSpiritVisionTheme
@@ -38,6 +39,17 @@ class IceSpiritVisionActivity : ComponentActivity() {
             IceSpiritVisionTheme(themeMode = themeMode) {
                 IceSpiritNavHost()
             }
+        }
+
+        // In-app update: silent startup check. Runs on lifecycleScope so
+        // process death cancels it cleanly. The check is fire-and-forget —
+        // any state mutation lands in `UpdateRepository.state` and is
+        // observed by `SettingsViewModel.updateState`.
+        lifecycleScope.launch {
+            com.icespiritai.offline.updater.UpdateRepository.checkForUpdatesAsync(
+                jsonUrl = BuildConfig.UPDATE_JSON_URL,
+                currentVersionCode = BuildConfig.VERSION_CODE,
+            )
         }
     }
 }
