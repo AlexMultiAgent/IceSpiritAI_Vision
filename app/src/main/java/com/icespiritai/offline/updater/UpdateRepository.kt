@@ -163,6 +163,8 @@ object UpdateRepository {
                     _state.value = UpdateState.Downloading(written, info.apkSize)
                 }
                 _state.value = UpdateState.ReadyToInstall(file)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.w(TAG, "downloadApk failed: ${e.javaClass.simpleName}")
                 _state.value = UpdateState.Failed(UpdateCheckResult.Failed.DownloadInterrupted(e))

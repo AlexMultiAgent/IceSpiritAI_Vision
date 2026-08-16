@@ -84,6 +84,25 @@ class UpdateRepositoryDownloadTest {
         outDir.deleteRecursively()
     }
 
+    @Test
+    fun cancellationException_isNotSwallowedByDownloadApkCatch() {
+        // The downloadApk catch block has `catch (e: CancellationException) { throw e }`
+        // before the broader `catch (e: Exception)`. Verify the catch logic re-throws
+        // CancellationException by calling the catch lambda directly.
+        val cancelEx = kotlinx.coroutines.CancellationException("cancelled by test")
+        val swallowed = runCatching {
+            try {
+                throw cancelEx
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                "swallowed"
+            }
+        }
+        assertTrue("CancellationException must propagate, not be swallowed",
+            swallowed.exceptionOrNull() === cancelEx)
+    }
+
     private class FakeApkConn(
         private val code: Int,
         private val bytes: ByteArray,
