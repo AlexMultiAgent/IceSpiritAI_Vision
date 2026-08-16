@@ -35,7 +35,7 @@ class UpdateRepositoryDownloadTest {
     }
 
     @Test
-    fun downloadsBytes_andReportsProgress_atLeastOnce() = runTest {
+    fun downloadsBytes_writesAllBytesToDisk() = runTest {
         val bytes = ByteArray(1024) { (it % 256).toByte() }
         factory = { FakeApkConn(200, bytes, contentLength = 1024L) }
 
@@ -45,6 +45,28 @@ class UpdateRepositoryDownloadTest {
         assertEquals("icespiritai-vision-update.apk", outFile.name)
         assertEquals(1024L, outFile.length())
         assertTrue(bytes.toList() == outFile.readBytes().toList())
+        outDir.deleteRecursively()
+    }
+
+    @Test
+    fun downloadsBytes_invokesProgressCallbackAtLeastOnce() = runTest {
+        // 4096 bytes over an 8 KiB buffer = a single chunk; the assertion is
+        // deliberately "at least once" so a smaller buffer stays valid.
+        val bytes = ByteArray(4096) { (it % 256).toByte() }
+        factory = { FakeApkConn(200, bytes, contentLength = 4096L) }
+
+        val outDir = Files.createTempDirectory("icespirit-dl-progress").toFile()
+        val reports = mutableListOf<Long>()
+        UpdateRepository.downloadApkTo(info, outDir) { written ->
+            reports.add(written)
+        }
+
+        assertTrue("progress callback must be invoked at least once", reports.isNotEmpty())
+        assertEquals(4096L, reports.last()) // final report = full byte count
+        assertTrue(
+            "progress reports must be monotonically increasing",
+            reports == reports.sorted(),
+        )
         outDir.deleteRecursively()
     }
 

@@ -7,7 +7,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -105,39 +104,52 @@ object UpdateRepository {
         }
     }
 
-    // downloadApk / requestInstall land in Tasks 5 and 6.
+    // requestInstall lands in Task 6.
 
     /**
      * Pure file-IO download path (no Context). Production callers should use
-     * `downloadApk`; tests can drive this variant directly with a
+     * [downloadApk]; tests can drive this variant directly with a
      * `Files.createTempDirectory`.
+     *
+     * The caller owns the dispatcher — this is a plain suspend block, so it
+     * must be invoked from an IO-capable context ([downloadApk] uses
+     * `Dispatchers.IO`). Network read timeout is 5 minutes, tuned for a
+     * ~20 MB APK over a slow LAN link to the Gitea release host.
+     *
+     * [onProgress] receives the cumulative bytes written to disk after each
+     * chunk; the caller publishes it to [state].
      */
-    fun downloadApkTo(info: AppVersionInfo, updateDir: File): File = runBlocking {
-        withContext(Dispatchers.IO) {
-            updateDir.mkdirs()
-            val outFile = File(updateDir, "icespiritai-vision-update.apk")
-            val conn = openConnection(info.apkUrl).apply {
-                connectTimeout = 15_000
-                readTimeout = 60_000
+    suspend fun downloadApkTo(
+        info: AppVersionInfo,
+        updateDir: File,
+        onProgress: (Long) -> Unit = {},
+    ): File {
+        updateDir.mkdirs()
+        val outFile = File(updateDir, "icespiritai-vision-update.apk")
+        val conn = openConnection(info.apkUrl).apply {
+            connectTimeout = 15_000
+            readTimeout = 300_000
+        }
+        try {
+            if (conn.responseCode !in 200..299) {
+                throw IOException("http_${conn.responseCode}")
             }
-            try {
-                if (conn.responseCode !in 200..299) {
-                    throw IOException("http_${conn.responseCode}")
-                }
-                conn.inputStream.use { input ->
-                    FileOutputStream(outFile).use { output ->
-                        val buf = ByteArray(8192)
-                        while (true) {
-                            val n = input.read(buf)
-                            if (n <= 0) break
-                            output.write(buf, 0, n)
-                        }
+            var written = 0L
+            conn.inputStream.use { input ->
+                FileOutputStream(outFile).use { output ->
+                    val buf = ByteArray(8192)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n <= 0) break
+                        output.write(buf, 0, n)
+                        written += n
+                        onProgress(written)
                     }
                 }
-                outFile
-            } finally {
-                conn.disconnect()
             }
+            return outFile
+        } finally {
+            conn.disconnect()
         }
     }
 
@@ -145,19 +157,18 @@ object UpdateRepository {
     fun downloadApk(info: AppVersionInfo, appContext: android.content.Context) {
         val updateDir = File(appContext.cacheDir, "update")
         _state.value = UpdateState.Downloading(0L, info.apkSize)
-        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        GlobalScope.launch(Dispatchers.IO) {
             try {
-                val file = downloadApkTo(info, updateDir)
+                val file = downloadApkTo(info, updateDir) { written ->
+                    _state.value = UpdateState.Downloading(written, info.apkSize)
+                }
                 _state.value = UpdateState.ReadyToInstall(file)
-            } catch (e: Throwable) {
+            } catch (e: Exception) {
                 Log.w(TAG, "downloadApk failed: ${e.javaClass.simpleName}")
                 _state.value = UpdateState.Failed(UpdateCheckResult.Failed.DownloadInterrupted(e))
             }
         }
     }
-
-    private fun <T> runBlocking(block: suspend () -> T): T =
-        kotlinx.coroutines.runBlocking { block() }
 
     fun requestInstall(@Suppress("UNUSED_PARAMETER") context: android.content.Context, @Suppress("UNUSED_PARAMETER") file: File) {
         error("requestInstall implemented in Task 6")
