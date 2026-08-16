@@ -57,6 +57,8 @@ fun SettingsScreen(
         modifier = modifier,
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            UpdateSection(viewModel = viewModel)
+            HorizontalDivider()
             AppearanceSection(
                 current = themeMode,
                 onSelect = viewModel::setThemeMode,
