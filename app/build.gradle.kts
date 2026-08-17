@@ -18,7 +18,6 @@ import org.gradle.api.GradleException
 // resolves a service in the `tasks.register("name") { ... }` scope,
 // since the `Task` receiver doesn't expose `services` (only `DefaultTask`
 // does, and that's an internal API in Gradle 9).
-import org.gradle.process.ExecOperations
 import java.io.ByteArrayOutputStream
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -565,16 +564,12 @@ tasks.register("uploadVisionReleaseToGitea") {
     outputs.upToDateWhen { false }
 
     doLast {
-        // Gradle 9.x removed `project.exec`; use the `ExecOperations`
-        // service. Inside `tasks.register("name") { doLast { ... } }` the
-        // closure receiver is `Task` (not `DefaultTask`), so the `services`
-        // shortcut on the receiver and `Project.getServices()` are both
-        // invisible. `project.the<T>()` is the Kotlin DSL helper that
-        // resolves a service from the current build scope via the build's
-        // own ServiceRegistry — exactly the public API Gradle 9 ships for
-        // this case. Local helpers (`curl`, `splitStatus`) below capture
-        // `execOps` from this enclosing doLast scope.
-        val execOps = project.the<ExecOperations>()
+        // Gradle 9.x removed `project.exec` AND `ExecOperations` is not
+        // reachable via `project.the<T>()` (not a registered extension
+        // type). ProcessBuilder is a pure JVM API that bypasses Gradle's
+        // exec infrastructure entirely and gives us full control over
+        // stdout capture + exit code handling. Same curl flags as
+        // translate's pattern.
 
         val tag = "latest"
 
@@ -607,16 +602,21 @@ tasks.register("uploadVisionReleaseToGitea") {
         // --expect100-timeout 60: wait up to 60s for the server's 100
         // Continue before sending the multipart body.
         fun curl(extraArgs: List<String>): String {
-            val stdout = ByteArrayOutputStream()
-            execOps.exec {
-                commandLine("curl.exe", "-sS", "-w", "\n%{http_code}",
-                    "--http1.1", "--expect100-timeout", "60",
-                    "--connect-timeout", "30", "--max-time", "600",
-                    "-H", authHeader, *extraArgs.toTypedArray())
-                standardOutput = stdout
-                isIgnoreExitValue = true
-            }
-            return stdout.toString(Charsets.UTF_8)
+            val cmd = listOf("curl.exe", "-sS", "-w", "\n%{http_code}",
+                "--http1.1", "--expect100-timeout", "60",
+                "--connect-timeout", "30", "--max-time", "600",
+                "-H", authHeader) + extraArgs
+            val pb = ProcessBuilder(cmd)
+            pb.redirectError(ProcessBuilder.Redirect.PIPE)
+            val process = pb.start()
+            val stdout = process.inputStream.readBytes().toString(Charsets.UTF_8)
+            // Drain stderr so the child process doesn't block on a full pipe.
+            process.errorStream.readBytes()
+            // isIgnoreExitValue equivalent: capture stdout regardless of
+            // exit code. Surface non-zero via the status code we appended
+            // to the body (`-w "\n%{http_code}"`).
+            process.waitFor()
+            return stdout
         }
 
         fun splitStatus(raw: String): Pair<String, String> {
