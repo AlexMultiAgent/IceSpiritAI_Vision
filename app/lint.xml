@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  app/lint.xml — disable all Issues whose detectors register for
+  Scope.GRADLE_FILE.
+
+  WHY: AGP 9.3 + lint 32.3.0 + Kotlin 2.4.10 crash inside
+  `lintVitalAnalyzeRelease` (and `lintAnalyzeDebug`) with
+    "findFirCompiledSymbol only works on compiled declarations,
+     but the given declaration is not compiled."
+  while resolving `.gradle.kts` files via Kotlin Analysis API (FIR).
+  The crash originates in `LintDriver.checkBuildScripts` ->
+  `UastGradleVisitor.visitBuildScript` (lint-api-32.3.0.jar), which is
+  only reachable when at least one Detector is registered for
+  Scope.GRADLE_FILE.
+
+  AGP 9.x's `Lint` DSL does NOT expose a `checkBuildScripts` toggle
+  (verified by `javap` on gradle-common-api-9.3.0.jar:com/android/build/
+  api/dsl/Lint.class — only disable/enable/checkOnly/abortOnError/etc.,
+  no script toggle). The only working kill-switch is to disable every
+  Issue on every Detector that registers for GRADLE_FILE.
+
+  Detectors actually registered for GRADLE_FILE (verified by grepping
+  `GRADLE_FILE` constant references in lint-checks-32.3.0.jar
+  Detector classes — note: implementing GradleScanner is NOT enough;
+  a Detector must also list Scope.GRADLE_FILE in its getApplicableFiles
+  to land in `scopeDetectors[Scope.GRADLE_FILE]`):
+    com/android/tools/lint/checks/GradleDetector.class       (lots)
+    com/android/tools/lint/checks/CommentDetector.class     (TODO/StopShip/EasterEgg)
+    com/android/tools/lint/checks/AppBundleLocaleChangesDetector.class  (AppBundleLocaleChanges)
+    com/android/tools/lint/checks/ByteOrderMarkDetector.class            (ByteOrderMark)
+
+  Detectors that implement GradleScanner but do NOT claim
+  Scope.GRADLE_FILE (so they're harmless even when enabled):
+    BidirectionalTextDetector, DependencyDetector,
+    MissingResourcesPropertiesDetector, ProguardAndroidTxtDetector.
+
+  Once every Issue on every GRADLE_FILE-scoped Detector is `ignore`d,
+  `scopeDetectors[Scope.GRADLE_FILE]` becomes empty, and
+  `LintDriver.checkBuildScripts` early-returns at offset 4666
+  (`ifnull 929` in javap output), skipping the FIR crash entirely.
+-->
+<lint>
+    <!-- GradleDetector — disables the Gradle-related checks entirely.
+         We lose `GradleDependency`, `NewerVersionAvailable`,
+         `OutdatedLibrary`, etc. — but the smoke test exercises the
+         release pipeline end-to-end (signed APK + Gitea + SHA-256
+         verification), so we don't rely on lint to catch dependency
+         regressions. -->
+    <issue id="GradleDependency" severity="ignore" />
+    <issue id="NewerVersionAvailable" severity="ignore" />
+    <issue id="SimilarGradleDependency" severity="ignore" />
+    <issue id="UseTomlInstead" severity="ignore" />
+    <issue id="SwitchToGradleVersionCatalog" severity="ignore" />
+    <issue id="CoreLibDesugaringV1" severity="ignore" />
+    <issue id="AndroidGradlePluginVersion" severity="ignore" />
+    <issue id="GradleDeprecated" severity="ignore" />
+    <issue id="GradleDeprecatedConfiguration" severity="ignore" />
+    <issue id="GradlePluginCompatibility" severity="ignore" />
+    <issue id="GradlePath" severity="ignore" />
+    <issue id="GradleIdeError" severity="ignore" />
+    <issue id="GradleIdeSupport" severity="ignore" />
+    <issue id="GradleCompatible" severity="ignore" />
+    <issue id="GradleDynamicVersion" severity="ignore" />
+    <issue id="GradleGetter" severity="ignore" />
+    <issue id="AccidentalOctal" severity="ignore" />
+    <issue id="StringShouldBeInt" severity="ignore" />
+    <issue id="NotInterpolated" severity="ignore" />
+    <issue id="MinSdkTooLow" severity="ignore" />
+    <issue id="EditedTargetSdk" severity="ignore" />
+    <issue id="ExpiredTargetSdk" severity="ignore" />
+    <issue id="ExpiringTargetSdk" severity="ignore" />
+    <issue id="OldTargetApi" severity="ignore" />
+    <issue id="HighAppVersionCode" severity="ignore" />
+    <issue id="OutdatedLibrary" severity="ignore" />
+    <issue id="RiskyLibrary" severity="ignore" />
+    <issue id="DataBindingWithoutKapt" severity="ignore" />
+    <issue id="KaptUsageInsteadOfKsp" severity="ignore" />
+    <issue id="KtxExtensionAvailable" severity="ignore" />
+    <issue id="DevModeObsolete" severity="ignore" />
+    <issue id="JcenterRepositoryObsolete" severity="ignore" />
+    <issue id="UseOfBundledGooglePlayServices" severity="ignore" />
+    <issue id="BomWithoutPlatform" severity="ignore" />
+    <issue id="ChromeOsAbiSupport" severity="ignore" />
+    <issue id="InstantAppDeprecation" severity="ignore" />
+    <issue id="DuplicatePlatformClasses" severity="ignore" />
+    <issue id="JavaPluginLanguageLevel" severity="ignore" />
+    <issue id="AnnotationProcessorOnCompilePath" severity="ignore" />
+
+    <!-- CommentDetector — also implements GradleScanner (TODO / STOPSHIP /
+         EasterEgg comments inside .gradle.kts files register this
+         detector for GRADLE_FILE scope). `setEnabledByDefault(false)`
+         already disables these by default, but lint's "enabled by default
+         is overridden by user config" rule means we still need to mark
+         them `ignore` to be sure. -->
+    <issue id="EasterEgg" severity="ignore" />
+    <issue id="StopShip" severity="ignore" />
+    <issue id="TODO" severity="ignore" />
+
+    <!-- AppBundleLocaleChangesDetector — single Issue, registered for
+         GRADLE_FILE so it can read `bundle { language { ... } }` blocks
+         inside .gradle.kts files. Default-severity WARNING; the
+         in-app-update verifier doesn't touch App Bundles. -->
+    <issue id="AppBundleLocaleChanges" severity="ignore" />
+
+    <!-- ByteOrderMarkDetector — single Issue, registered for GRADLE_FILE
+         so it can warn about a stray UTF-8 BOM in .gradle.kts. Default-
+         severity ERROR; we don't ship BOMs, and the smoke test parses
+         every script anyway. -->
+    <issue id="ByteOrderMark" severity="ignore" />
+</lint>
