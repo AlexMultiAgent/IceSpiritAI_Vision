@@ -519,9 +519,9 @@ class FoodLabelRuleMatcherTest {
     @Test
     fun scan_gb7718Art4Allergen_firesOn含花生() {
         val r = FoodLabelRule(
-            "food_gb7718_art4_1_4_allergen_disclose",
+            "food_gb7718_art4_4_3_allergen_disclose",
             "allergen",
-            "GB 7718-2011 §4.1.4 / 食品安全法 §41 / GB 31644-2018",
+            "GB 7718-2011 §4.4.3 / GB 7718-2025 §5 / 食品安全法 §41",
             listOf("过敏原", "致敏物质", "含麸质", "含花生", "含坚果", "含大豆", "含牛奶", "含鸡蛋", "含芝麻", "含鱼", "可能含有花生"),
             Severity.Warning,
         )
@@ -642,7 +642,7 @@ class FoodLabelRuleMatcherTest {
         val r = FoodLabelRule(
             "food_art28_function_claim_unauthorized",
             "functional_claim",
-            "食品标识监督管理办法 §28 + §44 / GB 7718-2011 §3.6",
+            "食品标识监督管理办法 第七条第二款 + 第四十三条 / 食品安全法实施条例 第三十八条 / GB 7718-2011 §3.6",
             listOf("调节血脂", "调节血糖", "增强免疫", "延缓衰老", "辅助降血脂", "辅助降血糖", "辅助改善记忆", "缓解视疲劳", "促进泌乳", "改善皮肤水分", "调节肠道菌群", "通便", "缓解体力疲劳", "减肥", "改善骨质疏松", "改善营养性贫血", "祛痤疮", "祛黄褐斑"),
             Severity.Violation,
         )
