@@ -59,7 +59,12 @@ data class RuleHit(
     val matchedText: String,
     val category: String,
     val regulation: String,
-    val severity: Severity
+    val severity: Severity,
+    /**
+     * Full text of the provision cited by [regulation]. Empty for legacy /
+     * programmatically constructed hits; the UI hides the expand control then.
+     */
+    val lawText: String = "",
 )
 
 enum class Severity { Info, Warning, Violation }

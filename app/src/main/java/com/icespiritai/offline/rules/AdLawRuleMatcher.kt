@@ -48,6 +48,7 @@ class AdLawRuleMatcher(rules: List<AdLawRule>) : RuleMatcher {
                             matchedText = matched,
                             category = rule.category,
                             regulation = rule.regulation,
+                            lawText = rule.lawText,
                             severity = rule.severity
                         )
                     )

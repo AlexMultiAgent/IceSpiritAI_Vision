@@ -48,6 +48,9 @@ class AssetRuleLoaderTest {
         assertEquals(1, set.version)
         assertEquals(10, set.rules.size)
         assertEquals("medical_absolute", set.rules[0].id)
+        assertTrue("every shipped rule must bundle its full provision text", set.rules.all { it.lawText.isNotBlank() })
+        val educationAbsolute = set.rules.first { it.id == "education_absolute" }
+        assertEquals("《广告法》第九条第（三）项", educationAbsolute.regulation)
     }
 
     @Test

@@ -9,7 +9,12 @@ data class AdLawRule(
     val category: String,
     val regulation: String,
     val keywords: List<String>,
-    val severity: Severity
+    val severity: Severity,
+    /**
+     * Full text of the cited provision(s), bundled with the rule so the result
+     * card can show the exact legal wording offline without a network lookup.
+     */
+    val lawText: String = "",
 )
 
 /**
