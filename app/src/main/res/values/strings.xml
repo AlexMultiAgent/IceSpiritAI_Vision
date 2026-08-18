@@ -50,6 +50,10 @@
     <string name="settings_appearance_light">浅色冰月</string>
     <string name="settings_about">关于</string>
     <string name="settings_about_version">版本: %1$s</string>
+    <string name="settings_view_changelog">查看更新日志</string>
+    <string name="settings_view_changelog_hint">查看每个版本的修改变动</string>
+    <string name="changelog_title">更新日志</string>
+    <string name="changelog_empty">暂无更新日志</string>
 
     <string name="hit_severity_info">信息</string>
     <string name="hit_severity_warning">警告</string>

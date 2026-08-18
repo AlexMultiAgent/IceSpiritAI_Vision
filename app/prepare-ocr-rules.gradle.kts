@@ -194,9 +194,48 @@ val buildProfileServicesJar = tasks.register("buildProfileServicesJar") {
     }
 }
 
+// ----- User-facing changelog copy ----------------------------------------
+//
+// app/src/main/assets/user-changelog.md is the source of truth (git-tracked,
+// human-edited). app/build.gradle.kts restricts `assets.setSrcDirs` to ONLY
+// build/generated/assets/ so the rules JSON + models can be swapped per
+// modelProfile without rebuilding on rules-file edits. Without this Copy
+// task the in-app changelog screen would see no asset.
+//
+// The mirror lives at build/generated/assets/user-changelog.md and is read
+// at runtime by ChangelogScreen via context.assets.open("user-changelog.md").
+//
+// generateVisionLatestJson in build.gradle.kts also reads the SOURCE file
+// (not the generated one) to avoid a chicken-and-egg dependency between the
+// assembleRelease pipeline and the staging task.
+
+val copyUserChangelogAsset = tasks.register("copyUserChangelogAsset") {
+    group = "build"
+    description = "Mirror app/src/main/assets/user-changelog.md into build/generated/assets/."
+
+    val src = file("src/main/assets/user-changelog.md")
+    val outFile = layout.buildDirectory.file("generated/assets/user-changelog.md")
+
+    inputs.file(src)
+    outputs.file(outFile)
+
+    doLast {
+        require(src.isFile) {
+            "copyUserChangelogAsset: missing source ${src.absolutePath}"
+        }
+        val dst = outFile.get().asFile
+        dst.parentFile.mkdirs()
+        src.copyTo(dst, overwrite = true)
+        logger.lifecycle(
+            "[copyUserChangelogAsset] copied ${src.length()} bytes -> ${dst}"
+        )
+    }
+}
+
 // Wire into preBuild so the JAR exists before package / processJavaResources.
 tasks.named("preBuild").configure {
     dependsOn(prepareOcrRulesAssets)
     dependsOn(copyOcrModelsAssets)
+    dependsOn(copyUserChangelogAsset)
     dependsOn(buildProfileServicesJar)
 }

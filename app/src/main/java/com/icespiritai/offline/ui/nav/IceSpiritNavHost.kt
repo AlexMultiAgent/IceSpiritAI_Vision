@@ -9,11 +9,13 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.icespiritai.offline.ui.home.HomeScreen
+import com.icespiritai.offline.ui.settings.ChangelogScreen
 import com.icespiritai.offline.ui.settings.SettingsScreen
 
 object Routes {
     const val HOME = "home"
     const val SETTINGS = "settings"
+    const val CHANGELOG = "changelog"
 }
 
 /**
@@ -37,7 +39,13 @@ fun IceSpiritNavHost(modifier: Modifier = Modifier) {
                 HomeScreen(onOpenSettings = { nav.navigate(Routes.SETTINGS) })
             }
             composable(Routes.SETTINGS) {
-                SettingsScreen(onBack = { nav.popBackStack() })
+                SettingsScreen(
+                    onBack = { nav.popBackStack() },
+                    onOpenChangelog = { nav.navigate(Routes.CHANGELOG) },
+                )
+            }
+            composable(Routes.CHANGELOG) {
+                ChangelogScreen(onBack = { nav.popBackStack() })
             }
         }
     }
