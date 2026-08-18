@@ -4,7 +4,7 @@ import com.icespiritai.offline.domain.Severity
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class AdLawRule(
+data class AdSignageRule(
     val id: String,
     val category: String,
     val regulation: String,
@@ -18,14 +18,14 @@ data class AdLawRule(
 )
 
 /**
- * Top-level wrapper for the bundled `ad_law_rules.json` assets. The
+ * Top-level wrapper for the bundled `ad_signage_rules.json` asset. The
  * `version` field is a forward-compatible extension anchor — future
  * rule-schema migrations (e.g. weighted keywords, ignoreCase flag) can
  * detect the old shape and dispatch appropriately. The `rules` list is the
  * authoritative payload.
  */
 @Serializable
-data class AdLawRuleSet(
+data class AdSignageRuleSet(
     val version: Int,
-    val rules: List<AdLawRule>,
+    val rules: List<AdSignageRule>,
 )

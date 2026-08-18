@@ -9,9 +9,12 @@ import com.icespiritai.offline.domain.AnalysisState
 import com.icespiritai.offline.domain.AnalysisState.Idle
 import com.icespiritai.offline.ocr.OcrEngine
 import com.icespiritai.offline.ocr.OcrEngineFactoryLocator
-import com.icespiritai.offline.rules.AdLawRuleMatcher
-import com.icespiritai.offline.rules.AssetRuleLoader
+import com.icespiritai.offline.rules.AdSignageRuleLoader
+import com.icespiritai.offline.rules.AdSignageRuleMatcher
+import com.icespiritai.offline.rules.FoodLabelRuleLoader
+import com.icespiritai.offline.rules.FoodLabelRuleMatcher
 import com.icespiritai.offline.rules.RuleMatcher
+import com.icespiritai.offline.ui.home.RuleTab
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,11 +34,13 @@ import kotlinx.coroutines.launch
  * the `shell` APK slim: the PaddleOCR SDK, ONNX Runtime, and OpenCV never
  * reach the classpath when the profile is `shell`.
  *
- * [ruleMatcherProvider] is a lambda (not an eager `RuleMatcher`) so that an
- * asset-load failure surfaces as [AnalysisState.Error] on first `analyze()`
- * instead of throwing out of this ViewModel's constructor — where no UI state
- * exists to display the failure. The provider is invoked at most once via the
- * repository's internal `lazy`.
+ * Two parallel rulesets are wired in (`ad_signage_rules.json` and
+ * `food_label_rules.json`). Each matcher's first construction is wrapped in
+ * `lazy { }`, so an asset-load failure (a missing or malformed bundled
+ * JSON, e.g. from a packaging defect) only surfaces when the user first
+ * analyzes on that tab — i.e. as `AnalysisState.Error(RULES_FAILED)` with
+ * a UI message — instead of throwing out of this ViewModel's constructor
+ * where no UI state exists to display it.
  *
  * [onCleared] deliberately does **not** release [ocrEngine]: the underlying
  * PaddleOCR instance holds process-wide native resources (ONNX sessions,
@@ -47,24 +52,46 @@ import kotlinx.coroutines.launch
 class IceSpiritVisionViewModel(application: Application) : AndroidViewModel(application) {
 
     private val ocrEngine: OcrEngine = OcrEngineFactoryLocator.create(application)
+    private val app = application
 
-    private val ruleMatcherProvider: () -> RuleMatcher = {
-        AdLawRuleMatcher(AssetRuleLoader(getApplication()).load())
+    private val adMatcher: RuleMatcher by lazy {
+        AdSignageRuleMatcher(AdSignageRuleLoader(app).load())
+    }
+    private val foodMatcher: RuleMatcher by lazy {
+        FoodLabelRuleMatcher(FoodLabelRuleLoader(app).load())
     }
 
-    private val repository = ImageAnalyzerRepository(ocrEngine, ruleMatcherProvider)
+    private fun matcherFor(tab: RuleTab): RuleMatcher = when (tab) {
+        RuleTab.AdSignage -> adMatcher
+        RuleTab.FoodLabeling -> foodMatcher
+    }
+
+    private val repository = ImageAnalyzerRepository(ocrEngine)
+
+    private val _currentTab = MutableStateFlow(RuleTab.AdSignage)
+    val currentTab: StateFlow<RuleTab> = _currentTab.asStateFlow()
 
     private val _state = MutableStateFlow<AnalysisState>(Idle)
     val state: StateFlow<AnalysisState> = _state.asStateFlow()
 
     private var currentJob: Job? = null
 
+    /**
+     * Switch the active tab. Returns `true` when the call actually changed
+     * the selected tab — the caller typically pairs that with a
+     * [reset]/image-clear to drop the previous domain's stale report.
+     */
+    fun setTab(tab: RuleTab): Boolean {
+        val changed = _currentTab.value != tab
+        _currentTab.value = tab
+        return changed
+    }
+
     fun startAnalysis(uri: Uri) {
-        // Single-flight guard: a second tap cancels any in-flight analysis
-        // before starting a new one.
         currentJob?.cancel()
+        val matcher = matcherFor(_currentTab.value)
         currentJob = viewModelScope.launch {
-            repository.analyze(uri).collect { _state.value = it }
+            repository.analyze(uri, matcher).collect { _state.value = it }
         }
     }
 

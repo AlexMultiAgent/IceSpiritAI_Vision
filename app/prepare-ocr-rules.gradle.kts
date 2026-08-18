@@ -19,7 +19,7 @@ val generatedAssetsDir = layout.buildDirectory.dir("generated/assets/rules")
 // maintaining a duplicated inlined copy) removes the "edit both places" drift
 // hazard. The file is declared as a task input below so edits invalidate the
 // generated asset.
-val fullRulesFile = file("src/main/assets/rules/ad_law_rules.json")
+val fullRulesFile = file("src/main/assets/rules/ad_signage_rules.json")
 
 val slimRulesJson = """{"version":1,"rules":[]}"""
 
@@ -41,7 +41,7 @@ val prepareOcrRulesAssets = tasks.register("prepareOcrRulesAssets") {
     doLast {
         val dir = outDir.get().asFile
         dir.mkdirs()
-        val target = java.io.File(dir, "ad_law_rules.json")
+        val target = java.io.File(dir, "ad_signage_rules.json")
         val content = when (activeProfile) {
             "shell", "ice_vision" -> slimRulesJson
             "ice_ocr_rules" -> {

@@ -21,7 +21,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.icespiritai.offline.R
-import com.icespiritai.offline.domain.AdCategory
+import com.icespiritai.offline.domain.CategoryDisplay
 import com.icespiritai.offline.domain.RuleHit
 import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.ui.components.SeverityBadge
@@ -35,7 +35,7 @@ fun HitCard(hit: RuleHit, modifier: Modifier = Modifier) {
             Severity.Info -> R.string.hit_severity_info
         }
     )
-    val categoryLabel = AdCategory.displayName(hit.category)
+    val categoryLabel = CategoryDisplay.displayName(hit.domain, hit.category)
     var lawExpanded by rememberSaveable { mutableStateOf(false) }
     Card(
         modifier = modifier

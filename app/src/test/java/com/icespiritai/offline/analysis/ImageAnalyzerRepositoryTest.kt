@@ -10,6 +10,7 @@ import com.icespiritai.offline.domain.RuleHit
 import com.icespiritai.offline.domain.RuleLoadFailed
 import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.ocr.FakeOcrEngine
+import com.icespiritai.offline.ocr.OcrEngine
 import com.icespiritai.offline.rules.FakeRuleMatcher
 import com.icespiritai.offline.rules.RuleMatcher
 import kotlinx.coroutines.flow.toList
@@ -38,15 +39,14 @@ class ImageAnalyzerRepositoryTest {
     private val matcher = FakeRuleMatcher(mapOf(cannedText to cannedHits))
 
     private fun repo(
-        ocrEngine: com.icespiritai.offline.ocr.OcrEngine = ocr,
-        ruleMatcherProvider: () -> RuleMatcher = { matcher }
-    ) = ImageAnalyzerRepository(ocrEngine, ruleMatcherProvider)
+        ocrEngine: OcrEngine = ocr,
+    ) = ImageAnalyzerRepository(ocrEngine)
 
     @Test
     fun `analyze emits Loading-Ocr, OcrDone, Loading-Rule, RuleScanned, Complete in order`() =
         runTest {
             val uri = StubUri()
-            val states = repo().analyze(uri).toList()
+            val states = repo().analyze(uri, matcher).toList()
 
             assertEquals(5, states.size)
 
@@ -90,7 +90,8 @@ class ImageAnalyzerRepositoryTest {
     @Test
     fun `analyze emits Error when OCR throws`() = runTest {
         // FakeOcrEngine throws OcrEngineUnavailable when cannedText is empty.
-        val states = repo(ocrEngine = FakeOcrEngine(cannedText = "")).analyze(StubUri()).toList()
+        val states = repo(ocrEngine = FakeOcrEngine(cannedText = ""))
+            .analyze(StubUri(), matcher).toList()
 
         assertEquals(2, states.size)
         assertTrue(states[0] is AnalysisState.Loading)
@@ -105,12 +106,12 @@ class ImageAnalyzerRepositoryTest {
 
     @Test
     fun `analyze emits Error with OCR_FAILED when OcrFailed is thrown`() = runTest {
-        val throwingOcr = object : com.icespiritai.offline.ocr.OcrEngine {
+        val throwingOcr = object : OcrEngine {
             override suspend fun recognize(uri: Uri) =
                 throw OcrFailed("decode failed")
             override suspend fun release() = Unit
         }
-        val states = repo(ocrEngine = throwingOcr).analyze(StubUri()).toList()
+        val states = repo(ocrEngine = throwingOcr).analyze(StubUri(), matcher).toList()
 
         assertEquals(2, states.size)
         val err = states[1] as AnalysisState.Error
@@ -121,12 +122,12 @@ class ImageAnalyzerRepositoryTest {
 
     @Test
     fun `analyze emits Error with UNKNOWN when generic Exception is thrown`() = runTest {
-        val throwingOcr = object : com.icespiritai.offline.ocr.OcrEngine {
+        val throwingOcr = object : OcrEngine {
             override suspend fun recognize(uri: Uri) =
                 throw RuntimeException("unexpected")
             override suspend fun release() = Unit
         }
-        val states = repo(ocrEngine = throwingOcr).analyze(StubUri()).toList()
+        val states = repo(ocrEngine = throwingOcr).analyze(StubUri(), matcher).toList()
 
         assertEquals(2, states.size)
         val err = states[1] as AnalysisState.Error
@@ -137,9 +138,11 @@ class ImageAnalyzerRepositoryTest {
 
     @Test
     fun `analyze emits Error when rule loading fails`() = runTest {
-        val states = repo(
-            ruleMatcherProvider = { throw RuleLoadFailed("assets/rules missing") }
-        ).analyze(StubUri()).toList()
+        val failingMatcher = object : RuleMatcher {
+            override fun scan(text: String): List<RuleHit> =
+                throw RuleLoadFailed("assets/rules missing")
+        }
+        val states = repo().analyze(StubUri(), failingMatcher).toList()
 
         // OCR still succeeded, so the failure surfaces after OcrDone.
         assertEquals(4, states.size)
@@ -159,7 +162,7 @@ class ImageAnalyzerRepositoryTest {
 
     @Test
     fun `analyze with no rule hits still completes with empty hits`() = runTest {
-        val states = repo(ruleMatcherProvider = { FakeRuleMatcher() }).analyze(StubUri()).toList()
+        val states = repo().analyze(StubUri(), FakeRuleMatcher()).toList()
 
         assertEquals(5, states.size)
         assertTrue((states[3] as AnalysisState.RuleScanned).hits.isEmpty())
@@ -170,7 +173,7 @@ class ImageAnalyzerRepositoryTest {
 
     @Test
     fun `analyze with empty OCR text completes with hasText false`() = runTest {
-        val emptyOcr = object : com.icespiritai.offline.ocr.OcrEngine {
+        val emptyOcr = object : OcrEngine {
             override suspend fun recognize(uri: Uri) = OcrResult(
                 fullText = "",
                 lineBoxes = emptyList(),
@@ -179,8 +182,8 @@ class ImageAnalyzerRepositoryTest {
 
             override suspend fun release() = Unit
         }
-        val states = repo(ocrEngine = emptyOcr, ruleMatcherProvider = { FakeRuleMatcher() })
-            .analyze(StubUri()).toList()
+        val states = repo(ocrEngine = emptyOcr)
+            .analyze(StubUri(), FakeRuleMatcher()).toList()
 
         val complete = states[4] as AnalysisState.Complete
         assertFalse("empty OCR text must not claim hasText", complete.report.hasText)
@@ -189,29 +192,21 @@ class ImageAnalyzerRepositoryTest {
     }
 
     @Test
-    fun `rule matcher is resolved once and reused across analyze calls`() = runTest {
-        var resolveCount = 0
-        val repository = repo(ruleMatcherProvider = {
-            resolveCount++
-            matcher
-        })
+    fun `analyze routes the supplied matcher and ignores the previous one`() = runTest {
+        val adMatcher = FakeRuleMatcher(
+            mapOf(cannedText to listOf(cannedHits[0].copy(ruleId = "AD_HIT")))
+        )
+        val foodMatcher = FakeRuleMatcher(
+            mapOf(cannedText to listOf(cannedHits[0].copy(ruleId = "FOOD_HIT")))
+        )
+        val repository = repo()
 
-        repository.analyze(StubUri()).toList()
-        repository.analyze(StubUri()).toList()
+        val adStates = repository.analyze(StubUri(), adMatcher).toList()
+        val foodStates = repository.analyze(StubUri(), foodMatcher).toList()
 
-        assertEquals("provider should be invoked lazily exactly once", 1, resolveCount)
-    }
-
-    @Test
-    fun `analyze does not resolve rule matcher until collected`() = runTest {
-        var resolveCount = 0
-        val flow = repo(ruleMatcherProvider = {
-            resolveCount++
-            matcher
-        }).analyze(StubUri())
-
-        assertEquals("cold flow must not do work before collection", 0, resolveCount)
-        flow.toList()
-        assertEquals(1, resolveCount)
+        val adReport = (adStates.last() as AnalysisState.Complete).report
+        val foodReport = (foodStates.last() as AnalysisState.Complete).report
+        assertEquals("AD_HIT", adReport.hits[0].ruleId)
+        assertEquals("FOOD_HIT", foodReport.hits[0].ruleId)
     }
 }

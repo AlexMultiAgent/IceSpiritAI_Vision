@@ -25,9 +25,8 @@
     <string name="hit_card_severity">严重等级: %1$s</string>
     <string name="hit_card_show_law">查看法条原文</string>
     <string name="hit_card_hide_law">收起法条原文</string>
-    <string name="tab_ad_law">广告法</string>
-    <string name="tab_food_label">食品标签</string>
-    <string name="tab_disabled_toast">食品标签 OCR 即将上线</string>
+    <string name="tab_ad_law">广告招牌</string>
+    <string name="tab_food_label">食品标识</string>
 
     <string name="status_image_hint">请对正图片后点击拍照</string>
     <string name="status_no_violation_card">未发现违规用语</string>
@@ -83,4 +82,5 @@
     <string name="update_failed_parse">更新信息格式错误</string>
     <string name="update_failed_download">下载失败,请重试</string>
     <string name="update_retry_button">重试</string>
+    <string name="update_recheck_button">重新检查</string>
 </resources>

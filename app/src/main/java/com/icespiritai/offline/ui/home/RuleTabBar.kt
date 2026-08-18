@@ -11,8 +11,8 @@ import androidx.compose.ui.semantics.semantics
 import com.icespiritai.offline.R
 
 enum class RuleTab(val titleRes: Int) {
-    AdLaw(R.string.tab_ad_law),
-    FoodLabel(R.string.tab_food_label),
+    AdSignage(R.string.tab_ad_law),
+    FoodLabeling(R.string.tab_food_label),
 }
 
 @Composable

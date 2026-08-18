@@ -25,28 +25,15 @@ import kotlinx.coroutines.withContext
  * Failures terminate the flow with [AnalysisState.Error] instead of throwing, so a
  * collector never has to wrap `analyze` in a try/catch.
  *
- * [ruleMatcherProvider] is a lambda rather than an `AssetRuleLoader` so that rule
- * loading (blocking asset I/O that can throw `RuleLoadFailed`) is deferred to the
- * first collection and surfaced as [AnalysisState.Error]. Building the matcher
- * eagerly at construction time would instead blow up in the ViewModel's constructor,
- * where there is no UI state to report it through. Production wiring:
- *
- *     ImageAnalyzerRepository(
- *         ocrEngine = PaddleOcrEngine(context),
- *         ruleMatcherProvider = { AdLawRuleMatcher(AssetRuleLoader(context).load()) },
- *     )
- *
- * The provider is invoked at most once; the resulting matcher is reused.
+ * The rule matcher is supplied per [analyze] call rather than at construction
+ * time so a multi-tab caller ([IceSpiritVisionViewModel] routes the same OCR
+ * output through AdSignage and FoodLabeling rule sets) drives a single
+ * repository instance with whichever matcher is current.
  */
 class ImageAnalyzerRepository(
     private val ocrEngine: OcrEngine,
-    ruleMatcherProvider: () -> RuleMatcher,
 ) {
-    // lazy(SYNCHRONIZED) — if the initializer throws, the value stays unset and a
-    // later analyze() retries, which is what we want for a transient asset failure.
-    private val ruleMatcher: RuleMatcher by lazy(ruleMatcherProvider)
-
-    fun analyze(uri: Uri): Flow<AnalysisState> = flow {
+    fun analyze(uri: Uri, matcher: RuleMatcher): Flow<AnalysisState> = flow {
         emit(AnalysisState.Loading(AnalysisState.Loading.Stage.OcrRunning))
 
         // OcrEngine implementations own their dispatcher (see PaddleOcrEngine).
@@ -97,8 +84,7 @@ class ImageAnalyzerRepository(
         emit(AnalysisState.Loading(AnalysisState.Loading.Stage.RuleScanning))
 
         val hits = try {
-            // First touch of `ruleMatcher` may read rule JSON from assets.
-            withContext(Dispatchers.IO) { ruleMatcher }.scan(ocrResult.fullText)
+            withContext(Dispatchers.IO) { matcher.scan(ocrResult.fullText) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: RuleLoadFailed) {

@@ -61,6 +61,13 @@ data class RuleHit(
     val regulation: String,
     val severity: Severity,
     /**
+     * Domain marker — `"ad"` for 广告招牌 or `"food"` for 食品标识. Drives the
+     * [CategoryDisplay] lookup and the `domain` field on the ZIP manifest's
+     * `report.json`. Defaulted to `"ad"` so legacy hits and tests compile
+     * without ceremony.
+     */
+    val domain: String = "ad",
+    /**
      * Full text of the provision cited by [regulation]. Empty for legacy /
      * programmatically constructed hits; the UI hides the expand control then.
      */

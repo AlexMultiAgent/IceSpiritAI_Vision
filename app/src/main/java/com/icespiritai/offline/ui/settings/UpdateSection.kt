@@ -52,8 +52,16 @@ fun UpdateSection(
                 Spacer(Modifier.size(8.dp))
                 Text(stringResource(R.string.update_checking))
             }
-            is UpdateState.UpToDate -> Banner(containerColor = MaterialTheme.colorScheme.secondaryContainer) {
-                Text(stringResource(R.string.update_up_to_date, currentVersionString(s.currentVersionCode)))
+            is UpdateState.UpToDate -> Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Text(stringResource(R.string.update_up_to_date, currentVersionString(s.currentVersionCode)))
+                    Spacer(Modifier.height(4.dp))
+                    TextButton(onClick = { viewModel.refresh() }) {
+                        Text(stringResource(R.string.update_recheck_button))
+                    }
+                }
             }
             is UpdateState.UpdateAvailable -> {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
@@ -104,13 +112,6 @@ fun UpdateSection(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun Banner(containerColor: androidx.compose.ui.graphics.Color, content: @Composable () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = containerColor)) {
-        Column(Modifier.padding(12.dp)) { content() }
     }
 }
 

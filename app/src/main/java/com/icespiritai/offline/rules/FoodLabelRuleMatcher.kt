@@ -1,21 +1,23 @@
 package com.icespiritai.offline.rules
 
 import com.hankcs.algorithm.AhoCorasickDoubleArrayTrie
+import com.icespiritai.offline.domain.CategoryDisplay
 import com.icespiritai.offline.domain.RuleHit
 import com.icespiritai.offline.domain.TextNormalizer
 import java.util.TreeMap
 
-class AdLawRuleMatcher(rules: List<AdLawRule>) : RuleMatcher {
+/**
+ * Parallel to [AdSignageRuleMatcher] but operating on the 食品标识 domain.
+ * Same HankCS Aho-Corasick build + scan pattern; only the rule type and the
+ * `domain` tag stamped on each emitted [RuleHit] differ. Two concrete
+ * classes kept side-by-side per project decision (each domain can evolve
+ * independently; no premature abstraction across them).
+ */
+class FoodLabelRuleMatcher(rules: List<FoodLabelRule>) : RuleMatcher {
 
     private val trie = AhoCorasickDoubleArrayTrie<List<String>>()
 
     init {
-        // Each normalized keyword -> ALL rule ids that declare it. A keyword
-        // shared by two rules (e.g. "第一" in both the education and the
-        // general absolute-claim rules) must attribute the hit to every
-        // applicable rule instead of silently shadowing all but the last one.
-        // TreeMap gives deterministic (sorted) iteration order; the library
-        // accepts any Map<String, V>.
         val keywordToRuleIds = TreeMap<String, List<String>>()
         for (rule in rules) {
             for (kw in rule.keywords) {
@@ -28,7 +30,7 @@ class AdLawRuleMatcher(rules: List<AdLawRule>) : RuleMatcher {
         trie.build(keywordToRuleIds)
     }
 
-    private val ruleById: Map<String, AdLawRule> = rules.associateBy { it.id }
+    private val ruleById: Map<String, FoodLabelRule> = rules.associateBy { it.id }
 
     override fun scan(text: String): List<RuleHit> {
         if (text.isEmpty()) return emptyList()
@@ -40,7 +42,6 @@ class AdLawRuleMatcher(rules: List<AdLawRule>) : RuleMatcher {
             val matched = normalized.substring(begin, end)
             for (ruleId in ruleIds) {
                 val rule = ruleById[ruleId] ?: continue
-                // Deduplicate: same ruleId + matchedText counts once
                 if (hits.none { it.ruleId == rule.id && it.matchedText == matched }) {
                     hits.add(
                         RuleHit(
@@ -49,7 +50,8 @@ class AdLawRuleMatcher(rules: List<AdLawRule>) : RuleMatcher {
                             category = rule.category,
                             regulation = rule.regulation,
                             lawText = rule.lawText,
-                            severity = rule.severity
+                            severity = rule.severity,
+                            domain = CategoryDisplay.DOMAIN_FOOD,
                         )
                     )
                 }

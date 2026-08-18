@@ -45,7 +45,7 @@ fun HomeScreen(onOpenSettings: () -> Unit) {
     val context = LocalContext.current
     val cameraDeniedMsg = stringResource(R.string.error_camera_denied)
 
-    var selectedTab by remember { mutableStateOf(RuleTab.AdLaw) }
+    val selectedTab by viewModel.currentTab.collectAsState()
     // pendingUri persists across Loading→Complete so the image stays visible
     // before the analyzer finishes (AnalysisState.Loading has no URI field).
     var pendingUri by remember { mutableStateOf<Uri?>(null) }
@@ -124,12 +124,7 @@ fun HomeScreen(onOpenSettings: () -> Unit) {
         HomeTopBar(
             selectedTab = selectedTab,
             onSelectTab = { tab ->
-                if (tab == RuleTab.FoodLabel) {
-                    Toast.makeText(context, R.string.tab_disabled_toast, Toast.LENGTH_SHORT).show()
-                } else {
-                    selectedTab = tab
-                    reset()
-                }
+                if (viewModel.setTab(tab)) reset()
             },
             tabEnabled = state !is AnalysisState.Loading,
             onOpenSettings = onOpenSettings,
