@@ -14,21 +14,21 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.icespiritai.offline.R
 import com.icespiritai.offline.domain.Severity
-import com.icespiritai.offline.ui.theme.DarkError
-import com.icespiritai.offline.ui.theme.DarkOnError
-import com.icespiritai.offline.ui.theme.DarkOnWarning
-import com.icespiritai.offline.ui.theme.DarkWarning
-import com.icespiritai.offline.ui.theme.LightError
-import com.icespiritai.offline.ui.theme.LightOnError
-import com.icespiritai.offline.ui.theme.LightOnWarning
-import com.icespiritai.offline.ui.theme.LightWarning
+import com.icespiritai.offline.ui.theme.DarkIceChatError
+import com.icespiritai.offline.ui.theme.DarkIceChatOnError
+import com.icespiritai.offline.ui.theme.DarkIceChatOnWarning
+import com.icespiritai.offline.ui.theme.DarkIceChatWarning
+import com.icespiritai.offline.ui.theme.LightIceChatError
+import com.icespiritai.offline.ui.theme.LightIceChatOnError
+import com.icespiritai.offline.ui.theme.LightIceChatOnWarning
+import com.icespiritai.offline.ui.theme.LightIceChatWarning
 
 @Composable
 fun SeverityBadge(severity: Severity, modifier: Modifier = Modifier) {
     val (bg: Color, fg: Color) = when (severity) {
-        Severity.Info -> resolveSeverityColors(DarkWarning, DarkOnWarning, LightWarning, LightOnWarning)
-        Severity.Warning -> resolveSeverityColors(DarkWarning, DarkOnWarning, LightWarning, LightOnWarning)
-        Severity.Violation -> resolveSeverityColors(DarkError, DarkOnError, LightError, LightOnError)
+        Severity.Info -> resolveSeverityColors(DarkIceChatWarning, DarkIceChatOnWarning, LightIceChatWarning, LightIceChatOnWarning)
+        Severity.Warning -> resolveSeverityColors(DarkIceChatWarning, DarkIceChatOnWarning, LightIceChatWarning, LightIceChatOnWarning)
+        Severity.Violation -> resolveSeverityColors(DarkIceChatError, DarkIceChatOnError, LightIceChatError, LightIceChatOnError)
     }
     val label = when (severity) {
         Severity.Info -> stringResource(R.string.hit_severity_info)

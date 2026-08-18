@@ -7,31 +7,35 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 
 private val DarkScheme = darkColorScheme(
-    primary = DarkPrimary,
-    onPrimary = DarkOnPrimary,
-    background = DarkBackground,
-    onBackground = DarkOnSurface,
-    surface = DarkSurface,
-    onSurface = DarkOnSurface,
-    surfaceVariant = DarkSurfaceVariant,
-    onSurfaceVariant = DarkOnSurfaceVariant,
-    outline = DarkOutline,
-    error = DarkError,
-    onError = DarkOnError,
+    primary = DarkIceChatAccent,
+    onPrimary = DarkIceChatOnAccent,
+    secondary = DarkIceChatAccentSecondary,
+    background = DarkIceChatBg,
+    onBackground = DarkIceChatOnBg,
+    surface = DarkIceChatPanel,
+    onSurface = DarkIceChatOnBg,
+    surfaceVariant = DarkIceChatPanelSoft,
+    onSurfaceVariant = DarkIceChatOnBgMuted,
+    surfaceContainerHigh = DarkIceChatPanelStrong,
+    outline = DarkIceChatDivider,
+    error = DarkIceChatError,
+    onError = DarkIceChatOnError,
 )
 
 private val LightScheme = lightColorScheme(
-    primary = LightPrimary,
-    onPrimary = LightOnPrimary,
-    background = LightBackground,
-    onBackground = LightOnSurface,
-    surface = LightSurface,
-    onSurface = LightOnSurface,
-    surfaceVariant = LightSurfaceVariant,
-    onSurfaceVariant = LightOnSurfaceVariant,
-    outline = LightOutline,
-    error = LightError,
-    onError = LightOnError,
+    primary = LightIceChatAccent,
+    onPrimary = LightIceChatOnAccent,
+    secondary = LightIceChatAccentSecondary,
+    background = LightIceChatBg,
+    onBackground = LightIceChatOnBg,
+    surface = LightIceChatPanel,
+    onSurface = LightIceChatOnBg,
+    surfaceVariant = LightIceChatPanelSoft,
+    onSurfaceVariant = LightIceChatOnBgMuted,
+    surfaceContainerHigh = LightIceChatPanelStrong,
+    outline = LightIceChatDivider,
+    error = LightIceChatError,
+    onError = LightIceChatOnError,
 )
 
 /**
@@ -53,6 +57,7 @@ fun IceSpiritVisionTheme(
 ) {
     MaterialTheme(
         colorScheme = if (themeMode.toDarkTheme()) DarkScheme else LightScheme,
+        shapes = IceSpiritShapes,
         typography = IceSpiritTypography,
         content = content,
     )

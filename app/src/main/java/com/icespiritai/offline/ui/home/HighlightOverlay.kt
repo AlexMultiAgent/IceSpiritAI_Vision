@@ -12,10 +12,10 @@ import com.icespiritai.offline.domain.RuleHit
 import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.domain.TextLine
 import com.icespiritai.offline.domain.TextNormalizer
-import com.icespiritai.offline.ui.theme.DarkError
-import com.icespiritai.offline.ui.theme.DarkWarning
-import com.icespiritai.offline.ui.theme.LightError
-import com.icespiritai.offline.ui.theme.LightWarning
+import com.icespiritai.offline.ui.theme.DarkIceChatError
+import com.icespiritai.offline.ui.theme.DarkIceChatWarning
+import com.icespiritai.offline.ui.theme.LightIceChatError
+import com.icespiritai.offline.ui.theme.LightIceChatWarning
 
 @Composable
 fun HighlightOverlay(
@@ -41,8 +41,8 @@ fun HighlightOverlay(
                 .maxOfOrNull { it.second }
                 ?: return@forEach
             val color = when (lineSeverity) {
-                Severity.Violation -> if (isDark) DarkError else LightError
-                Severity.Warning -> if (isDark) DarkWarning else LightWarning
+                Severity.Violation -> if (isDark) DarkIceChatError else LightIceChatError
+                Severity.Warning -> if (isDark) DarkIceChatWarning else LightIceChatWarning
                 Severity.Info -> return@forEach
             }
             drawRoundRect(

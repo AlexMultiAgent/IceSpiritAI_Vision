@@ -5,8 +5,8 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import com.icespiritai.offline.ui.theme.DarkOnSurface
-import com.icespiritai.offline.ui.theme.DarkSurface
+import com.icespiritai.offline.ui.theme.DarkIceChatOnBg
+import com.icespiritai.offline.ui.theme.DarkIceChatPanel
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -24,7 +24,7 @@ class HomeScreenTest {
         var captured = 0
         var picked = 0
         composeRule.setContent {
-            MaterialTheme(colorScheme = darkColorScheme(surface = DarkSurface, onSurface = DarkOnSurface)) {
+            MaterialTheme(colorScheme = darkColorScheme(surface = DarkIceChatPanel, onSurface = DarkIceChatOnBg)) {
                 HomeScreenBare(
                     onCapture = { captured++ },
                     onPick = { picked++ },
@@ -42,7 +42,7 @@ class HomeScreenTest {
     @Test
     fun `home idle shows image hint`() {
         composeRule.setContent {
-            MaterialTheme(colorScheme = darkColorScheme(surface = DarkSurface, onSurface = DarkOnSurface)) {
+            MaterialTheme(colorScheme = darkColorScheme(surface = DarkIceChatPanel, onSurface = DarkIceChatOnBg)) {
                 HomeScreenBare(onCapture = {}, onPick = {})
             }
         }

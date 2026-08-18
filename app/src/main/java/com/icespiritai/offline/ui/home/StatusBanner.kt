@@ -13,14 +13,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.icespiritai.offline.R
 import com.icespiritai.offline.domain.Severity
-import com.icespiritai.offline.ui.theme.DarkError
-import com.icespiritai.offline.ui.theme.DarkOnError
-import com.icespiritai.offline.ui.theme.DarkSuccess
-import com.icespiritai.offline.ui.theme.DarkWarning
-import com.icespiritai.offline.ui.theme.LightError
-import com.icespiritai.offline.ui.theme.LightOnError
-import com.icespiritai.offline.ui.theme.LightSuccess
-import com.icespiritai.offline.ui.theme.LightWarning
+import com.icespiritai.offline.ui.theme.DarkIceChatError
+import com.icespiritai.offline.ui.theme.DarkIceChatOnError
+import com.icespiritai.offline.ui.theme.DarkIceChatPositive
+import com.icespiritai.offline.ui.theme.DarkIceChatWarning
+import com.icespiritai.offline.ui.theme.LightIceChatError
+import com.icespiritai.offline.ui.theme.LightIceChatOnError
+import com.icespiritai.offline.ui.theme.LightIceChatPositive
+import com.icespiritai.offline.ui.theme.LightIceChatWarning
 
 enum class StatusBannerKind { Idle, Loading, Success, Warning, Violation }
 
@@ -34,9 +34,9 @@ fun StatusBanner(
     val (bg, fg) = when (kind) {
         StatusBannerKind.Idle -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
         StatusBannerKind.Loading -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
-        StatusBannerKind.Success -> if (isDark) DarkSuccess.copy(alpha = 0.2f) to DarkSuccess else LightSuccess.copy(alpha = 0.2f) to LightSuccess
-        StatusBannerKind.Warning -> if (isDark) DarkWarning.copy(alpha = 0.2f) to DarkWarning else LightWarning.copy(alpha = 0.2f) to LightWarning
-        StatusBannerKind.Violation -> if (isDark) DarkError.copy(alpha = 0.2f) to DarkError else LightError.copy(alpha = 0.2f) to LightError
+        StatusBannerKind.Success -> if (isDark) DarkIceChatPositive.copy(alpha = 0.2f) to DarkIceChatPositive else LightIceChatPositive.copy(alpha = 0.2f) to LightIceChatPositive
+        StatusBannerKind.Warning -> if (isDark) DarkIceChatWarning.copy(alpha = 0.2f) to DarkIceChatWarning else LightIceChatWarning.copy(alpha = 0.2f) to LightIceChatWarning
+        StatusBannerKind.Violation -> if (isDark) DarkIceChatError.copy(alpha = 0.2f) to DarkIceChatError else LightIceChatError.copy(alpha = 0.2f) to LightIceChatError
     }
     Box(
         modifier = modifier

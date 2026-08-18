@@ -5,9 +5,9 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import com.icespiritai.offline.domain.Severity
-import com.icespiritai.offline.ui.theme.DarkError
-import com.icespiritai.offline.ui.theme.DarkOnWarning
-import com.icespiritai.offline.ui.theme.DarkWarning
+import com.icespiritai.offline.ui.theme.DarkIceChatError
+import com.icespiritai.offline.ui.theme.DarkIceChatOnWarning
+import com.icespiritai.offline.ui.theme.DarkIceChatWarning
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -23,7 +23,7 @@ class SeverityBadgeTest {
     @Test
     fun `Violation shows 违规 label`() {
         composeRule.setContent {
-            MaterialTheme(colorScheme = darkColorScheme(primary = DarkError)) {
+            MaterialTheme(colorScheme = darkColorScheme(primary = DarkIceChatError)) {
                 SeverityBadge(severity = Severity.Violation)
             }
         }
@@ -33,7 +33,7 @@ class SeverityBadgeTest {
     @Test
     fun `Warning shows 警告 label`() {
         composeRule.setContent {
-            MaterialTheme(colorScheme = darkColorScheme(primary = DarkWarning, onPrimary = DarkOnWarning)) {
+            MaterialTheme(colorScheme = darkColorScheme(primary = DarkIceChatWarning, onPrimary = DarkIceChatOnWarning)) {
                 SeverityBadge(severity = Severity.Warning)
             }
         }
@@ -43,7 +43,7 @@ class SeverityBadgeTest {
     @Test
     fun `Info shows 信息 label`() {
         composeRule.setContent {
-            MaterialTheme(colorScheme = darkColorScheme(primary = DarkWarning, onPrimary = DarkOnWarning)) {
+            MaterialTheme(colorScheme = darkColorScheme(primary = DarkIceChatWarning, onPrimary = DarkIceChatOnWarning)) {
                 SeverityBadge(severity = Severity.Info)
             }
         }
