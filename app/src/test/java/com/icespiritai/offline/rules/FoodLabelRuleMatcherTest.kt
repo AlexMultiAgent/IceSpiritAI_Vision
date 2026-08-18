@@ -253,4 +253,418 @@ class FoodLabelRuleMatcherTest {
         assertEquals(4, hits.size)
         assertEquals(setOf("r_disease", "r_super", "r_supply", "r_minor"), hits.map { it.ruleId }.toSet())
     }
+
+    // --- food_label_rules.json v3 增量规则触发测试(2026-08-19 落地,共 29 条新增) ---
+
+    // --- GB 28050-2011 营养标签通则 — 12 条 ---
+
+    @Test
+    fun scan_gb28050Art5LowSugar_firesOn无糖() {
+        val r = FoodLabelRule(
+            "food_gb28050_art5_2_low_sugar",
+            "nutrition",
+            "GB 28050-2011 §5.2 + §6 + 附录 A",
+            listOf("无糖", "低糖", "零糖", "少糖", "0 蔗糖"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品无糖 + 低糖 + 零糖 + 少糖 + 0 蔗糖")
+        assertEquals(5, hits.size)
+        assertEquals("nutrition", hits[0].category)
+    }
+
+    @Test
+    fun scan_gb28050Art5LowFat_firesOn脱脂() {
+        val r = FoodLabelRule(
+            "food_gb28050_art5_3_low_fat",
+            "nutrition",
+            "GB 28050-2011 §5.3",
+            listOf("低脂", "脱脂", "零脂", "无脂", "少脂"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("低脂 + 脱脂 + 零脂 + 无脂 + 少脂")
+        assertEquals(5, hits.size)
+    }
+
+    @Test
+    fun scan_gb28050Art5LowSalt_firesOn低钠() {
+        val r = FoodLabelRule(
+            "food_gb28050_art5_4_low_salt",
+            "nutrition",
+            "GB 28050-2011 §5.4",
+            listOf("低盐", "低钠", "无盐", "少盐", "减盐", "无钠", "极低钠"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("低盐 + 低钠 + 无盐 + 少盐 + 减盐 + 无钠 + 极低钠")
+        assertEquals(7, hits.size)
+    }
+
+    @Test
+    fun scan_gb28050Art5HighFiber_firesOn膳食纤维来源() {
+        val r = FoodLabelRule(
+            "food_gb28050_art5_5_high_fiber",
+            "nutrition",
+            "GB 28050-2011 §5.5",
+            listOf("高膳食纤维", "富含膳食纤维", "膳食纤维来源", "含有膳食纤维", "高纤维"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("高膳食纤维 + 富含膳食纤维 + 膳食纤维来源 + 含有膳食纤维 + 高纤维")
+        assertEquals(5, hits.size)
+    }
+
+    @Test
+    fun scan_gb28050Art5HighCalciumIron_firesOn高铁() {
+        val r = FoodLabelRule(
+            "food_gb28050_art5_6_high_calcium_iron",
+            "nutrition",
+            "GB 28050-2011 §5.6",
+            listOf("高钙", "富钙", "钙来源", "高铁", "富铁", "铁来源", "高锌", "富锌", "锌来源"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("高钙 + 富钙 + 钙来源 + 高铁 + 富铁 + 铁来源 + 高锌 + 富锌 + 锌来源")
+        assertEquals(9, hits.size)
+    }
+
+    @Test
+    fun scan_gb28050Art5HighProtein_firesOn富含蛋白质() {
+        val r = FoodLabelRule(
+            "food_gb28050_art5_7_high_protein",
+            "nutrition",
+            "GB 28050-2011 §5.7",
+            listOf("高蛋白", "富含蛋白质", "蛋白质来源", "含有蛋白质"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("高蛋白 + 富含蛋白质 + 蛋白质来源 + 含有蛋白质")
+        assertEquals(4, hits.size)
+    }
+
+    @Test
+    fun scan_gb28050Art4TransFat_firesOn代可可脂() {
+        val r = FoodLabelRule(
+            "food_gb28050_art4_4_trans_fat",
+            "nutrition",
+            "GB 28050-2011 §4.4",
+            listOf("反式脂肪", "反式脂肪酸", "氢化植物油", "部分氢化", "人造奶油", "代可可脂", "氢化油"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("含反式脂肪 + 反式脂肪酸 + 氢化植物油 + 部分氢化 + 人造奶油 + 代可可脂 + 氢化油")
+        assertEquals(7, hits.size)
+    }
+
+    @Test
+    fun scan_gb28050Art5ReduceClaim_firesOn减糖() {
+        val r = FoodLabelRule(
+            "food_gb28050_art5_reduce_claim",
+            "nutrition",
+            "GB 28050-2011 §5.8",
+            listOf("减少糖", "减少脂肪", "减少盐", "减少钠", "减少能量", "减糖", "减盐", "加钙", "加铁", "加锌"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("减少糖 + 减少脂肪 + 减少盐 + 减少钠 + 减少能量 + 减糖 + 减盐 + 加钙 + 加铁 + 加锌")
+        assertEquals(10, hits.size)
+    }
+
+    @Test
+    fun scan_gb28050Art6FunctionClaim_firesOn有助于() {
+        val r = FoodLabelRule(
+            "food_gb28050_art6_function_claim",
+            "nutrition",
+            "GB 28050-2011 §6 + 附录 C",
+            listOf("有助于", "促进", "补充", "维持正常", "参与", "构成", "促进消化", "维持皮肤", "补充营养"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("有助于 + 促进 + 补充 + 维持正常 + 参与 + 构成 + 促进消化 + 维持皮肤 + 补充营养")
+        assertEquals(9, hits.size)
+        assertEquals(Severity.Info, hits[0].severity)
+    }
+
+    @Test
+    fun scan_gb28050Art3ChinesePriority_firesOnIngredients() {
+        val r = FoodLabelRule(
+            "food_gb28050_art3_chinese_priority",
+            "label_form",
+            "GB 28050-2011 §3.2",
+            listOf("English", "Net Wt", "Ingredients", "Nutrition Facts"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("English label + Net Wt 100g + Ingredients list + Nutrition Facts")
+        assertEquals(4, hits.size)
+        assertEquals(Severity.Info, hits[0].severity)
+    }
+
+    @Test
+    fun scan_gb28050Art3MinimalUnit_firesOn外箱() {
+        val r = FoodLabelRule(
+            "food_gb28050_art3_minimal_unit",
+            "label_form",
+            "GB 28050-2011 §3.6",
+            listOf("整箱", "外箱", "运输包装"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("整箱 + 外箱 + 运输包装 上才有营养成分表")
+        assertEquals(3, hits.size)
+    }
+
+    // --- GB 13432-2013 特殊膳食用食品标签通则 — 6 条 ---
+
+    @Test
+    fun scan_gb13432Art3Disease_firesOn辅助治疗() {
+        val r = FoodLabelRule(
+            "food_gb13432_art3_a_disease",
+            "specific_food",
+            "GB 13432-2013 §3.a",
+            listOf("治疗", "预防", "诊断", "康复", "辅助治疗", "预防疾病", "减轻症状", "改善病情"),
+            Severity.Violation,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("治疗 + 预防 + 诊断 + 康复 + 辅助治疗 + 预防疾病 + 减轻症状 + 改善病情")
+        assertEquals(8, hits.size)
+        assertEquals(Severity.Violation, hits[0].severity)
+    }
+
+    @Test
+    fun scan_gb13432Art3CInfantClaim_firesOn一段() {
+        val r = FoodLabelRule(
+            "food_gb13432_art3_c_infant_claim",
+            "specific_food",
+            "GB 13432-2013 §3.c / GB 10765",
+            listOf("0-6 月龄", "婴儿配方", "一段", "婴儿配方奶粉一段", "婴儿配方一段"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("0-6 月龄 + 婴儿配方 + 一段 + 婴儿配方奶粉一段 + 婴儿配方一段")
+        assertEquals(5, hits.size)
+    }
+
+    @Test
+    fun scan_gb13432Art4SpecialName_firesOn运动营养食品() {
+        val r = FoodLabelRule(
+            "food_gb13432_art4_2_special_name",
+            "specific_food",
+            "GB 13432-2013 §4.2 + 附录 A",
+            listOf("特殊膳食用食品", "特殊医学用途配方食品", "运动营养食品", "孕妇营养补充食品", "婴幼儿辅助食品"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("特殊膳食用食品 + 特殊医学用途配方食品 + 运动营养食品 + 孕妇营养补充食品 + 婴幼儿辅助食品")
+        assertEquals(5, hits.size)
+    }
+
+    @Test
+    fun scan_gb13432Art4EnergyNutrients_firesOn能量() {
+        val r = FoodLabelRule(
+            "food_gb13432_art4_3_energy_nutrients",
+            "specific_food",
+            "GB 13432-2013 §4.3",
+            listOf("能量", "蛋白质", "脂肪", "碳水化合物", "钠", "营养成分表"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("能量 + 蛋白质 + 脂肪 + 碳水化合物 + 钠 + 营养成分表")
+        assertEquals(6, hits.size)
+    }
+
+    @Test
+    fun scan_gb13432Art4TargetPopulation_firesOn适用人群() {
+        val r = FoodLabelRule(
+            "food_gb13432_art4_target_population",
+            "specific_food",
+            "GB 13432-2013 §4.4",
+            listOf("适用人群", "不适宜人群", "适宜人群"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("适用人群 + 不适宜人群 + 适宜人群")
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_gb13432InfantBreastmilkSubstitute_firesOn代替母乳() {
+        val r = FoodLabelRule(
+            "food_gb13432_infant_breastmilk_substitute",
+            "specific_food",
+            "GB 13432-2013 §3.c / 母乳代用品销售管理办法 / 食品安全法 §81",
+            listOf("代替母乳", "替代母乳", "无需母乳", "胜过母乳", "比母乳", "母乳化", "人乳化", "近似母乳", "接近母乳"),
+            Severity.Violation,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("代替母乳 + 替代母乳 + 无需母乳 + 胜过母乳 + 比母乳 + 母乳化 + 人乳化 + 近似母乳 + 接近母乳")
+        assertEquals(9, hits.size)
+        assertEquals(Severity.Violation, hits[0].severity)
+    }
+
+    // --- GB 7718-2011 预包装食品标签通则 细化 — 8 条 ---
+
+    @Test
+    fun scan_gb7718Art4IngredientOrder_firesOn配料表() {
+        val r = FoodLabelRule(
+            "food_gb7718_art4_1_4_ingredient_order",
+            "ingredient",
+            "GB 7718-2011 §4.1.4.1",
+            listOf("配料表", "配料", "Ingredients"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("配料表 + 配料 + Ingredients")
+        assertEquals(3, hits.size)
+        assertEquals("ingredient", hits[0].category)
+    }
+
+    @Test
+    fun scan_gb7718Art4AdditiveName_firesOn苯甲酸钠() {
+        val r = FoodLabelRule(
+            "food_gb7718_art4_1_3_additive_name",
+            "additive",
+            "GB 7718-2011 §4.1.3",
+            listOf("食品添加剂", "阿斯巴甜", "苯甲酸钠", "山梨酸钾", "柠檬黄", "日落黄", "胭脂红", "甜蜜素", "糖精钠"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("食品添加剂 + 阿斯巴甜 + 苯甲酸钠 + 山梨酸钾 + 柠檬黄 + 日落黄 + 胭脂红 + 甜蜜素 + 糖精钠")
+        assertEquals(9, hits.size)
+        assertEquals("additive", hits[0].category)
+    }
+
+    @Test
+    fun scan_gb7718Art4Allergen_firesOn含花生() {
+        val r = FoodLabelRule(
+            "food_gb7718_art4_1_4_allergen_disclose",
+            "allergen",
+            "GB 7718-2011 §4.1.4 / 食品安全法 §41 / GB 31644-2018",
+            listOf("过敏原", "致敏物质", "含麸质", "含花生", "含坚果", "含大豆", "含牛奶", "含鸡蛋", "含芝麻", "含鱼", "可能含有花生"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("过敏原 + 致敏物质 + 含麸质 + 含花生 + 含坚果 + 含大豆 + 含牛奶 + 含鸡蛋 + 含芝麻 + 含鱼 + 可能含有花生")
+        assertEquals(11, hits.size)
+        assertEquals("allergen", hits[0].category)
+    }
+
+    @Test
+    fun scan_gb7718Art4LotNumber_firesOnLot() {
+        val r = FoodLabelRule(
+            "food_gb7718_art4_1_7_lot_number",
+            "production_date",
+            "GB 7718-2011 §4.1.7",
+            listOf("生产批号", "批号", "Lot No", "Lot"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("生产批号 + 批号 + Lot No + Lot")
+        assertEquals(4, hits.size)
+    }
+
+    @Test
+    fun scan_gb7718Art4Importer_firesOn原产国() {
+        val r = FoodLabelRule(
+            "food_gb7718_art4_1_6_importer",
+            "label_form",
+            "GB 7718-2011 §4.1.6",
+            listOf("原产国", "进口商", "进口", "Country of Origin", "Imported by", "Imported"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("原产国 + 进口商 + 进口 + Country of Origin + Imported by + Imported")
+        assertEquals(6, hits.size)
+    }
+
+    @Test
+    fun scan_gb7718Art4StorageCondition_firesOn冷藏() {
+        val r = FoodLabelRule(
+            "food_gb7718_art4_1_5_storage_condition",
+            "label_form",
+            "GB 7718-2011 §4.1.5",
+            listOf("贮存条件", "储存条件", "冷藏", "冷冻", "常温保存", "避光", "阴凉干燥"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("贮存条件 + 储存条件 + 冷藏 + 冷冻 + 常温保存 + 避光 + 阴凉干燥")
+        assertEquals(7, hits.size)
+    }
+
+    @Test
+    fun scan_gb7718Art4DateFormat_firesOnEXP() {
+        val r = FoodLabelRule(
+            "food_gb7718_art4_1_5_2_date_format",
+            "production_date",
+            "GB 7718-2011 §4.1.6.2",
+            listOf("生产日期", "保质期", "EXP", "失效日期", "MFD", "最佳食用日期", "此日期前食用"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("生产日期 + 保质期 + EXP + 失效日期 + MFD + 最佳食用日期 + 此日期前食用")
+        assertEquals(7, hits.size)
+    }
+
+    @Test
+    fun scan_gb7718Art4NetWeight_firesOn净含量() {
+        val r = FoodLabelRule(
+            "food_gb7718_art4_1_5_3_net_weight",
+            "net_weight",
+            "GB 7718-2011 §4.1.5.3",
+            listOf("净含量", "净重", "NET WT", "Net Weight"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("净含量 + 净重 + NET WT + Net Weight")
+        assertEquals(4, hits.size)
+        assertEquals("net_weight", hits[0].category)
+    }
+
+    // --- 食品标识监督管理办法 / 食品安全法 细化 — 3 条 ---
+
+    @Test
+    fun scan_art22QualityGrade_firesOn特级() {
+        val r = FoodLabelRule(
+            "food_art22_quality_grade",
+            "label_form",
+            "食品标识监督管理办法 §27 / 食品安全法 §71(3)",
+            listOf("特级", "优级", "一级品", "合格品", "顶级", "臻品"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("特级 + 优级 + 一级品 + 合格品 + 顶级 + 臻品")
+        assertEquals(6, hits.size)
+    }
+
+    @Test
+    fun scan_art23SpecialGroup_firesOn孕产妇() {
+        val r = FoodLabelRule(
+            "food_art23_special_group",
+            "label_form",
+            "食品标识监督管理办法 §8 / §31",
+            listOf("婴儿", "幼儿", "婴幼儿", "儿童", "老年", "孕妇", "乳母", "孕产妇", "学生"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("婴儿 + 幼儿 + 婴幼儿 + 儿童 + 老年 + 孕妇 + 乳母 + 孕产妇 + 学生")
+        assertEquals(9, hits.size)
+    }
+
+    @Test
+    fun scan_art32TranslationQuality_firesOn无中文标签() {
+        val r = FoodLabelRule(
+            "food_art32_translation_quality",
+            "label_form",
+            "食品标识监督管理办法 §11 / GB 7718-2011 §3.8",
+            listOf("English only", "外文标签无中文", "无中文标签", "中文缺失"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("English only + 外文标签无中文 + 无中文标签 + 中文缺失")
+        assertEquals(4, hits.size)
+    }
+
+    @Test
+    fun scan_art28FunctionClaimUnauthorized_firesOn辅助降血脂() {
+        val r = FoodLabelRule(
+            "food_art28_function_claim_unauthorized",
+            "functional_claim",
+            "食品标识监督管理办法 §28 + §41 / 食品标识管理规定 §19",
+            listOf("调节血脂", "调节血糖", "增强免疫", "延缓衰老", "辅助降血脂", "辅助降血糖", "辅助改善记忆", "缓解视疲劳", "促进泌乳", "改善皮肤水分", "调节肠道菌群", "通便", "缓解体力疲劳", "减肥", "改善骨质疏松", "改善营养性贫血", "祛痤疮", "祛黄褐斑"),
+            Severity.Violation,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("调节血脂 + 调节血糖 + 增强免疫 + 延缓衰老 + 辅助降血脂 + 辅助降血糖 + 辅助改善记忆 + 缓解视疲劳 + 促进泌乳 + 改善皮肤水分 + 调节肠道菌群 + 通便 + 缓解体力疲劳 + 减肥 + 改善骨质疏松 + 改善营养性贫血 + 祛痤疮 + 祛黄褐斑")
+        assertEquals(18, hits.size)
+        assertEquals(Severity.Violation, hits[0].severity)
+    }
+
+    @Test
+    fun scan_multipleV3Rules_fireIndependentlyOnCombinedText() {
+        // 同一段文本上,来自 v3 增量条款(GB 28050 / GB 13432 / GB 7718)的多条规则应各自触发
+        val rules = listOf(
+            FoodLabelRule("r_nutr_low_sugar", "nutrition", "§5.2", listOf("无糖"), Severity.Warning),
+            FoodLabelRule("r_spec_disease", "specific_food", "§3.a", listOf("治疗"), Severity.Violation),
+            FoodLabelRule("r_ingr_order", "ingredient", "§4.1.4.1", listOf("配料表"), Severity.Warning),
+            FoodLabelRule("r_allegen", "allergen", "§4.1.4", listOf("含花生"), Severity.Warning),
+        )
+        val hits = FoodLabelRuleMatcher(rules).scan("无糖配方 + 治疗营养不良 + 配料表显示 + 含花生")
+        assertEquals(4, hits.size)
+        assertEquals(
+            setOf("r_nutr_low_sugar", "r_spec_disease", "r_ingr_order", "r_allegen"),
+            hits.map { it.ruleId }.toSet(),
+        )
+    }
 }
