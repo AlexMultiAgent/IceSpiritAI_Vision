@@ -29,6 +29,15 @@ dependencyResolutionManagement {
     }
 }
 
+// Toolchain provisioning: buildSrc pins jvmToolchain(17) (mirrors the
+// 2026-08 forward-path baseline) but the WIN runner ships JDK 25 only.
+// We don't pin `org.gradle.java.home` in this file because the path is
+// per-machine (see gradle.properties). Gradle's built-in toolchain
+// auto-download falls back to foojay.io which is rate-limited in CN;
+// contributors in CN should pre-stage JDK 17 manually or point
+// org.gradle.java.home at their local install. The
+// `org.gradle.java.installations.auto-download=true` flag in
+// gradle.properties covers the rest of the world.
 rootProject.name = "IceSpirit"
 
 include(":app")
