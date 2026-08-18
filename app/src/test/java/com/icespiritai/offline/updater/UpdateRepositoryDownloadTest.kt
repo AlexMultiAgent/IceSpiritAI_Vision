@@ -17,7 +17,7 @@ import java.nio.file.Files
 class UpdateRepositoryDownloadTest {
 
     private var factory: (String) -> HttpURLConnection = { error("not configured") }
-    private val apkUrl = "http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/icespiritai-vision-update.apk"
+    private val apkUrl = "http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/icespiritai-vision.apk"
     private val info = AppVersionInfo(
         versionCode = 2, versionName = "0.2.0",
         apkUrl = apkUrl, apkSize = 1024L,
@@ -42,7 +42,7 @@ class UpdateRepositoryDownloadTest {
         val outDir = Files.createTempDirectory("icespirit-dl").toFile()
         val outFile = UpdateRepository.downloadApkTo(info, outDir)
 
-        assertEquals("icespiritai-vision-update.apk", outFile.name)
+        assertEquals("icespiritai-vision.apk", outFile.name)
         assertEquals(1024L, outFile.length())
         assertTrue(bytes.toList() == outFile.readBytes().toList())
         outDir.deleteRecursively()

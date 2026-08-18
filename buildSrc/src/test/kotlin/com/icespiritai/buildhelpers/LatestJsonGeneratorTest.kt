@@ -15,7 +15,7 @@ class LatestJsonGeneratorTest {
         val json = LatestJsonGenerator.buildLatestJson(
             versionCode = 7,
             versionName = "0.7.0",
-            apkUrl = "http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/icespiritai-vision-update.apk",
+            apkUrl = "http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/icespiritai-vision.apk",
             apkSize = 20_000_000L,
             apkSha256 = "d".repeat(64),
             changelog = "## v0.7.0\n- 修复A\n- 新增B",
@@ -24,7 +24,7 @@ class LatestJsonGeneratorTest {
         val info = parser.decodeFromString(TestAppVersionInfo.serializer(), json)
         assertEquals(7, info.versionCode)
         assertEquals("0.7.0", info.versionName)
-        assertTrue(info.apkUrl.endsWith("/icespiritai-vision-update.apk"))
+        assertTrue(info.apkUrl.endsWith("/icespiritai-vision.apk"))
         assertEquals(20_000_000L, info.apkSize)
         assertEquals("d".repeat(64), info.apkSha256)
         assertEquals(100L, info.apkCumulativeDownloads)

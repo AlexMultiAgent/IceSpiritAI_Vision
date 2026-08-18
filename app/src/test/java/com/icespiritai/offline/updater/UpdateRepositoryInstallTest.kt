@@ -32,7 +32,7 @@ class UpdateRepositoryInstallTest {
     fun requestInstall_buildsActionViewIntent_withFileProviderUri() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val outDir = File(context.cacheDir, "update").apply { mkdirs() }
-        val file = File(outDir, "icespiritai-vision-update.apk").apply { writeBytes(byteArrayOf(1)) }
+        val file = File(outDir, "icespiritai-vision.apk").apply { writeBytes(byteArrayOf(1)) }
 
         val intent = UpdateRepository.buildInstallIntent(context, file)
 

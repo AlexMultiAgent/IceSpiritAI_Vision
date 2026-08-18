@@ -36,7 +36,7 @@ object ArchiveVision {
     /**
      * Stage [apkSource] (already named icespiritai-vision-vX.Y.Z.apk) +
      * [jsonSource] into [uploadStagingDir]. The APK is RENAMED to
-     * `icespiritai-vision-update.apk` (matches the Gitea release attachment
+     * `icespiritai-vision.apk` (matches the Gitea release attachment
      * filename). The JSON filename is preserved.
      */
     fun archiveForUpload(
@@ -48,7 +48,7 @@ object ArchiveVision {
         require(uploadStagingDir.isDirectory) {
             "archiveForUpload: ${uploadStagingDir.absolutePath} exists but is not a directory"
         }
-        val apkDest = uploadStagingDir.resolve("icespiritai-vision-update.apk")
+        val apkDest = uploadStagingDir.resolve("icespiritai-vision.apk")
         FileInputStream(apkSource).use { ins ->
             FileOutputStream(apkDest).use { out ->
                 ins.copyTo(out, bufferSize = 64 * 1024)

@@ -126,7 +126,7 @@ object UpdateRepository {
         onProgress: (Long) -> Unit = {},
     ): File {
         updateDir.mkdirs()
-        val outFile = File(updateDir, "icespiritai-vision-update.apk")
+        val outFile = File(updateDir, "icespiritai-vision.apk")
         val conn = openConnection(info.apkUrl).apply {
             connectTimeout = 15_000
             readTimeout = 300_000

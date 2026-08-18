@@ -498,7 +498,7 @@ tasks.register("generateVisionLatestJson") {
         val vn = android.defaultConfig.versionName
         val size = apk.length()
         val sha = sha256HexForBuild(apk)
-        val url = "http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/icespiritai-vision-update.apk"
+        val url = "http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/icespiritai-vision.apk"
         // Phase 1: no CHANGELOG.md → empty changelog. Phase 2+: read
         // the first `## vX.Y.Z` block from CHANGELOG.md (translate's
         // extractLatestChangelogForBuild pattern).
@@ -530,7 +530,7 @@ tasks.register("generateVisionLatestJson") {
 // ----- archiveVisionRelease -----
 //
 // Copies the signed release APK to 发布版历史存档/ (versioned archive)
-// and stages a renamed copy (icespiritai-vision-update.apk) +
+// and stages a renamed copy (icespiritai-vision.apk) +
 // vision-latest.json into 发布版历史存档/最新版改名上传/ for the Gitea
 // upload. The versioned archive preserves every release's APK; the
 // upload staging dir holds only the latest release's renamed APK + JSON.
@@ -578,12 +578,12 @@ tasks.register("archiveVisionRelease") {
             }
         }
 
-        // 2. Upload staging: APK renamed to icespiritai-vision-update.apk + JSON.
+        // 2. Upload staging: APK renamed to icespiritai-vision.apk + JSON.
         if (!uploadStagingDir.exists()) uploadStagingDir.mkdirs()
         require(uploadStagingDir.isDirectory) {
             "archiveVisionRelease: ${uploadStagingDir.absolutePath} exists but is not a directory"
         }
-        val apkUploadDest = uploadStagingDir.resolve("icespiritai-vision-update.apk")
+        val apkUploadDest = uploadStagingDir.resolve("icespiritai-vision.apk")
         FileInputStream(apk).use { ins ->
             FileOutputStream(apkUploadDest).use { out ->
                 ins.copyTo(out, bufferSize = 64 * 1024)
@@ -594,7 +594,7 @@ tasks.register("archiveVisionRelease") {
 
         logger.lifecycle(
             "archiveVisionRelease: copied ${apk.name} -> ${apkArchiveDest.absolutePath} " +
-                "(apkSize=${apk.length()}); staged icespiritai-vision-update.apk -> ${apkUploadDest.absolutePath}, " +
+                "(apkSize=${apk.length()}); staged icespiritai-vision.apk -> ${apkUploadDest.absolutePath}, " +
                 "vision-latest.json -> ${jsonUploadDest.absolutePath}"
         )
     }
@@ -720,7 +720,7 @@ tasks.register("uploadVisionReleaseToGitea") {
         require(assetsCode == "200") {
             "uploadVisionReleaseToGitea: GET release assets returned HTTP $assetsCode: $assetsBody"
         }
-        val targetNames = setOf("icespiritai-vision-update.apk", "vision-latest.json")
+        val targetNames = setOf("icespiritai-vision.apk", "vision-latest.json")
         val idPattern = Regex(""""id"\s*:\s*(\d+)""")
         val namePattern = Regex(""""name"\s*:\s*"([^"]+)"""")
         Regex("""\{[^{}]*\}""").findAll(assetsBody).forEach { objMatch ->
@@ -742,7 +742,7 @@ tasks.register("uploadVisionReleaseToGitea") {
         }
 
         // 3. Upload two new assets.
-        val stagedApk = uploadStagingDir.resolve("icespiritai-vision-update.apk")
+        val stagedApk = uploadStagingDir.resolve("icespiritai-vision.apk")
         val stagedJson = uploadStagingDir.resolve("vision-latest.json")
         require(stagedApk.exists()) {
             "uploadVisionReleaseToGitea: missing staged APK ${stagedApk.absolutePath}. Run archiveVisionRelease first."

@@ -39,7 +39,7 @@ class ArchiveVisionTest {
             val uploadDir = File(tmp, "upload")
             val (apkDest, jsonDest) = ArchiveVision.archiveForUpload(src, json, uploadDir)
 
-            assertEquals("icespiritai-vision-update.apk", apkDest.name)
+            assertEquals("icespiritai-vision.apk", apkDest.name)
             assertEquals("vision-latest.json", jsonDest.name)
             assertEquals(2048L, apkDest.length())
             assertEquals("""{"versionCode":2}""", jsonDest.readText())

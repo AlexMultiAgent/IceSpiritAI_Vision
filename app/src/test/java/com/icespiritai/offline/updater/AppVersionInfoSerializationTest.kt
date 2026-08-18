@@ -16,7 +16,7 @@ class AppVersionInfoSerializationTest {
         val info = AppVersionInfo(
             versionCode = 2,
             versionName = "0.2.0",
-            apkUrl = "http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/icespiritai-vision-update.apk",
+            apkUrl = "http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/icespiritai-vision.apk",
             apkSize = 18392192L,
             apkSha256 = "a".repeat(64),
             changelog = "## v0.2.0\n- 修复X\n- 新增Y",

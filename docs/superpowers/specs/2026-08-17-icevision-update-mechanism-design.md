@@ -96,7 +96,7 @@ app/src/main/java/com/icespiritai/offline/ui/settings/
 {
   "versionCode": 2,
   "versionName": "0.2.0",
-  "apkUrl": "http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/icespiritai-vision-update.apk",
+  "apkUrl": "http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/icespiritai-vision.apk",
   "apkSize": 18392192,
   "apkSha256": "<64 hex>",
   "changelog": "## v0.2.0\n- 修复...\n- 新增...",
@@ -111,8 +111,8 @@ app/src/main/java/com/icespiritai/offline/ui/settings/
 | 主机 / 端口 / 协议 | `125.211.45.14:3000` / `http`(Gitea 当前未启用 TLS,cleartext 已在 `network_security_config.xml` 允许) |
 | Gitea base path | `/giteaadmin/vision-app/releases/download/latest` |
 | Manifest 文件名 | `vision-latest.json` |
-| APK 文件名(客户端下载的) | `icespiritai-vision-update.apk` |
-| 本地缓存路径 | `cacheDir/update/icespiritai-vision-update.apk` |
+| APK 文件名(客户端下载的) | `icespiritai-vision.apk` |
+| 本地缓存路径 | `cacheDir/update/icespiritai-vision.apk` |
 | 版本化归档名(服务端多版本留存) | `icespiritai-vision-v0.X.Y.apk` |
 | 上传 staging 目录 | `D:\GitHub\IceSpiritAI_Vision\发布版历史存档\最新版改名上传\` |
 
@@ -169,7 +169,7 @@ sealed class UpdateCheckResult {
 
 1. 创建 `cacheDir/update/`,存在则跳过
 2. `URL(info.apkUrl).openConnection()` → `HttpURLConnection`
-3. 同步阻塞写到 `cacheDir/update/icespiritai-vision-update.apk`,每 ~256 KiB / 500 ms 调一次 `onProgress(downloaded, total)`
+3. 同步阻塞写到 `cacheDir/update/icespiritai-vision.apk`,每 ~256 KiB / 500 ms 调一次 `onProgress(downloaded, total)`
 4. 写完后 flip state 到 `ReadyToInstall(file)`
 5. 任何 IOException / SecurityException → flip 到 `Failed.DownloadInterrupted(cause)`
 
@@ -304,7 +304,7 @@ Authority `${applicationId}.fileprovider` 已经在 manifest 里声明过,无需
 | 任务 | 职责 |
 |---|---|
 | `archiveVisionDebug` | 在 `发布版历史存档/` 下创建 `icespiritai-vision-v0.X.Y.apk`(读 `BuildConfig.VERSION_NAME`) |
-| `generateVisionLatestJson` | 复制同一 APK 成 `icespiritai-vision-update.apk` 到 `发布版历史存档/最新版改名上传/`,计算 SHA-256(写入 JSON 但客户端**不校验**,留作 Phase 2+),写 `vision-latest.json` |
+| `generateVisionLatestJson` | 复制同一 APK 成 `icespiritai-vision.apk` 到 `发布版历史存档/最新版改名上传/`,计算 SHA-256(写入 JSON 但客户端**不校验**,留作 Phase 2+),写 `vision-latest.json` |
 | `uploadToGitea` | **本期不实现**,Phase 2+ 接入 translate 的 token-based REST API 方案 |
 
 `BuildConfig.UPDATE_JSON_URL` buildConfigField 在 `app/build.gradle.kts`:
