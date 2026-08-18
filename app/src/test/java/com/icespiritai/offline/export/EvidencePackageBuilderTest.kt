@@ -36,6 +36,7 @@ class EvidencePackageBuilderTest {
                     category = "绝对化用语",
                     regulation = "《广告法》第 9 条",
                     severity = Severity.Violation,
+                    lawText = "第九条 广告不得有下列情形：（三）使用“国家级”、“最高级”、“最佳”等用语。",
                 ),
             ),
             timestampMs = 1_700_000_000_000L,
@@ -64,6 +65,14 @@ class EvidencePackageBuilderTest {
         assertTrue(
             "report.json lacks matchedText",
             String(entries.getValue("report.json")).contains("100% 有效"),
+        )
+        assertTrue(
+            "report.json lacks lawText",
+            String(entries.getValue("report.json")).contains("第九条 广告不得有下列情形"),
+        )
+        assertTrue(
+            "report.json lacks Chinese category label",
+            String(entries.getValue("report.json")).contains("\"categoryLabel\": \"绝对化用语\""),
         )
         assertTrue(
             "manifest.txt lacks version",

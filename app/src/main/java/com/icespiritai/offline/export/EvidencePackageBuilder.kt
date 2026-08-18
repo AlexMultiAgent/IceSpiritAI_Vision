@@ -1,6 +1,7 @@
 package com.icespiritai.offline.export
 
 import com.icespiritai.offline.domain.ViolationReport
+import com.icespiritai.offline.domain.AdCategory
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
@@ -36,7 +37,9 @@ object EvidencePackageBuilder {
                             put("ruleId", JsonPrimitive(hit.ruleId))
                             put("matchedText", JsonPrimitive(hit.matchedText))
                             put("category", JsonPrimitive(hit.category))
+                            put("categoryLabel", JsonPrimitive(AdCategory.displayName(hit.category)))
                             put("regulation", JsonPrimitive(hit.regulation))
+                            put("lawText", JsonPrimitive(hit.lawText))
                             put("severity", JsonPrimitive(hit.severity.name))
                         })
                     }
