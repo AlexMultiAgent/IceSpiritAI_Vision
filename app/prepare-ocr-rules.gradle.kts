@@ -3,7 +3,7 @@
 // Both rule domains (ad_signage + food_label) are staged for every profile so
 // the runtime loader can hydrate either domain regardless of the active model.
 // shell           → ad_signage_rules.json + food_label_rules.json = {"version":1,"rules":[]} (skeleton)
-// ice_ocr_rules   → ad_signage_rules.json (10 golden rules) + food_label_rules.json (6 golden rules)
+// ice_ocr_rules   → ad_signage_rules.json (116 rules / v4) + food_label_rules.json (66 rules / v4)
 // ice_vision      → same as shell (Phase 2+)
 //
 // Source files at app/src/main/assets/rules/ are NEVER mutated.
