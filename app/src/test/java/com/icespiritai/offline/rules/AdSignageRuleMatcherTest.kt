@@ -446,4 +446,502 @@ class AdSignageRuleMatcherTest {
         assertEquals(4, hits.size)
         assertEquals(setOf("r_emblem", "r_super", "r_breast", "r_tobacco"), hits.map { it.ruleId }.toSet())
     }
+
+    // --- ad_signage_rules.json v3 增量规则触发测试(2026-08-19 落地,共 43 条新增) ---
+
+    // --- 医疗器械广告审查发布标准 (令第40号) — 8 条 ---
+
+    @Test
+    fun scan_medicalArt4SelfuseLabel_firesOn血压计() {
+        val r = AdSignageRule(
+            "ad_signage_medical_art4_selfuse_label",
+            "medical",
+            "医疗器械广告审查发布标准 §4 + §9",
+            listOf("血压计", "血糖仪", "助听器"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("家用血压计 + 血糖仪 + 助听器一键购")
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_medicalArt5Contraindication_firesOn禁忌() {
+        val r = AdSignageRule(
+            "ad_signage_medical_art5_contraindication",
+            "medical",
+            "医疗器械广告审查发布标准 §5",
+            listOf("禁忌", "注意事项", "禁用人群"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("禁忌内容详见说明书,注意事项 / 禁用人群")
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_medicalArt6Adapproval_firesOn医械广审() {
+        val r = AdSignageRule(
+            "ad_signage_medical_art6_adapproval",
+            "medical",
+            "医疗器械广告审查发布标准 §6(四)",
+            listOf("医械广审", "医疗器械广审文号"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("医械广审(文)字第 2025001 号,医疗器械广审文号")
+        assertEquals(2, hits.size)
+    }
+
+    @Test
+    fun scan_medicalArt7Assertion_firesOn100安全() {
+        val r = AdSignageRule(
+            "ad_signage_medical_art7_assertion",
+            "medical",
+            "医疗器械广告审查发布标准 §7(一) / 广告法 §16",
+            listOf("100% 安全", "绝对安全", "零副作用"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本产品 100% 安全,绝对安全 + 零副作用")
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_medicalArt7CureRate_firesOn有效率() {
+        val r = AdSignageRule(
+            "ad_signage_medical_art7_cure_rate",
+            "medical",
+            "医疗器械广告审查发布标准 §7(二) / 广告法 §16(二)",
+            listOf("治愈率", "有效率", "显效率"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("治愈率 90%、有效率 95%、显效率 80%")
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_medicalArt7Compare_firesOn完胜() {
+        val r = AdSignageRule(
+            "ad_signage_medical_art7_compare",
+            "medical",
+            "医疗器械广告审查发布标准 §7(三) / 广告法 §16(三)",
+            listOf("比 X 强", "完胜", "最好医疗器械"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本品牌完胜其他品牌,最好医疗器械,比 X 强 10 倍")
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_medicalArt7Endorsement_firesOn主任医师() {
+        val r = AdSignageRule(
+            "ad_signage_medical_art7_endorsement",
+            "medical",
+            "医疗器械广告审查发布标准 §7(四)",
+            listOf("主任医师推荐", "患者证言", "康复案例"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("主任医师推荐 + 患者证言 + 真实康复案例")
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_medicalArt8Commitment_firesOn无效退款() {
+        val r = AdSignageRule(
+            "ad_signage_medical_art8_commitment",
+            "medical",
+            "医疗器械广告审查发布标准 §8",
+            listOf("无效退款", "保险公司保险"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("无效退款 + 保险公司保险")
+        assertEquals(2, hits.size)
+    }
+
+    // --- 农药广告审查发布规定 (令第81号) — 10 条 ---
+
+    @Test
+    fun scan_pesticideArt2Unregistered_firesOn农药登记证() {
+        val r = AdSignageRule(
+            "ad_signage_pesticide_art2_unregistered",
+            "pesticide",
+            "农药广告审查发布规定 §2 + §13",
+            listOf("农药登记证", "PD"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("农药登记证 PD20160001,本剂可放心使用")
+        assertEquals(2, hits.size)
+    }
+
+    @Test
+    fun scan_pesticideArt3Overrange_firesOn万能杀虫() {
+        val r = AdSignageRule(
+            "ad_signage_pesticide_art3_overrange",
+            "pesticide",
+            "农药广告审查发布规定 §3",
+            listOf("全杀", "万能杀虫", "对 X 病虫草均有效"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("全杀型杀虫剂,万能杀虫,对 X 病虫草均有效")
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_pesticideArt4Assertion_firesOn保证有效() {
+        val r = AdSignageRule(
+            "ad_signage_pesticide_art4_assertion",
+            "pesticide",
+            "农药广告审查发布规定 §4(一)",
+            listOf("100% 安全", "绝对安全", "保证有效", "高效低毒"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("保证有效 + 100% 安全 + 绝对安全 + 高效低毒")
+        assertEquals(4, hits.size)
+    }
+
+    @Test
+    fun scan_pesticideArt4Endorsement_firesOn研究院推荐() {
+        val r = AdSignageRule(
+            "ad_signage_pesticide_art4_endorsement",
+            "pesticide",
+            "农药广告审查发布规定 §4(二)",
+            listOf("研究院推荐", "教授推荐", "用户证言"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("研究院推荐 + 教授推荐 + 用户证言")
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_pesticideArt4CureRate_firesOn杀灭率() {
+        val r = AdSignageRule(
+            "ad_signage_pesticide_art4_cure_rate",
+            "pesticide",
+            "农药广告审查发布规定 §4(三)",
+            listOf("有效率 90%", "防治效果 95%", "杀灭率 99%"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("有效率 90%、防治效果 95%、杀灭率 99%")
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_pesticideArt4SafetyViolation_firesOn拌料口服() {
+        val r = AdSignageRule(
+            "ad_signage_pesticide_art4_safety_violation",
+            "pesticide",
+            "农药广告审查发布规定 §4(四)",
+            listOf("拌料口服", "随意加大剂量", "食用安全"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("拌料口服 + 随意加大剂量,食用安全")
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_pesticideArt5Deprecate_firesOn不如() {
+        val r = AdSignageRule(
+            "ad_signage_pesticide_art5_deprecate",
+            "pesticide",
+            "农药广告审查发布规定 §5",
+            listOf("不如", "比 X 差", "完胜同类"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本剂完胜同类,其他品牌不如本品,比 X 差远了")
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_pesticideArt6Endorsement_firesOn销量第一() {
+        val r = AdSignageRule(
+            "ad_signage_pesticide_art6_endorsement",
+            "pesticide",
+            "农药广告审查发布规定 §6 / 广告法 §9(三)",
+            listOf("销量第一", "首选", "金奖", "全国第一"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("销量第一 + 首选 + 金奖 + 全国第一")
+        assertEquals(4, hits.size)
+    }
+
+    @Test
+    fun scan_pesticideArt10Commitment_firesOn保险公司保险() {
+        val r = AdSignageRule(
+            "ad_signage_pesticide_art10_commitment",
+            "pesticide",
+            "农药广告审查发布规定 §10 + §13",
+            listOf("无效退款", "保险公司保险", "保证 100% 有效"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("无效退款 + 保险公司保险 + 保证 100% 有效")
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_pesticideArt11ApprovalNo_firesOn农药广审文号() {
+        val r = AdSignageRule(
+            "ad_signage_pesticide_art11_approval_no",
+            "pesticide",
+            "农药广告审查发布规定 §11",
+            listOf("农药广审文号", "农药广告批准文号"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("农药广审文号 / 农药广告批准文号 应同时发布")
+        assertEquals(2, hits.size)
+    }
+
+    // --- 兽药广告审查发布规定 (令第82号) — 10 条 ---
+
+    @Test
+    fun scan_veterinaryArt3Prohibited_firesOn未取得兽药产品批准文号() {
+        val r = AdSignageRule(
+            "ad_signage_veterinary_art3_prohibited",
+            "veterinary",
+            "兽药广告审查发布规定 §3",
+            listOf("兽用麻醉", "未取得兽药产品批准文号", "未取得进口兽药注册证书"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("兽用麻醉药品 + 未取得兽药产品批准文号 / 未取得进口兽药注册证书")
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_veterinaryArt4Assertion_firesOn绝对安全() {
+        val r = AdSignageRule(
+            "ad_signage_veterinary_art4_assertion",
+            "veterinary",
+            "兽药广告审查发布规定 §4(一)",
+            listOf("100% 有效", "保证有效", "绝对安全", "零副作用"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("100% 有效 + 保证有效 + 绝对安全 + 零副作用")
+        assertEquals(4, hits.size)
+    }
+
+    @Test
+    fun scan_veterinaryArt4CureRate_firesOn治愈率() {
+        val r = AdSignageRule(
+            "ad_signage_veterinary_art4_cure_rate",
+            "veterinary",
+            "兽药广告审查发布规定 §4(三)",
+            listOf("有效率", "治愈率", "防治效果"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("有效率 95% + 治愈率 90% + 防治效果 99%")
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_veterinaryArt4SafetyViolation_firesOn随意加大剂量() {
+        val r = AdSignageRule(
+            "ad_signage_veterinary_art4_safety_violation",
+            "veterinary",
+            "兽药广告审查发布规定 §4(四)",
+            listOf("拌料口服", "随意加大剂量", "人畜同用"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("拌料口服 + 随意加大剂量 + 可人畜同用")
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_veterinaryArt6Absolute_firesOn包治百病() {
+        val r = AdSignageRule(
+            "ad_signage_veterinary_art6_absolute",
+            "veterinary",
+            "兽药广告审查发布规定 §6 / 广告法 §9(三)",
+            listOf("最高技术", "最进步制法", "包治百病", "兽药仙丹"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("最高技术 + 最进步制法 + 包治百病 + 兽药仙丹")
+        assertEquals(4, hits.size)
+    }
+
+    @Test
+    fun scan_veterinaryArt7Endorsement_firesOn全国第一() {
+        val r = AdSignageRule(
+            "ad_signage_veterinary_art7_endorsement",
+            "veterinary",
+            "兽药广告审查发布规定 §7 / 广告法 §9(三)",
+            listOf("销量第一", "首选", "金奖", "全国第一"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("销量第一 + 首选 + 金奖 + 全国第一")
+        assertEquals(4, hits.size)
+    }
+
+    @Test
+    fun scan_veterinaryArt8Commitment_firesOn无效退款() {
+        val r = AdSignageRule(
+            "ad_signage_veterinary_art8_commitment",
+            "veterinary",
+            "兽药广告审查发布规定 §8",
+            listOf("无效退款", "保险公司保险", "100% 有效"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("无效退款 + 保险公司保险 + 100% 有效")
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_veterinaryArt10ApprovalNo_firesOn兽药广审文号() {
+        val r = AdSignageRule(
+            "ad_signage_veterinary_art10_approval_no",
+            "veterinary",
+            "兽药广告审查发布规定 §10",
+            listOf("兽药广审文号", "兽药广告批准文号"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("兽药广审文号 / 兽药广告批准文号 应同时发布")
+        assertEquals(2, hits.size)
+    }
+
+    // --- 城市市容和环境卫生管理条例 + 广告法 §32 户外广告细化 — 8 条 ---
+
+    @Test
+    fun scan_outdoorCityArt32Government_firesOn政府大楼() {
+        val r = AdSignageRule(
+            "ad_signage_outdoor_city_art32_government",
+            "outdoor",
+            "广告法 §32(二) / 城市市容和环境卫生管理条例 §11",
+            listOf("政府大楼", "机关大院内", "军事管理区"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("政府大楼 + 机关大院内 + 军事管理区 设置户外广告")
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_outdoorCityArt32SchoolHospital_firesOn学校门口() {
+        val r = AdSignageRule(
+            "ad_signage_outdoor_city_art32_school_hospital",
+            "outdoor",
+            "广告法 §32(二) / 城市市容和环境卫生管理条例 §11",
+            listOf("学校门口", "校园内", "幼儿园外墙", "医院门口"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("学校门口 + 校园内 + 幼儿园外墙 + 医院门口 设置户外广告")
+        assertEquals(4, hits.size)
+    }
+
+    @Test
+    fun scan_outdoorCityArt32Traffic_firesOn交通信号灯() {
+        val r = AdSignageRule(
+            "ad_signage_outdoor_city_art32_traffic",
+            "outdoor",
+            "广告法 §32(一) / 城市市容和环境卫生管理条例 §11",
+            listOf("交通信号灯", "指路牌", "护栏"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("交通信号灯 + 指路牌 + 护栏 严禁设置户外广告")
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_outdoorCityArt32Roof_firesOn楼顶广告() {
+        val r = AdSignageRule(
+            "ad_signage_outdoor_city_art32_roof",
+            "outdoor",
+            "广告法 §32(三) + 各地户外广告设置管理办法",
+            listOf("楼顶广告", "楼顶大牌", "屋顶招牌", "天面广告"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("楼顶广告 + 楼顶大牌 + 屋顶招牌 + 天面广告 全面禁止")
+        assertEquals(4, hits.size)
+    }
+
+    @Test
+    fun scan_outdoorCityArt32CulturalRelic_firesOn文物保护单位() {
+        val r = AdSignageRule(
+            "ad_signage_outdoor_city_art32_cultural_relic",
+            "outdoor",
+            "广告法 §32(二) / 城市市容和环境卫生管理条例 §11",
+            listOf("文物保护单位", "历史建筑", "古建筑", "不可移动文物"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("文物保护单位 + 历史建筑 + 古建筑 + 不可移动文物 周边禁设广告")
+        assertEquals(4, hits.size)
+    }
+
+    @Test
+    fun scan_outdoorCityArt32Airport_firesOn净空保护区() {
+        val r = AdSignageRule(
+            "ad_signage_outdoor_city_art32_airport",
+            "outdoor",
+            "广告法 §32 + 各地户外广告设置管理办法",
+            listOf("净空保护区", "机场附近", "气球广告", "飞艇广告"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("净空保护区 + 机场附近 + 气球广告 + 飞艇广告 全面禁止")
+        assertEquals(4, hits.size)
+    }
+
+    // --- 广告法 §29 / §30 / §44 / §46 补漏 — 4 条 ---
+
+    @Test
+    fun scan_signageArt29InternetIdentifiable_firesOn软文() {
+        val r = AdSignageRule(
+            "ad_signage_signage_art29_internet_identifiable",
+            "signage",
+            "广告法 §29(1) + §59",
+            listOf("软文", "科普", "知识讲座", "专家访谈", "消费者教育"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("软文 + 科普 + 知识讲座 + 专家访谈 + 消费者教育")
+        assertEquals(5, hits.size)
+    }
+
+    @Test
+    fun scan_signageArt29OneclickClose_firesOn弹窗广告() {
+        val r = AdSignageRule(
+            "ad_signage_signage_art29_oneclick_close",
+            "signage",
+            "广告法 §29(3) + §59",
+            listOf("点击关闭", "一键关闭", "弹窗广告", "信息流广告"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("点击关闭 + 一键关闭 + 弹窗广告 + 信息流广告")
+        assertEquals(4, hits.size)
+    }
+
+    @Test
+    fun scan_signageArt46PreReview_firesOn未审查() {
+        val r = AdSignageRule(
+            "ad_signage_signage_art46_pre_review",
+            "signage",
+            "广告法 §46 + §58",
+            listOf("未审查", "未取得审查", "未经审查", "未审批", "未通过审查"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("药品广告未审查 / 未取得审查 / 未经审查 / 未审批 / 未通过审查")
+        assertEquals(5, hits.size)
+    }
+
+    @Test
+    fun scan_signageArt44InternetProvider_firesOn公众号广告() {
+        val r = AdSignageRule(
+            "ad_signage_signage_art44_internet_provider",
+            "signage",
+            "广告法 §44 + §59",
+            listOf("自媒体广告", "公众号广告", "小程序广告"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("自媒体广告 + 公众号广告 + 小程序广告 平台应审查")
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_multipleV3Rules_fireIndependentlyOnCombinedText() {
+        // 同一段文本上,来自 v3 增量条款的多条规则应各自触发(每条 ruleId 各一条 hit)
+        val rules = listOf(
+            AdSignageRule("r_med_selfuse", "medical", "§4", listOf("血压计"), Severity.Warning),
+            AdSignageRule("r_pest_assert", "pesticide", "§4(一)", listOf("保证有效"), Severity.Violation),
+            AdSignageRule("r_vet_absolute", "veterinary", "§6", listOf("包治百病"), Severity.Violation),
+            AdSignageRule("r_outdoor_roof", "outdoor", "§32(三)", listOf("楼顶广告"), Severity.Warning),
+            AdSignageRule("r_signage_internet", "signage", "§29(3)", listOf("弹窗广告"), Severity.Warning),
+        )
+        val hits = AdSignageRuleMatcher(rules).scan("血压计 + 保证有效 + 包治百病 + 楼顶广告 + 弹窗广告")
+        assertEquals(5, hits.size)
+        assertEquals(
+            setOf("r_med_selfuse", "r_pest_assert", "r_vet_absolute", "r_outdoor_roof", "r_signage_internet"),
+            hits.map { it.ruleId }.toSet(),
+        )
+    }
 }

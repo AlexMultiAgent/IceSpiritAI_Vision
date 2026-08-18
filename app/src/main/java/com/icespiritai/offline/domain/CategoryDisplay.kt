@@ -44,6 +44,8 @@ object AdSignageCategory {
         "minor" -> "未成年人"
         "outdoor" -> "户外广告"
         "signage" -> "门店招牌"
+        "pesticide" -> "农药类广告"
+        "veterinary" -> "兽药类广告"
         else -> category
     }
 }
