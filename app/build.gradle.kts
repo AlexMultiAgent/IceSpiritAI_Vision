@@ -26,6 +26,7 @@ import java.security.MessageDigest
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.util.zip.ZipFile
+import com.icespiritai.buildhelpers.LatestJsonGenerator
 
 plugins {
     alias(libs.plugins.android.application)
@@ -60,8 +61,8 @@ android {
         applicationId = "com.icespiritai.vision"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -499,10 +500,18 @@ tasks.register("generateVisionLatestJson") {
         val size = apk.length()
         val sha = sha256HexForBuild(apk)
         val url = "http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/icespiritai-vision.apk"
-        // Phase 1: no CHANGELOG.md → empty changelog. Phase 2+: read
-        // the first `## vX.Y.Z` block from CHANGELOG.md (translate's
-        // extractLatestChangelogForBuild pattern).
-        val cl = ""
+        // Read user-changelog.md from the SOURCE path (not the build/
+        // generated/assets/ mirror) so this task doesn't depend on the
+        // copyUserChangelogAsset task running first. The mirror task is
+        // only needed at package/asset time. Must keep the parser in sync
+        // with VersionHistoryRenderer in app/src/main/java/.
+        val changelogFile = file("src/main/assets/user-changelog.md")
+        val cl = if (changelogFile.isFile) {
+            LatestJsonGenerator.extractLatestChangelog(changelogFile.readText(Charsets.UTF_8))
+        } else {
+            logger.warn("[generateVisionLatestJson] missing ${changelogFile.absolutePath}; emitting empty changelog")
+            ""
+        }
         // Phase 1: no DownloadStats mirror → 0L. Phase 2+: query Gitea
         // dl_counts and snapshot + commit (translate's
         // loadAndAccumulateDownloadStats pattern).

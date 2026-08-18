@@ -26,6 +26,37 @@ object LatestJsonGenerator {
         return md.digest().joinToString("") { "%02x".format(it) }
     }
 
+    /**
+     * Extract the FIRST `## vX.Y.Z` section from a user-changelog.md blob,
+     * verbatim. The returned string starts with the `## vX.Y.Z` header line
+     * and ends just before the next `## v...` header (or EOF).
+     *
+     * Format matches what `AppVersionInfo.changelog` is displayed as in
+     * UpdateSection.kt — plain text, bullets kept with `- ` prefix so the
+     * banner reads naturally. Empty / no-section input returns "".
+     *
+     * MUST STAY IN SYNC with `VersionHistoryRenderer.parse` in
+     * app/src/main/java/.../ui/settings/. Build scripts cannot import from
+     * app/src/main/java/ (see CLAUDE.md Gotchas); the two parsers are pinned
+     * together by the unit test in buildSrc/src/test.
+     */
+    fun extractLatestChangelog(markdown: String): String {
+        if (markdown.isBlank()) return ""
+        val lines = markdown.lines()
+        val startIdx = lines.indexOfFirst { it.trim().startsWith("## v") }
+        if (startIdx < 0) return ""
+        val endIdx = (startIdx + 1 until lines.size)
+            .firstOrNull { lines[it].trim().startsWith("## v") }
+            ?: lines.size
+        // Drop blank separator lines so the JSON value is compact and
+        // visually clean when rendered as plain text in the in-app update
+        // banner. VersionHistoryRenderer in app/src/main/java ignores blank
+        // lines too, so the two parsers stay aligned.
+        return lines.subList(startIdx, endIdx)
+            .filter { it.isNotBlank() }
+            .joinToString("\n")
+    }
+
     fun buildLatestJson(
         versionCode: Int,
         versionName: String,

@@ -59,6 +59,45 @@ class LatestJsonGeneratorTest {
             tmp.delete()
         }
     }
+
+    @Test
+    fun extractLatestChangelog_returnsFirstSectionVerbatim() {
+        val md = """
+            # 用户更新日志
+
+            ## v0.1.1 · 2026-08-18
+
+            - 设置新增 changelog
+            - 设置项重排
+
+            ## v0.1.0 · 2026-08-14
+
+            - Phase 1 上线
+        """.trimIndent()
+
+        val result = LatestJsonGenerator.extractLatestChangelog(md)
+        assertEquals(
+            "## v0.1.1 · 2026-08-18\n- 设置新增 changelog\n- 设置项重排",
+            result,
+        )
+    }
+
+    @Test
+    fun extractLatestChangelog_blankInputReturnsEmpty() {
+        assertEquals("", LatestJsonGenerator.extractLatestChangelog(""))
+        assertEquals("", LatestJsonGenerator.extractLatestChangelog("   \n\n  "))
+    }
+
+    @Test
+    fun extractLatestChangelog_noHeaderReturnsEmpty() {
+        assertEquals("", LatestJsonGenerator.extractLatestChangelog("# 标题\n- 一些 bullet\n"))
+    }
+
+    @Test
+    fun extractLatestChangelog_sectionWithNoBullets() {
+        val md = "## v0.1.0 · 2026-08-14\n\n## v0.0.0 · 2026-08-01\n\n- old\n"
+        assertEquals("## v0.1.0 · 2026-08-14", LatestJsonGenerator.extractLatestChangelog(md))
+    }
 }
 
 /**
