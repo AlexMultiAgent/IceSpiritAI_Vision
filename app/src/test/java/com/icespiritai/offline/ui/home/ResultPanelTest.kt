@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import com.icespiritai.offline.domain.RuleHit
 import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.domain.ViolationReport
@@ -58,7 +59,14 @@ class ResultPanelTest {
 
     @Test
     fun hits_renderAsCardsWithSeverityBadge() {
-        val hit = RuleHit("r1", "最好", "absolute", "广告法 §9", Severity.Warning)
+        val hit = RuleHit(
+            ruleId = "r1",
+            matchedText = "最好",
+            category = "absolute",
+            regulation = "《广告法》第九条第（三）项",
+            severity = Severity.Warning,
+            lawText = "第九条 广告不得有下列情形：（三）使用“国家级”、“最高级”、“最佳”等用语。",
+        )
         composeRule.setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 ResultPanel(ViolationReport(uri, "全国最好品牌", listOf(hit), 1L, avgConfidence = 0.9f))
@@ -66,5 +74,21 @@ class ResultPanelTest {
         }
         composeRule.onNodeWithText("最好").assertExists()
         composeRule.onNodeWithText("警告").assertExists()
+        composeRule.onNodeWithText("分类: 绝对化用语").assertExists()
+        composeRule.onNodeWithText("依据: 《广告法》第九条第（三）项").assertExists()
+        composeRule.onNodeWithText("查看法条原文").performClick()
+        composeRule.onNodeWithText("第九条 广告不得有下列情形", substring = true).assertExists()
+        composeRule.onNodeWithText("收起法条原文").assertExists()
+    }
+
+    @Test
+    fun unknownCategory_fallsBackToRawKey() {
+        val hit = RuleHit("r1", "示例", "future-category", "《广告法》第九条", Severity.Warning)
+        composeRule.setContent {
+            MaterialTheme(colorScheme = darkColorScheme()) {
+                ResultPanel(ViolationReport(uri, "示例文本", listOf(hit), 1L, avgConfidence = 0.9f))
+            }
+        }
+        composeRule.onNodeWithText("分类: future-category").assertExists()
     }
 }
