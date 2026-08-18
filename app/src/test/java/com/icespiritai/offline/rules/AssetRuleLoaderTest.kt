@@ -94,14 +94,14 @@ class AssetRuleLoaderTest {
             "src/main/assets/rules/food_label_rules.json"
         ).readText(Charsets.UTF_8)
         val set = json.decodeFromString(FoodLabelRuleSet.serializer(), src)
-        assertEquals(3, set.version)
+        assertEquals(4, set.version)
         assertTrue(
             "shipped food_label_rules.json must carry at least one rule",
             set.rules.size >= 1,
         )
         assertTrue(
-            "shipped food_label_rules.json must bundle 6 golden + 30 incremental + 29 v3 rules",
-            set.rules.size >= 60,
+            "shipped food_label_rules.json must bundle 6 golden + 30 incremental + 29 v3 + 1 v4-split rules",
+            set.rules.size >= 65,
         )
         assertTrue(
             "every shipped food rule must bundle its full provision text",

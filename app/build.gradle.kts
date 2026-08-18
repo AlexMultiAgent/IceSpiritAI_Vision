@@ -61,8 +61,8 @@ android {
         applicationId = "com.icespiritai.vision"
         minSdk = 26
         targetSdk = 37
-        versionCode = 6
-        versionName = "0.1.6"
+        versionCode = 7
+        versionName = "0.1.7"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -226,7 +226,7 @@ android {
             // intentionally NOT bundled: their contents are not
             // modelProfile-aware, and the per-profile copy under
             // build/generated/assets/rules/ is the authoritative one for the
-            // APK. Editing app/src/main/assets/rules/ad_law_rules.json is the
+            // APK. Editing app/src/main/assets/rules/{ad_signage,food_label}_rules.json is the
             // only place rules change: prepare-ocr-rules.gradle.kts reads that
             // file at execution time for the ice_ocr_rules profile (and the
             // file is tracked as a task input for cache invalidation).

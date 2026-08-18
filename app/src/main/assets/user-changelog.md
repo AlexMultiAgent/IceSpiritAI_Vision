@@ -1,5 +1,19 @@
 # 用户更新日志
 
+## v0.1.7 · 2026-08-19
+
+- 修复 7 处文档/规则准确性问题(OCR 命中后援引的法律条文不再误导):
+  1. `ad_signage_rules.json` `ad_signage_art10_minor` 删除 2 句与广告法 §10 无关的伪条文(原文仅一句「广告不得损害未成年人和残疾人的身心健康」);`lawText` 现仅保留 1 句《广告法》第十条 + 1 句《食品标识监督管理办法》第八条。
+  2. `food_label_rules.json` 将 `food_infant_formula_unregistered`(原错误地将食品安全法 §80 特殊医学用途与 §81 婴幼儿配方乳粉合并)拆为 2 条:`food_fsmp_register_required` (§80 + 食品标识监督管理办法 §31) 与 `food_infant_formula_milk_register` (§81 + 总局令第 80 号《婴幼儿配方乳粉产品配方注册管理办法》);`food_label_rules.json` v3 → v4,总 65 → 66 条。
+  3. `food_art30_infant_claim` 移除「第四十一条(依食品安全法第 125 条第 1 款处罚)」引用(§41 处罚列表不含 §30,属错误归责);改为「(依 GB 13432-2013 §3.c 联合落地)」+ lawText 内显式注:第三十条未设明示罚则,涉嫌虚假/引人误解宣传并入第七条第一款第二项查处。
+  4. `food_health_claim_unapproved` + `food_art28_function_claim_unauthorized` 两处曾引用的《食品标识管理规定》§19 为整档 stub [未检索到全文] 的占位引用,统一改为《食品标识监督管理办法》第七条第一款第五项+第二款 + 第四十四条(已落地 KB);`food_art28_function_claim_unauthorized` 同步把 §41 改为 §44(§28 实际落在 §44 罚则列表,§41 不含 §28)。
+  5. `food_gb13432_infant_breastmilk_substitute` regulation 字段原写「卫生部令第 1 号」修正为「卫妇发〔1995〕第 5 号」并标注 2017-12-13 已废止 + 现行替代文件(食药监食监一〔2013〕214 号);`food_gb7718_art4_1_4_allergen_disclose` regulation 原错误引用 GB 31644-2018(实际是《食品安全国家标准 食品添加剂 天然胡萝卜素》),改为 GB/T 23779-2009(2025-03-28 废止) + GB 7718-2025 §5(致敏原强制标示,2027-03-16 施行)联合引用。
+  6. `知识库/广告业务/README.md` 第 11 行《中华人民共和国广告法》条目从「2023年修正」改为「2018 第一次修正 / 2021 第二次修正」(2023 年系误植,实际两轮修正分别在 2018-10 与 2021-04)。
+  7. `CLAUDE.md` + `app/build.gradle.kts` + `知识库/广告业务/医疗广告管理办法.md` 三处过时引用 `ad_law_rules.json` / 「10 条 golden rules」全部更新为 `ad_signage_rules.json` / `food_label_rules.json` + 116/66 条 + AdSignageRuleMatcher + FoodLabelRuleMatcher。
+- 同步知识库 4 处修正:`知识库/广告业务/药品医疗器械保健食品特殊医学用途配方食品婴幼儿配方乳粉广告管理办法.md` header 由「管理办法(拟修订名)+ 婴幼儿配方乳粉未并入 + 总局令第 21 号(2019-12-24 / 2020-03-01) + 暂行办法」替代「总局令第 60 号(2023 拟订)未检索到」占位文本;新增 3 份 markdown:`母乳代用品销售管理办法.md`(卫妇发〔1995〕第 5 号 + 2017-12-13 废止说明)/ `GB_7718-2025_致敏原强制标示.md`(国家卫健委 + SAMR 联合发布,十一大类清单)/ `婴幼儿配方乳粉产品配方注册管理办法.md`(总局令第 80 号 现行版,替代第 26 号令);`知识库/食品标识/README.md` 索引同步追加 3 条。
+- `AssetRuleLoaderTest.load_parsesActualBundledFoodLabelAssetShape` 同步:`assertEquals(3, ...)` → `assertEquals(4, ...)`,最低规则数断言同步上调。
+- 无新增功能,无对外 UI 改动。
+
 ## v0.1.6 · 2026-08-19
 
 - 「广告招牌」域规则库 v3 → v4:再扩 31 条,总 116 条(85 既有 v3 + 31 v4)。

@@ -642,7 +642,7 @@ class FoodLabelRuleMatcherTest {
         val r = FoodLabelRule(
             "food_art28_function_claim_unauthorized",
             "functional_claim",
-            "食品标识监督管理办法 §28 + §41 / 食品标识管理规定 §19",
+            "食品标识监督管理办法 §28 + §44 / GB 7718-2011 §3.6",
             listOf("调节血脂", "调节血糖", "增强免疫", "延缓衰老", "辅助降血脂", "辅助降血糖", "辅助改善记忆", "缓解视疲劳", "促进泌乳", "改善皮肤水分", "调节肠道菌群", "通便", "缓解体力疲劳", "减肥", "改善骨质疏松", "改善营养性贫血", "祛痤疮", "祛黄褐斑"),
             Severity.Violation,
         )
