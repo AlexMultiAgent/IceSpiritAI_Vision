@@ -162,7 +162,7 @@ class AdSignageRuleMatcherTest {
     @Test
     fun scan_art11FakePatent_firesOn国家专利() {
         val r = AdSignageRule(
-            "ad_signage_art11_fake_patent",
+            "ad_signage_art12_fake_patent",
             "absolute",
             "广告法 §11 + §59",
             listOf("国家专利", "专利号 ZL"),
