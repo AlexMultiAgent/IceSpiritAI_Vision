@@ -14,11 +14,9 @@ import androidx.compose.ui.unit.dp
 import com.icespiritai.offline.R
 import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.ui.theme.DarkIceChatError
-import com.icespiritai.offline.ui.theme.DarkIceChatOnError
 import com.icespiritai.offline.ui.theme.DarkIceChatPositive
 import com.icespiritai.offline.ui.theme.DarkIceChatWarning
 import com.icespiritai.offline.ui.theme.LightIceChatError
-import com.icespiritai.offline.ui.theme.LightIceChatOnError
 import com.icespiritai.offline.ui.theme.LightIceChatPositive
 import com.icespiritai.offline.ui.theme.LightIceChatWarning
 
