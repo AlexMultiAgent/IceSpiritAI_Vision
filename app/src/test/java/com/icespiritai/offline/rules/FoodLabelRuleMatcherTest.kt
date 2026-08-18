@@ -11,7 +11,7 @@ class FoodLabelRuleMatcherTest {
     private val rule1 = FoodLabelRule(
         id = "food_nozero_add",
         category = "functional_claim",
-        regulation = "食品标识监督管理办法 §9 (七)",
+        regulation = "食品标识监督管理办法（市场监管总局令第 100 号，2027-03-16 施行）第七条第（二）项 / GB 7718-2011 §3.4 / 广告法 第二十八条",
         keywords = listOf("零添加", "不添加"),
         severity = Severity.Violation,
     )
@@ -55,7 +55,7 @@ class FoodLabelRuleMatcherTest {
         val hits = matcher.scan("不添加")
         assertEquals(1, hits.size)
         assertEquals("functional_claim", hits[0].category)
-        assertEquals("食品标识监督管理办法 §9 (七)", hits[0].regulation)
+        assertEquals("食品标识监督管理办法（市场监管总局令第 100 号，2027-03-16 施行）第七条第（二）项 / GB 7718-2011 §3.4 / 广告法 第二十八条", hits[0].regulation)
         assertEquals(Severity.Violation, hits[0].severity)
     }
 

@@ -1,8 +1,10 @@
 // app/prepare-ocr-rules.gradle.kts — Generate per-modelProfile rules assets.
 //
-// shell           → ad_law_rules.json contains {"version":1,"rules":[]} (skeleton)
-// ice_ocr_rules   → ad_law_rules.json contains the 10 golden rules
-// ice_vision      → ad_law_rules.json contains {"version":1,"rules":[]} (Phase 2+)
+// Both rule domains (ad_signage + food_label) are staged for every profile so
+// the runtime loader can hydrate either domain regardless of the active model.
+// shell           → ad_signage_rules.json + food_label_rules.json = {"version":1,"rules":[]} (skeleton)
+// ice_ocr_rules   → ad_signage_rules.json (10 golden rules) + food_label_rules.json (6 golden rules)
+// ice_vision      → same as shell (Phase 2+)
 //
 // Source files at app/src/main/assets/rules/ are NEVER mutated.
 // AGP picks up only from app/build/generated/assets/rules/ via a reconfigured
@@ -17,11 +19,19 @@ val generatedAssetsDir = layout.buildDirectory.dir("generated/assets/rules")
 // The committed JSON under src/main/assets/rules/ is the single source of
 // truth for the shipped rule set. Reading it at execution time (instead of
 // maintaining a duplicated inlined copy) removes the "edit both places" drift
-// hazard. The file is declared as a task input below so edits invalidate the
+// hazard. The files are declared as task inputs below so edits invalidate the
 // generated asset.
-val fullRulesFile = file("src/main/assets/rules/ad_signage_rules.json")
+val fullAdSignageRulesFile = file("src/main/assets/rules/ad_signage_rules.json")
+val fullFoodLabelRulesFile = file("src/main/assets/rules/food_label_rules.json")
 
 val slimRulesJson = """{"version":1,"rules":[]}"""
+
+data class DomainRules(val sourceFile: java.io.File, val stagedName: String)
+
+val domainRules: List<DomainRules> = listOf(
+    DomainRules(fullAdSignageRulesFile, "ad_signage_rules.json"),
+    DomainRules(fullFoodLabelRulesFile, "food_label_rules.json"),
+)
 
 val prepareOcrRulesAssets = tasks.register("prepareOcrRulesAssets") {
     group = "build"
@@ -35,31 +45,46 @@ val prepareOcrRulesAssets = tasks.register("prepareOcrRulesAssets") {
     // UP-TO-DATE whenever the output dir already exists from a previous run,
     // regardless of the profile that produced it.
     inputs.property("modelProfile", activeProfile)
-    inputs.file(fullRulesFile)
+    domainRules.forEach { inputs.file(it.sourceFile) }
     outputs.dir(outDir)
 
     doLast {
         val dir = outDir.get().asFile
         dir.mkdirs()
-        val target = java.io.File(dir, "ad_signage_rules.json")
-        val content = when (activeProfile) {
-            "shell", "ice_vision" -> slimRulesJson
-            "ice_ocr_rules" -> {
-                if (!fullRulesFile.isFile) {
-                    throw GradleException(
-                        "Missing rules source file ${fullRulesFile.absolutePath} " +
-                            "required by modelProfile=ice_ocr_rules"
-                    )
+        domainRules.forEach { dr ->
+            val target = java.io.File(dir, dr.stagedName)
+            val content = when (activeProfile) {
+                "shell", "ice_vision" -> slimRulesJson
+                "ice_ocr_rules" -> {
+                    if (!dr.sourceFile.isFile) {
+                        throw GradleException(
+                            "Missing rules source file ${dr.sourceFile.absolutePath} " +
+                                "required by modelProfile=ice_ocr_rules"
+                        )
+                    }
+                    dr.sourceFile.readText(Charsets.UTF_8)
                 }
-                fullRulesFile.readText(Charsets.UTF_8)
+                else -> {
+                    logger.warn("[prepareOcrRulesAssets] Unknown modelProfile '$activeProfile' — defaulting to slim rules")
+                    slimRulesJson
+                }
             }
-            else -> {
-                logger.warn("[prepareOcrRulesAssets] Unknown modelProfile '$activeProfile' — defaulting to slim rules")
-                slimRulesJson
-            }
+            target.writeText(content)
+            logger.lifecycle(
+                "[prepareOcrRulesAssets] profile=$activeProfile, wrote ${target.length()} bytes to ${target}"
+            )
         }
-        target.writeText(content)
-        logger.lifecycle("[prepareOcrRulesAssets] profile=$activeProfile, wrote ${target.length()} bytes to ${target}")
+
+        // Build-time assertion: every domain's staged rules file must exist.
+        // Catches packaging defects (e.g. a future contributor adding a new
+        // domainRules entry but forgetting to wire it into the doLast block).
+        val missing = domainRules
+            .map { java.io.File(dir, it.stagedName) }
+            .filterNot { it.isFile }
+        check(missing.isEmpty()) {
+            "[prepareOcrRulesAssets] build/generate/assets/rules/ missing required rules files: " +
+                missing.joinToString { it.name }
+        }
     }
 }
 
