@@ -1,5 +1,17 @@
 # 用户更新日志
 
+## v0.1.10 · 2026-08-19
+
+- **产品方向调整**:UI 层只暴露「广告招牌」tab;「食品标识」tab 入口暂时对用户隐藏(原因与可复制模式边界见 CLAUDE.md 「产品方向(v0.1.10 起):广告招牌 单一焦点」段)。
+- 实现层细节:
+  - [RuleTabBar.kt](app/src/main/java/com/icespiritai/offline/ui/home/RuleTabBar.kt) 内部 `visibleTabs = listOf(RuleTab.AdSignage)`,`TabRow` 只渲染一项;`RuleTab.FoodLabeling` enum 项保留,顶部 KDoc 明示"恢复时把 `visibleTabs` 改回 `RuleTab.entries.toList()` 即可"。
+  - 完整代码路径保留:`FoodLabelRuleMatcher` + `FoodLabelRuleLoader` + ViewModel `matcherFor(tab)` 双分支 + `food_label_rules.json`(66 条 / v4)+ `知识库/食品标识/` 9 份 markdown + `FoodLabelRuleMatcherTest` + `IceSpiritVisionViewModelTabTest` 双 tab 路由断言均完整保留,后续广告招牌模式打磨成熟后可直接复用模板启用食品标识 tab。
+  - `app/src/main/res/values/strings.xml` 的 `tab_food_label="食品标识"` 字符串保留(代码 enum 引用)。
+  - `知识库/` 双域 markdown 完整保留;广告业务目录是当前打磨中的成熟参考,食品标识目录是待后续套用的对象。
+- 打磨策略:ad_signage_rules.json 关键词命中 / 严重度分级 / category 显示 / 证据包导出全部以"可复制到下一个视觉判别域"为标尺优化,达标后再以同样模式启用 FoodLabeling tab。
+- `versionCode 9→10`, `versionName 0.1.9→0.1.10`。
+- 单元测试全绿(`./gradlew.bat testDebugUnitTest -PmodelProfile=shell` 路径不变);`IceSpiritVisionViewModelTabTest` 双 tab 路由断言保留,持续覆盖代码路径不被静默损坏。
+
 ## v0.1.9 · 2026-08-19
 
 - 修复 v0.1.8 引入的 6 处文档/规则准确性问题(全部为 OCR 命中后援引法规条文不应误导):
