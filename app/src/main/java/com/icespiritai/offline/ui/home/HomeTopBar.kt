@@ -1,6 +1,7 @@
 package com.icespiritai.offline.ui.home
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -13,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import com.icespiritai.offline.R
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -26,7 +28,13 @@ fun HomeTopBar(
 ) {
     Column(modifier = modifier) {
         TopAppBar(
-            title = { Text(stringResource(R.string.app_name)) },
+            title = {
+                Text(
+                    text = stringResource(R.string.app_name),
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                )
+            },
             actions = {
                 val a11y = stringResource(R.string.settings_button_desc)
                 IconButton(

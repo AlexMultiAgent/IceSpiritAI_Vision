@@ -1,5 +1,7 @@
 package com.icespiritai.offline.ui.home
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -25,6 +27,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.icespiritai.offline.IceSpiritVisionViewModel
 import com.icespiritai.offline.R
@@ -32,17 +36,22 @@ import com.icespiritai.offline.domain.AnalysisState
 import com.icespiritai.offline.domain.ErrorCode
 import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.export.ExportAction
+import java.io.File
 
 @Composable
 fun HomeScreen(onOpenSettings: () -> Unit) {
     val viewModel: IceSpiritVisionViewModel = viewModel()
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
+    val cameraDeniedMsg = stringResource(R.string.error_camera_denied)
 
     var selectedTab by remember { mutableStateOf(RuleTab.AdLaw) }
     // pendingUri persists across Loading→Complete so the image stays visible
     // before the analyzer finishes (AnalysisState.Loading has no URI field).
     var pendingUri by remember { mutableStateOf<Uri?>(null) }
+    // Holds the FileProvider URI between launching the camera and receiving
+    // its result. Cleared once the TakePicture callback fires (success or not).
+    var pendingCaptureUri by remember { mutableStateOf<Uri?>(null) }
 
     val pickMedia = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
@@ -57,10 +66,47 @@ fun HomeScreen(onOpenSettings: () -> Unit) {
         pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
     }
 
-    // Phase 1 stub: real TakePicture capture is a follow-up, so "拍照" currently
-    // opens the system photo picker. The picker needs no CAMERA permission —
-    // prompting for it here would ask for a capability the stub never uses.
-    fun launchCapture() = pickFromGallery()
+    val takePictureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture(),
+    ) { success ->
+        val uri = pendingCaptureUri
+        pendingCaptureUri = null
+        if (success && uri != null) {
+            pendingUri = uri
+            viewModel.startAnalysis(uri)
+        }
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        val uri = pendingCaptureUri
+        if (granted && uri != null) {
+            takePictureLauncher.launch(uri)
+        } else {
+            pendingCaptureUri = null
+            Toast.makeText(context, cameraDeniedMsg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun launchCapture() {
+        val captureDir = File(context.cacheDir, "capture").apply { mkdirs() }
+        val captureFile = File(captureDir, "capture_${System.currentTimeMillis()}.jpg")
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            captureFile,
+        )
+        pendingCaptureUri = uri
+        val granted = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.CAMERA,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            takePictureLauncher.launch(uri)
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
 
     fun reset() {
         pendingUri = null
@@ -102,11 +148,9 @@ fun HomeScreen(onOpenSettings: () -> Unit) {
 
         when (val s = state) {
             AnalysisState.Idle -> {
-                Text(
-                    text = stringResource(R.string.status_image_hint),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(16.dp),
-                )
+                // ImagePreview already centers `status_image_hint` when no URI is
+                // loaded, so the Idle slot is empty here to avoid a duplicate
+                // "请对正图片后点击拍照" overlay.
             }
             is AnalysisState.Loading -> {
                 Text(
