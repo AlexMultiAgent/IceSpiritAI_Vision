@@ -83,4 +83,13 @@
     <string name="update_failed_download">下载失败,请重试</string>
     <string name="update_retry_button">重试</string>
     <string name="update_recheck_button">重新检查</string>
+
+    <!-- v0.1.11 image viewer (Routes.VIEWER) — see docs/superpowers/specs/2026-08-19-icevision-image-viewer-design.md -->
+    <string name="viewer_title">原图查看</string>
+    <string name="viewer_image_cd">原图</string>
+    <string name="viewer_gesture_hint">双指缩放 · 双击切换 · 单指拖动</string>
+    <string name="viewer_empty">无可查看结果,请先拍照或选图识别</string>
+    <string name="viewer_image_load_error">图片加载失败</string>
+    <string name="viewer_lines_count">共 %1$d 行文字</string>
+    <string name="viewer_hits_count">命中 %1$d 处</string>
 </resources>
