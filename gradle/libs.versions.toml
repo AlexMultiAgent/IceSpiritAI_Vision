@@ -27,6 +27,7 @@ coil = "2.7.0"
 datastore = "1.1.1"
 navigation = "2.8.0"
 materialIconsExtended = "1.7.0"
+telephoto = "0.13.0"  # verify latest compatible version with Compose BOM 2026.08.00
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -88,6 +89,9 @@ androidx-exifinterface = { module = "androidx.exifinterface:exifinterface", vers
 
 # Image loading
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
+
+# Zoomable image viewer (pinch / pan / double-tap)
+telephoto-zoomable-image-coil = { module = "me.saket.telephoto:zoomable-image-coil", version.ref = "telephoto" }
 
 # Persistence
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }

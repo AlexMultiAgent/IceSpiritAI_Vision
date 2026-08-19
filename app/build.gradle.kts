@@ -816,6 +816,9 @@ dependencies {
     // Domain
     implementation(libs.hankcs.aho.corasick)
 
+    // Image viewer (pinch / pan / double-tap zoom) for Routes.VIEWER
+    implementation(libs.telephoto.zoomable.image.coil)
+
     // OCR engine: PaddleOCR official SDK + native runtime (ice_ocr_rules only)
     if (modelProfile == "ice_ocr_rules") {
         implementation(files("libs/ppocr-sdk.aar"))
