@@ -70,4 +70,66 @@ class BitmapLoaderTest {
         val longest = maxOf(bitmap!!.width, bitmap.height)
         assertTrue("Longest edge $longest should be <= 4096", longest <= 4096)
     }
+
+    // --- sampleSize() boundary tests (regression for v0.1.12) ---
+    //
+    // Floor-based sampleSize MUST NOT halve the result on a single pixel
+    // overshoot of the 2^k * maxEdge boundary. These boundaries are where
+    // the previous ceiling-based version had a cliff:
+    //   2048 -> 2048 px (sample=1)
+    //   2049 -> 1024 px (sample=2, 50% drop)  ← THE BUG
+    //   4096 -> 2048 px (sample=2)
+    //   4097 -> 1024 px (sample=4, 50% drop)  ← THE BUG
+    // After the floor fix, all four cases above should pick sample=1 or
+    // sample=2 (no 50% drop).
+
+    @Test
+    fun sampleSize_atExactMaxEdge_returnsOne() {
+        // maxEdge=2048, longest=2048 → already at the target, no downsample.
+        assertEquals(1, BitmapLoader.sampleSize(width = 2048, height = 1500, maxEdge = 2048))
+    }
+
+    @Test
+    fun sampleSize_onePixelOverMaxEdge_returnsOneNotTwo() {
+        // maxEdge=2048, longest=2049 → ceiling-based dropped to sample=2
+        // (1024 px). Floor-based keeps sample=1 (2049 px), avoiding the
+        // 50% information loss for a 1-px overshoot.
+        assertEquals(1, BitmapLoader.sampleSize(width = 2049, height = 1500, maxEdge = 2048))
+    }
+
+    @Test
+    fun sampleSize_atDoubleMaxEdge_returnsTwo() {
+        // maxEdge=2048, longest=4096 → exactly 2x, sample=2 (2048 px).
+        assertEquals(2, BitmapLoader.sampleSize(width = 4096, height = 3000, maxEdge = 2048))
+    }
+
+    @Test
+    fun sampleSize_onePixelOverDoubleMaxEdge_returnsTwoNotFour() {
+        // maxEdge=2048, longest=4097 → ceiling-based dropped to sample=4
+        // (1024 px). Floor-based keeps sample=2 (~2048 px).
+        assertEquals(2, BitmapLoader.sampleSize(width = 4097, height = 3000, maxEdge = 2048))
+    }
+
+    @Test
+    fun sampleSize_wellAboveMaxEdge_keepsDoubling() {
+        // 8192 px with maxEdge=2048 → sample=4 (2048 px), no cliff.
+        assertEquals(4, BitmapLoader.sampleSize(width = 8192, height = 6000, maxEdge = 2048))
+        // 16384 px → sample=8.
+        assertEquals(8, BitmapLoader.sampleSize(width = 16384, height = 12000, maxEdge = 2048))
+    }
+
+    @Test
+    fun sampleSize_belowMaxEdge_returnsOne() {
+        // Anything below maxEdge stays at sample=1 regardless of dimensions.
+        assertEquals(1, BitmapLoader.sampleSize(width = 1024, height = 1024, maxEdge = 2048))
+        assertEquals(1, BitmapLoader.sampleSize(width = 2047, height = 100, maxEdge = 2048))
+    }
+
+    @Test
+    fun sampleSize_usesLongestEdge() {
+        // width is the longer side; height short — should pick based on width.
+        assertEquals(2, BitmapLoader.sampleSize(width = 4096, height = 100, maxEdge = 2048))
+        // height is the longer side; width short — should pick based on height.
+        assertEquals(2, BitmapLoader.sampleSize(width = 100, height = 4096, maxEdge = 2048))
+    }
 }

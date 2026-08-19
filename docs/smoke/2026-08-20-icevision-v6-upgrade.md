@@ -61,12 +61,16 @@ PreProcess:
   transform_ops:
   - DecodeImage: {channel_first: false, img_mode: BGR}
   - DetLabelEncode: null
-  - DetResizeForTest: null       # v6 = limit_side=960 / limit_type=max(SDK 内部默认)
+  - DetResizeForTest: null       # SDK 内部默认 — 实际不读此 yml
   - NormalizeImage: {mean: [0.485, 0.456, 0.406], std: [0.229, 0.224, 0.225], scale: 1./255., order: hwc}
   - ToCHWImage: null
   - KeepKeys: {keep_keys: [image, shape, polys, ignore_tags]}
 PostProcess: {name: DBPostProcess, thresh: 0.2, box_thresh: 0.45, unclip_ratio: 1.4, max_candidates: 3000}
 ```
+
+> ⚠️ **det yml 是死资产**(2026-08-20 PaddleOCR SDK v3.7.0 反编译确认):`OCREngine` 构造时只 `ORTSessionManager.loadModels(det.onnx, rec.onnx) + ModelConfig.parse(rec.yml)`,det yml 字符串 `models/det/inference.yml` 整个 SDK classes.jar 不出现。det 的所有参数(limitSide/limitType/thresh/boxThresh/unclip)取自 `PaddleOCRConfig()` 构造时的传入值,**不读 yml**。
+>
+> **历史问题(已修)**:`v0.1.11` 提交 `1d271a2` 阶段 `PaddleOcrEngine` 传 `PaddleOCRConfig()`(全默认 = 64/min/0.3/0.6/1.5),与 v6 模型卡的 0.2/0.45/1.4 不一致,会吃掉一部分 v6 小字召回优势。**v0.1.12 修复**:显式传 `PaddleOCRConfig(detLimitSideLen=960, detLimitType="max", detThresh=0.2f, detBoxThresh=0.45f, detUnclipRatio=1.4f, recScoreThresh=0.5f, recBatchSize=6)`。
 
 ## 4. 构建产物
 
@@ -141,6 +145,7 @@ BUILD SUCCESSFUL in 4m 38s
 - [x] `app/build.gradle.kts` `versionCode/versionName` bump 到 11/0.1.11
 - [x] `assembleDebug -PmodelProfile=ice_ocr_rules` 跑通(BUILD SUCCESSFUL in 7m 24s,APK 67.3 MB,内含 v6 模型)
 - [x] `testDebugUnitTest` 全绿(317 tests, 0 failures, 0 errors)
+- [x] **v0.1.12 追订**:显式 `PaddleOCRConfig(960/max/0.2/0.45/1.4/recScoreThresh=0.5/recBatchSize=6)` 对齐 v6 模型卡;`BitmapLoader.sampleSize` floor-based 消除 2049→1024 像素悬崖
 
 ## 7. 发布门控
 

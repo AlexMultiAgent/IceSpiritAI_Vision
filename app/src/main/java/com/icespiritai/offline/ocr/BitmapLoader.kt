@@ -67,10 +67,20 @@ object BitmapLoader {
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
-    private fun sampleSize(width: Int, height: Int, maxEdge: Int): Int {
-        var sample = 1
+    internal fun sampleSize(width: Int, height: Int, maxEdge: Int): Int {
         val longest = maxOf(width, height)
-        while (longest / sample > maxEdge) sample *= 2
+        // Round DOWN to the nearest power of 2. The previous ceiling-based
+        // version had a cliff at exact 2^k * maxEdge boundaries: 2048 → 2048 px
+        // (sample=1), 2049 → 1024 px (sample=2) — a 50% drop for a single
+        // pixel of overshoot. Floor keeps the result close to but never far
+        // below maxEdge (e.g., 2049 → 2049 px, 4097 → 2048 px), at the cost
+        // of being up to ~maxEdge px above the target. BitmapFactory doesn't
+        // auto-resize to the exact target, but a slightly-over bitmap is
+        // strictly more informative for OCR than the cliff's halved one.
+        // sampleSize stays an accurate downsample factor for box-coord
+        // mapping back to the original image (the caller multiplies by it).
+        var sample = 1
+        while (longest.toLong() / (sample.toLong() * 2) >= maxEdge) sample *= 2
         return sample
     }
 }

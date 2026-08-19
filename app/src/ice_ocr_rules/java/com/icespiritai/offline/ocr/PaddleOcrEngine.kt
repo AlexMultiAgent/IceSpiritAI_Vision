@@ -73,7 +73,25 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
                 val created = try {
                     PaddleOCR.create(
                         context = appContext,
-                        config = PaddleOCRConfig(),
+                        // v6_small model-card-aligned config (PaddleOCR SDK v3.7.0
+                        // default PaddleOCRConfig() is 64/min/thresh0.3/box0.6/unclip1.5/
+                        // recScoreThresh 0.0/recBatchSize 1 — silently undercuts v6
+                        // recall and inflates rec noise feeding the rule engine).
+                        // Det params (960/max/0.2/0.45/1.4) match PP-OCRv6_small_det
+                        // inference.yml PostProcess. recScoreThresh=0.5 filters low-
+                        // confidence noise before the rule scan (avg v6 score 0.882
+                        // on 4-image benchmark, so 0.5 keeps all real text but drops
+                        // garbage). recBatchSize=6 amortizes rec preprocess; 1 vs 6
+                        // speedup needs real-device confirmation (logged for Phase 2).
+                        config = PaddleOCRConfig(
+                            detLimitSideLen = 960,
+                            detLimitType = "max",
+                            detThresh = 0.2f,
+                            detBoxThresh = 0.45f,
+                            detUnclipRatio = 1.4f,
+                            recScoreThresh = 0.5f,
+                            recBatchSize = 6,
+                        ),
                         engineConfig = EngineConfig(numThreads = 4),
                         detModelAssetPath = "models/det/inference.onnx",
                         recModelAssetPath = "models/rec/inference.onnx",

@@ -1,5 +1,17 @@
 # 用户更新日志
 
+## v0.1.12 · 2026-08-20
+
+- **修复 v0.1.11 的"桌面 A/B ≠ 真机行为"隐患**(SDK 反编译确认):
+  - v0.1.11 `PaddleOcrEngine` 传 `PaddleOCRConfig()`(SDK v3.7.0 默认值 = `detLimitSideLen=64, detLimitType="min", detThresh=0.3, detBoxThresh=0.6, detUnclipRatio=1.5, recScoreThresh=0.0, recBatchSize=1`),与 v6 模型卡(960/max/0.2/0.45/1.4)不一致,会吃掉一部分 v6 小字召回优势;桌面 A/B 是 960/max 路径,但真机 SDK 走 64/min + 2048 px 全分辨率 BitmapLoader 输出,两套 pipeline 行为差 4.5 倍像素量。
+  - v0.1.12 显式对齐 v6 模型卡:`PaddleOCRConfig(detLimitSideLen=960, detLimitType="max", detThresh=0.2f, detBoxThresh=0.45f, detUnclipRatio=1.4f)`。
+  - 顺手把 `recScoreThresh` 从 0.0 提到 0.5(v6 实测平均置信 0.882,0.5 过滤低置信噪声但不丢真实文字);`recBatchSize` 从 1 提到 6(行宽差异大时 padding waste 较 8 小,1 vs 6 实际提速待真机验证,已在 smoke 记录里标注为 Phase 2 项)。
+- **修复 `BitmapLoader.sampleSize` 2049→1024 像素悬崖**:原算法 `while (longest/sample > maxEdge) sample *= 2` 是 ceiling-based,2048 px 图保持原分辨率,2049 px 图直接砍到 ~1024 px(50% 信息丢失);4096 px → 2048 px,4097 px → 1024 px(同样 50% 跳变)。改为 floor-based:2048 / 2049 都保持 inSampleSize=1,4096 / 4097 都保持 inSampleSize=2,bitmap 偶尔略超 maxEdge(最多 +1 px 量级)但从不悬崖。`sampleSize` 仍为准确的 box 坐标映射因子。
+- **文档修正**:`docs/smoke/2026-08-20-icevision-v6-upgrade.md` 中"DetResizeForTest: null # v6 = limit_side=960 / limit_type=max(SDK 内部默认)"是错的(实际 SDK 不读 det yml),已改为"SDK 内部默认 — 实际不读此 yml"+ v0.1.12 修复说明;`det/inference.yml` 标注为"死资产"(SDK 反编译确认 `models/det/inference.yml` 字符串不在 classes.jar 任何位置)。
+- `versionCode 11→12`, `versionName 0.1.11→0.1.12`。
+- 单元测试沿用(v0.1.11 全 317 条绿),预期全绿;真机 instrumentation A/B 是下一阶段门控项,当前未引入。
+- 真机验证缺口(2026-08-20 当前未跑):`recBatchSize=6` 实际加速;`detLimitSideLen=960` vs `1536` vs 全分辨率的延迟-检出取舍;`recScoreThresh=0.5` 是否误杀真实文字 — 这些都依赖标注集或真机 log,Phase 2 + 桌面 A/B 工具 `D:\tmp\ocr_compare\` 复用可降低工作量。
+
 ## v0.1.11 · 2026-08-20
 
 - **OCR 模型升级:PP-OCRv5_mobile → PP-OCRv6_small**(基于 4 张实拍广告招牌 A/B 实测:见 [`docs/knowledge/ppocrv6_vs_v5_a_b_test.md`](docs/knowledge/ppocrv6_vs_v5_a_b_test.md)):
