@@ -41,7 +41,7 @@ Gradle property `modelProfile` 控制当前构建启用哪个模型配置:
 | Profile | 状态 | 含义 |
 | --- | --- | --- |
 | `shell` | **默认 / 首版** | 仅展示骨架;UI 可跑,Fake OCR + slim rules,APK 不带模型 |
-| `ice_ocr_rules` | Phase 1(shipped) | PaddleOCR v3.7.0 SDK(走 ONNX Runtime + OpenCV)+ AdSignageRuleMatcher + FoodLabelRuleMatcher 已接入;rules JSON 从 `assets/rules/ad_signage_rules.json`(广告招牌 116 条 / v4)与 `assets/rules/food_label_rules.json`(食品标识 66 条 / v4)出;ONNX 模型(bundled in APK)在 `assets/models/{det,rec}/inference.onnx` + `inference.yml` |
+| `ice_ocr_rules` | Phase 1(shipped) | **PP-OCRv6_small**(2026-08-20 升级,rec dict 18708 条)经 PaddleOCR v3.7.0 SDK(走 ONNX Runtime + OpenCV)+ AdSignageRuleMatcher + FoodLabelRuleMatcher 已接入;rules JSON 从 `assets/rules/ad_signage_rules.json`(广告招牌 116 条 / v4)与 `assets/rules/food_label_rules.json`(食品标识 66 条 / v4)出;ONNX 模型(bundled in APK)在 `assets/models/{det,rec}/inference.onnx` + `inference.yml` |
 | `ice_vision` | 未来 | 多标签 + 法规依据的端侧 VLM |
 
 切换方式:`./gradlew assembleDebug -PmodelProfile=<name>`
@@ -67,9 +67,11 @@ Gradle property `modelProfile` 控制当前构建启用哪个模型配置:
 
 ## 视觉/OCR 模型路线(2026-08 锁定)
 
-Phase 1 走 OCR + 规则库路线(PaddleOCR 官方 SDK v3.7.0 + HankCS AC 自动机)。候选从 PaddleOCR-slim / Paddle-Lite / ONNX Runtime / MediaPipe Tasks 收敛到:**PaddleOCR 官方 SDK** 走 **ONNX Runtime + OpenCV**(Android 端 nn 推理),不再 hardcode 视觉模型路线。
+Phase 1 走 OCR + 规则库路线(**PP-OCRv6_small** + PaddleOCR 官方 SDK v3.7.0 + HankCS AC 自动机)。候选从 PaddleOCR-slim / Paddle-Lite / ONNX Runtime / MediaPipe Tasks 收敛到:**PaddleOCR 官方 SDK** 走 **ONNX Runtime + OpenCV**(Android 端 nn 推理),不再 hardcode 视觉模型路线。
 
 二分类 / 多标签视觉模型留 Phase 2+,首版不引入。
+
+**PP-OCRv6_small 升级决策(2026-08-20)**:`ice_ocr_rules` profile 默认 ONNX 模型由 `pp-ocrv5_mobile` 替换为 `pp-ocrv6_small`(rec dict 18708 条,det +5MB / rec +5MB APK 体积增长)。4 张测试集子文件夹 A/B 实测:v6 vs v5 = **+12% 检出行 / +5.4% 平均置信 / −10% 端侧耗时 / 5× 规则命中数**(核心案例:蟹都汇"大闸蟹连锁门店数量全国第一"v6 检出,v5 漏报并误识为 "全国谢")。`tools/download-ppocr-models.sh` 默认 variant 已切到 `pp-ocrv6_small`。详细数据与 4 图分项对比见 [`docs/knowledge/ppocrv6_vs_v5_a_b_test.md`](docs/knowledge/ppocrv6_vs_v5_a_b_test.md)。
 
 ## 构建命令
 
@@ -77,7 +79,7 @@ Phase 1 走 OCR + 规则库路线(PaddleOCR 官方 SDK v3.7.0 + HankCS AC 自动
 # 默认(骨架 APK,Fake OCR + slim rules)
 ./gradlew.bat assembleDebug -PmodelProfile=shell
 
-# Phase 1 shipped(PaddleOCR v3.7.0 + 广告招牌 116 条 / 食品标识 66 条 + ONNX 模型)
+# Phase 1 shipped(PP-OCRv6_small + PaddleOCR v3.7.0 + 广告招牌 116 条 / 食品标识 66 条 + ONNX 模型)
 ./gradlew.bat assembleDebug -PmodelProfile=ice_ocr_rules
 
 # 单元测试 / Lint
@@ -143,6 +145,8 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 | [`docs/knowledge/launcher-icon-generation.md`](docs/knowledge/launcher-icon-generation.md) | 启动图标裁切 / 重生成 |
 | [`docs/knowledge/lint-vital-fir-crash.md`](docs/knowledge/lint-vital-fir-crash.md) | AGP 9 + Kotlin 2.4.10 + lint 32.3.0 在 `.gradle.kts` 上崩的根因 + 绕过 |
 | [`docs/smoke/2026-08-14-phase1-smoke.md`](docs/smoke/2026-08-14-phase1-smoke.md), [`docs/smoke/2026-08-14-phase2-smoke.md`](docs/smoke/2026-08-14-phase2-smoke.md) | 烟测记录 |
+| [`docs/smoke/2026-08-20-icevision-v6-upgrade.md`](docs/smoke/2026-08-20-icevision-v6-upgrade.md) | PP-OCRv5→v6 升级烟测记录(2026-08-20) |
+| [`docs/knowledge/ppocrv6_vs_v5_a_b_test.md`](docs/knowledge/ppocrv6_vs_v5_a_b_test.md) | v6_small vs v5_mobile 在 4 张实拍广告招牌上的 A/B 实测 + 决策依据 |
 
 ## 启动图标
 

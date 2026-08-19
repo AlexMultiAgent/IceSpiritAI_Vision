@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Download PP-OCRv5_mobile ONNX models into app/src/main/assets/models/.
+# Download PP-OCR ONNX models into app/src/main/assets/models/.
 # Run from project root.
+#
+# v6_small is the default since 2026-08-20 (A/B test: +12% lines / +5% conf
+# / 5x rule-hit vs v5_mobile on 4 real ad posters). Override to v5 by
+# passing `pp-ocrv5_mobile` as the arg if a regression rollback is needed.
 
-MODEL_VARIANT="${1:-pp-ocrv5_mobile}"  # or pp-ocrv6_small / pp-ocrv6_tiny
+MODEL_VARIANT="${1:-pp-ocrv6_small}"  # or pp-ocrv5_mobile / pp-ocrv6_tiny
 HF_BASE="https://huggingface.co/PaddlePaddle"
 BOS_BASE="https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0"
 
@@ -46,14 +50,6 @@ download() {
     fi
 }
 
-# Translate a model-variant slug into the on-disk suffix used by PaddlePaddle's
-# naming scheme (pp-ocrv6_small -> PP-OCRV6_SMALL). Wrapped in a function so
-# the intermediate variable stays local.
-variant_suffix() {
-    local variant="$1"
-    echo "$variant" | tr 'a-z-' 'A-Z_'
-}
-
 # Run the per-variant download plan. Wrapped in a function so that
 # branch-local variables (e.g. SUFFIX) stay out of global shell scope.
 download_for_variant() {
@@ -77,7 +73,11 @@ download_for_variant() {
             # when HF is blocked (no BOS fallback for yml).
             ;;
         pp-ocrv6_small|pp-ocrv6_tiny)
-            suffix=$(variant_suffix "$variant")
+            # PP-OCRv6 HF repos and BOS buckets are case-sensitive and use the
+            # mixed-case slug `PP-OCRv6_<size>` (verified: both HF 302 and
+            # BOS 200). `tr 'a-z-' 'A-Z_'` collapses the hyphen to `_`,
+            # producing `PP_OCRV6_SMALL` which 401s on HF and 404s on BOS.
+            suffix="PP-OCRv6_${variant#pp-ocrv6_}"
             download "${suffix}_det" \
                 "${suffix}_det_onnx/resolve/main/inference.onnx" \
                 "${suffix}_det_onnx_infer.tar" \

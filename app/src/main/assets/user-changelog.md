@@ -1,5 +1,18 @@
 # 用户更新日志
 
+## v0.1.11 · 2026-08-20
+
+- **OCR 模型升级:PP-OCRv5_mobile → PP-OCRv6_small**(基于 4 张实拍广告招牌 A/B 实测:见 [`docs/knowledge/ppocrv6_vs_v5_a_b_test.md`](docs/knowledge/ppocrv6_vs_v5_a_b_test.md)):
+  - **检出文本行数 +12%**(101 → 113 行 / 4 张合计);**平均置信度 +5.4%**(0.837 → 0.882);**单图平均耗时 −10%**(1.88 s → 1.70 s)。
+  - **关键胜负手**:蟹都汇"大闸蟹连锁门店数量全国第一"v5 误识为"大蟹年量全国谢"导致漏报;v6 完整检出"全国第一",并经 AC 自动机触发广告法 §9 绝对化用语 4 条规则联触发(art9_abs_top / art9_edu_abs / pesticide_art6 / veterinary_art7);**AdSignage 规则命中数:1 → 5(5×)**。
+  - 模型文件:`det/inference.onnx` 4.83 MB → 9.88 MB(+5.05 MB);`rec/inference.onnx` 16.53 MB → 21.16 MB(+4.63 MB);rec 字典 6623 → 18708 条(PaddleOCR 官方 v6 multilingual 大字典)。
+  - 代码层无任何改动:`PaddleOcrEngine.kt` 全部参数通过 yml 读入(asset path 之外无 dict/image_shape hardcode);`app/build.gradle.kts` `ice_ocr_rules` profile 路径对 v5/v6 完全透明;`tools/download-ppocr-models.sh` 默认 variant 切换即可。v5 模型文件已备份至 `%TEMP%/ppocr_v5_backup/` 供回滚。
+  - `tools/download-ppocr-models.sh` 默认参数 `pp-ocrv5_mobile` → `pp-ocrv6_small`(命令行显式传 `pp-ocrv5_mobile` 仍可一键回滚)。
+  - `app/src/main/assets/models/{det,rec}/inference.{onnx,yml}` 5 个文件随发布 APK 体积约 +9.7 MB(解包 + 压缩后);native libs(jniLibs)未变。
+- **决策依据 + 局限性**(写在 [`docs/knowledge/ppocrv6_vs_v5_a_b_test.md`](docs/knowledge/ppocrv6_vs_v5_a_b_test.md) 顶部,供后续维护者复核):测试集 4 张图不构成完整评测集,差异是趋势性的 ±10% noise 范围,但官方 PaddleOCR 公开 benchmark 与 v6_small 中文场景精度提升已与本次实测一致。后续如需做 ≥30 张标注集评测,已留 benchmark 脚本 `D:\tmp\ocr_compare\compare.py` + `D:\tmp\ocr_compare\match_rules.py` 可直接复用。
+- `versionCode 10→11`, `versionName 0.1.10→0.1.11`。
+- 单元测试全绿(代码层无变更,纯 asset 替换);release pipeline 待发版时走 `assembleRelease → generateVisionLatestJson → archiveVisionRelease → uploadVisionReleaseToGitea` 全套。
+
 ## v0.1.10 · 2026-08-19
 
 - **产品方向调整**:UI 层只暴露「广告招牌」tab;「食品标识」tab 入口暂时对用户隐藏(原因与可复制模式边界见 CLAUDE.md 「产品方向(v0.1.10 起):广告招牌 单一焦点」段)。
