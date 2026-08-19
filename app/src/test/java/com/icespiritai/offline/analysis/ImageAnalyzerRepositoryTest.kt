@@ -209,4 +209,13 @@ class ImageAnalyzerRepositoryTest {
         assertEquals("AD_HIT", adReport.hits[0].ruleId)
         assertEquals("FOOD_HIT", foodReport.hits[0].ruleId)
     }
+
+    @Test
+    fun `complete state's ViolationReport carries the same lineBoxes as OcrDone`() = runTest {
+        val uri = StubUri()
+        val states = repo().analyze(uri, matcher).toList()
+        val ocrDone = states[1] as AnalysisState.OcrDone
+        val complete = states[4] as AnalysisState.Complete
+        assertEquals(ocrDone.lineBoxes, complete.report.lineBoxes)
+    }
 }

@@ -119,6 +119,7 @@ class ImageAnalyzerRepository(
                     hits = hits,
                     timestampMs = System.currentTimeMillis(),
                     avgConfidence = ocrResult.avgConfidence,
+                    lineBoxes = ocrResult.lineBoxes,
                 )
             )
         )
