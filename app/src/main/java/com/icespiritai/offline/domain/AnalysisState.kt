@@ -88,6 +88,13 @@ data class ViolationReport(
      * instead of silently trusting a noisy recognition result.
      */
     val avgConfidence: Float = 0f,
+    /**
+     * Per-line OCR text + bounding boxes from the run that produced [ocrText].
+     * Drives the Viewer's per-line text list and the overlay hit boxes.
+     * Defaults to `emptyList()` so legacy / programmatic constructions still
+     * compile (the Viewer shows an empty text list and skips the overlay).
+     */
+    val lineBoxes: List<TextLine> = emptyList(),
 ) {
     /** True when OCR found at least one non-blank character. */
     val hasText: Boolean get() = ocrText.isNotBlank()

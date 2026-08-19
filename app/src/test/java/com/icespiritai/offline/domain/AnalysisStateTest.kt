@@ -90,4 +90,17 @@ class AnalysisStateTest {
         val report = ViolationReport(StubUri(), "text", emptyList(), 1L)
         assertEquals(0f, report.avgConfidence, 0.0001f)
     }
+
+    @Test
+    fun violationReport_lineBoxesDefaultsToEmptyForBackwardCompat() {
+        val report = ViolationReport(StubUri(), "text", emptyList(), 1L)
+        assertEquals(emptyList<TextLine>(), report.lineBoxes)
+    }
+
+    @Test
+    fun violationReport_carriesLineBoxes() {
+        val boxes = listOf(TextLine("a", Rect(0, 0, 10, 10), 0.9f))
+        val report = ViolationReport(StubUri(), "a", emptyList(), 1L, lineBoxes = boxes)
+        assertEquals(boxes, report.lineBoxes)
+    }
 }
