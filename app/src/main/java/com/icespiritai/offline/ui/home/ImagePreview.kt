@@ -1,6 +1,7 @@
 package com.icespiritai.offline.ui.home
 
 import android.net.Uri
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -13,8 +14,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -48,15 +51,42 @@ fun ImagePreview(
     lineBoxes: List<TextLine>,
     hits: List<RuleHit>,
     modifier: Modifier = Modifier,
+    /**
+     * Optional double-tap handler. When provided AND [lineBoxes] is non-empty
+     * (i.e. there is an OCR result worth a Viewer screen), the preview
+     * installs a [detectTapGestures] handler that fires this callback on
+     * double-tap. Defaulted to `null` for existing callers — null means no
+     * gesture detector is installed at all (cleaner than swallowing taps
+     * silently).
+     *
+     * The `lineBoxes.isNotEmpty()` gate matters: a user who just took a photo
+     * of a wall (or any image where OCR found nothing) should never be able
+     * to "open the Viewer" because there's nothing to view. The HomeScreen
+     * wires this callback only when the ViewModel has at least one OCR line.
+     */
+    onDoubleTap: (() -> Unit)? = null,
 ) {
     val a11y = stringResource(R.string.image_preview_desc)
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
     var imagePainter by remember { mutableStateOf<Painter?>(null) }
+    val rootModifier = modifier
+        .fillMaxSize()
+        .testTag("image_preview")
+        .let { m ->
+            if (onDoubleTap != null && lineBoxes.isNotEmpty()) {
+                // The Double-tap callback is hoisted — capturing [onDoubleTap]
+                // keeps the lambda identity stable across recompositions.
+                m.pointerInput(Unit) {
+                    detectTapGestures(onDoubleTap = { onDoubleTap() })
+                }
+            } else {
+                m
+            }
+        }
+        .semantics { contentDescription = a11y }
+        .onSizeChanged { boxSize = it }
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .semantics { contentDescription = a11y }
-            .onSizeChanged { boxSize = it },
+        modifier = rootModifier,
         contentAlignment = Alignment.Center,
     ) {
         if (imageUri == null) {
