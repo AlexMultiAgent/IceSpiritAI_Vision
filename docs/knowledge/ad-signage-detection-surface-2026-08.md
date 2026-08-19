@@ -1,136 +1,271 @@
 # ad_signage 域 判别表面 — 2026-08-19 快照
 
-> v0.1.10 正式 release(`release id=187` @ Gitea tag `latest`)后,广告招牌域规则在
-> 端侧可判别的违规面完整快照。用于打磨方向立项 / 未来维护者 onboarding /
-> 跨项目对照(冰灵慧语 / 冰灵智译)。
+> 全量 116 条规则 / 13 个 category / 3 级 severity,逐条展开关键词 + 法规 + 严重度。
+> 文档面向广告检查业务人员:拍照后能看到什么命中、依据哪条法规、严重度几级。
 
 ## 0. 总览
 
 | 字段 | 值 |
 |---|---|
 | 规则 JSON 版本 | 4 |
-| modelProfile | `ice_ocr_rules`(PaddleOCR v3.7.0 + ONNX Runtime + OpenCV) |
 | 规则总条数 | **116** |
 | category 数 | **13** |
 | severity 等级 | **3**(`Violation` / `Warning` / `Info`) |
-| 匹配器 | HankCS Aho-Corasick double-array trie |
-| 归一化 | `TextNormalizer.forMatching`(全/半角 + 空格 + 繁简) |
-| 输入形态 | OCR 文本字符串 |
-| 触发条件 | 归一化后关键词命中规则 `keywords` 任一 |
-| 命中产物 | `RuleHit(ruleId, matchedText, category, regulation, lawText, severity, domain="ad")` |
+| 触发机制 | OCR 文本 → 归一化 → 关键词命中(`keywords` 任一) |
+| 命中产物 | `ruleId / matchedText / category / regulation / lawText / severity` |
 
-## 1. 匹配管线
+## 1. 严重度图例
 
-入口:[AdSignageRuleMatcher.kt](app/src/main/java/com/icespiritai/offline/rules/AdSignageRuleMatcher.kt)
+| 等级 | 业务含义 | 典型罚款区间 |
+|---|---|---|
+| **Violation** | 明确违反《广告法》某条 | 几万 ~ 几十万,情节严重可吊销执照 |
+| **Warning** | 涉嫌违规 / 应避免的表述 | 责令改正 + 罚款 |
+| **Info** | 提醒性表述 / 需补充资质 | 风险提示,不直接触发罚款 |
 
-```
-OCR 文本
-  └─ TextNormalizer.forMatching(归一化全/半角 + 空格 + 繁简)
-       └─ AhoCorasickDoubleArrayTrie.parseText(归一化文本)
-            └─ 每个 (ruleId ∈ matched) 产出 RuleHit
-                 └─ 去重:同 (ruleId, matchedText) 只记一次
-```
-
-- **关键词共享**:同一关键词被多条规则引用时(如 `"第一"` 同时在 education + absolute 两条规则),所有适用规则都记一条 hit,不去重
-- **同规则内 dedup**:同一 `ruleId` 在同一文本里多次命中同一 `matchedText` 只记一次
-- **跨规则不 dedup**:一张招牌可同时命中 5–12 条不同规则的关键词
-- **不做上下文/否定/反讽判断**:输 "本店不做医疗" 也会命中 "医疗" 之类关键词
-
-## 2. 规则覆盖总览
-
-### 2.1 category × severity 矩阵
+## 2. category × severity 矩阵
 
 | category | Violation | Warning | Info | 总计 |
 |---|---:|---:|---:|---:|
-| medical | 5 | 10 | 3 | 18 |
-| finance | 3 | 9 | 1 | 13 |
+| absolute | 3 | 4 | 0 | 7 |
 | cosmetic | 3 | 6 | 3 | 12 |
+| education | 1 | 3 | 0 | 4 |
+| finance | 3 | 9 | 1 | 13 |
+| internet_ad | 4 | 5 | 0 | 9 |
+| medical | 5 | 10 | 3 | 18 |
+| minor | 1 | 0 | 1 | 2 |
 | outdoor | 0 | 11 | 0 | 11 |
 | pesticide | 2 | 8 | 0 | 10 |
-| veterinary | 2 | 8 | 0 | 10 |
-| internet_ad | 4 | 5 | 0 | 9 |
-| signage | 2 | 6 | 1 | 9 |
-| absolute | 3 | 4 | 0 | 7 |
 | realestate | 0 | 7 | 0 | 7 |
-| education | 1 | 3 | 0 | 4 |
 | restricted | 3 | 0 | 1 | 4 |
-| minor | 1 | 0 | 1 | 2 |
+| signage | 2 | 6 | 1 | 9 |
+| veterinary | 2 | 8 | 0 | 10 |
 | **合计** | **29** | **77** | **10** | **116** |
 
-### 2.2 各 category 法规依据与典型规则 id
+## 3. 全量规则(按 category 展开)
 
-| category | 法规依据 | 典型规则 id(节选) |
+### 3.1. absolute(7 条)
+
+| # | rule id | severity | 关键词(命中即触发) | 法规依据 |
+|---:|---|---|---|---|
+| 1 | `ad_signage_art9_abs_top` | W | 最佳 / 最好 / 第一 / 顶级 / 唯一 | 《广告法》第九条第（三）项 |
+| 2 | `ad_signage_art9_abs_pct` | W | 100% / 百分百 / 百分之百 | 《广告法》第九条第（三）项 |
+| 3 | `ad_signage_art9_abs_emblem` | **V** | 国旗 / 国徽 / 国歌 / 军旗 / 军歌 / 军徽 | 《广告法》第九条第（一）项 + 第五十七条 |
+| 4 | `ad_signage_art9_abs_authority` | **V** | 国务院指定 / 中央推荐 / 国家发改委 / 公安部推荐 / 国家机关专用 | 《广告法》第九条第（二）项 + 第五十七条 |
+| 5 | `ad_signage_art9_abs_superstition` | **V** | 博彩 / 赌博 / 算命 / 占卜 / 转运 / 招财 / 一夜情 | 《广告法》第九条第（七）项、第（八）项 + 第五十七条 |
+| 6 | `ad_signage_art12_fake_patent` | W | 国家专利 / 专利号 ZL / 专利申请号 | 《广告法》第十二条 + 第五十九条第一款第（三）项 |
+| 7 | `ad_signage_art28b_fake_data` | W | 销量第一 / 全网第一 / 市场占有率第一 / 全国销量冠军 / 消费者满意度第一 | 《广告法》第二十八条第二款第（二）项至第（五）项 + 第五十五条 |
+
+### 3.2. cosmetic(12 条)
+
+| # | rule id | severity | 关键词(命中即触发) | 法规依据 |
+|---:|---|---|---|---|
+| 1 | `cosmetic_art23_medical_claim` | **V** | 治疗 / 治愈 / 疗效 / 祛斑 / 祛痘 / 消炎 / 抑菌 / 修复细胞 / 抗炎 / 消肿 / 缓解 / 祛疤 / 抗敏 / 消炎 / 修复肌肤屏障 / 祛红血丝 / 调理敏感 | 《化妆品监督管理条例》第二十三条 + 第二十五条第二款（国务院令第727号，2021-01-01施行） |
+| 2 | `cosmetic_art23_misleading_claim` | **V** | 零添加 / 100% 安全 / 纯天然 / 彻底告别 / 一次见效 / 立竿见影 / 零刺激 / 无添加 / 绝对安全 / 100% 有效 / 即刻见效 / 当天见效 | 《化妆品监督管理条例》第二十二条 + 第二十五条第一款 |
+| 3 | `cosmetic_art23_medical_explicit` | **V** | 彻底治愈 / 一针见效 / 当天见效 / 包治 / 特效 / 立即见效 / 三天见效 / 一次根治 | 《化妆品监督管理条例》第二十三条 + 第二十五条第二款 |
+| 4 | `cosmetic_art20_claim_basis` | W | 研究表明 / 最新科技 / 专利配方 / 国家专利 / 国际专利 / 临床验证 / 博士研发 / 权威专家 / 诺贝尔 / 前沿科技 | 《化妆品监督管理条例》第二十条 + 第二十一条 |
+| 5 | `cosmetic_art17_special_class` | W | 染发剂 / 烫发剂 / 祛斑 / 美白 / 防晒 / 防脱 / 育发 / 新功效 / 国妆特字 | 《化妆品监督管理条例》第十七条 + 第十八条（特殊化妆品注册管理） |
+| 6 | `cosmetic_art23_special_regno` | W | 特殊化妆品 / 国妆特字缺失 / 注册证编号缺失 / 未取得特殊化妆品注册证 | 《化妆品监督管理条例》第二十三条第（一）项 + 第五十一条 |
+| 7 | `cosmetic_art23_general_fileno` | I | 普通化妆品 / 国妆网备字缺失 / 备案号缺失 / 未备案 / 国产非特殊 | 《化妆品监督管理条例》第二十三条第（一）项 + 第十八条（普通化妆品备案管理） |
+| 8 | `cosmetic_art23_ingredients` | W | 成分表缺失 / 未标全成分 / Ingredients 缺失 | 《化妆品监督管理条例》第二十三条第（五）项 + 《化妆品标签管理办法》（SAMR 令第77号）第十一条 |
+| 9 | `cosmetic_art23_license_no` | I | 生产许可证缺失 / XK16-108 缺失 / 未标生产许可证 | 《化妆品监督管理条例》第二十三条第（三）项 |
+| 10 | `cosmetic_art23_safety_warning` | I | 使用期限缺失 / 使用方法缺失 / 安全警示缺失 / 限期使用日期缺失 | 《化妆品监督管理条例》第二十三条第（七）项 + 《化妆品标签管理办法》第十五条 |
+| 11 | `cosmetic_art9_abs_extended` | W | 顶级 / 首选 / 唯一 / 首个 / 独家 / 最强 / 最佳 / 最好 / 第一名 / 全球第一 | 《广告法》第九条第（三）项 + 《化妆品监督管理条例》第二十二条 |
+| 12 | `cosmetic_art8_award_claim` | W | 金奖 / 第一品牌 / 中国名牌 / 驰名商标 / 国际金奖 / 唯一获奖 / 首款 / 首发 | 《广告法》第八条 + 《化妆品监督管理条例》第二十五条 |
+
+### 3.3. education(4 条)
+
+| # | rule id | severity | 关键词(命中即触发) | 法规依据 |
+|---:|---|---|---|---|
+| 1 | `ad_signage_art24_edu_guar` | **V** | 保过 / 包过 / 不过退款 / 100% 通过 | 《广告法》第二十四条第（一）项 |
+| 2 | `ad_signage_art9_edu_abs` | W | 最好 / 最强师资 / 第一 | 《广告法》第九条第（三）项 |
+| 3 | `ad_signage_edu_art24_recommendation` | W | 研究院推荐 / 学会推荐 / 协会推荐 / 专家推荐 / 受益者推荐 | 《广告法》第二十四条第（三）项 + 第五十八条 |
+| 4 | `ad_signage_edu_art24_test_authority` | W | 考试命题人 / 阅卷老师 / 考官亲自授课 / 教育部推荐 | 《广告法》第二十四条第（二）项 + 第五十八条 |
+
+### 3.4. finance(13 条)
+
+| # | rule id | severity | 关键词(命中即触发) | 法规依据 |
+|---:|---|---|---|---|
+| 1 | `ad_signage_art25_fin_prm` | **V** | 稳赚不赔 / 无风险 / 保本高收益 | 《广告法》第二十五条第（一）项 |
+| 2 | `ad_signage_fin_art25_endorsement` | W | 专家荐股 / 大师操盘 / 研究所推荐 / 稳赚大师 / 经济学家推荐 | 《广告法》第二十五条第（二）项 + 第五十八条 |
+| 3 | `ad_signage_fin_art25_unlawful` | I | 零风险 / 无风险收益 / 本金保障 / 保本保息 | 《广告法》第二十五条 + 第五十八条 |
+| 4 | `finance_316_art3_2_fraud_guarantee` | **V** | 稳赚不赔 / 保本高收益 / 无风险 / 100% 盈利 / 保收益 / 保证收益 / 零亏损 / 无亏损 / 保证不亏 / 绝对收益 / 年化保底 / 最低收益 | 银发〔2019〕316号《关于进一步规范金融营销宣传行为的通知》第三条第（二）项 + 《广告法》第二十五条第（一）项 |
+| 5 | `finance_316_art3_1_scope` | W | 无证经营 / 超出业务范围 / 超范围宣传 / 未备案金融产品 / 无牌照理财 / 非法集资 / 自融 | 银发〔2019〕316号 第三条第（一）项（不得超出金融业务许可或者金融产品备案范围） |
+| 6 | `finance_316_art3_2_regulator_use` | W | 央行推荐 / 银保监认证 / 证监会认证 / 外管局认证 / 监管批准 / 官方授权 / 央行备案 / 金融监管批准 / 官方背书 | 银发〔2019〕316号 第三条第（二）项（不得利用金融管理部门及其工作人员、金融行业协会名义） |
+| 7 | `finance_316_art3_2_consumer_right` | W | 免审核 / 免风险揭示 / 零门槛 / 无需风险评估 / 无需风险测评 / 无门槛 / 全民可投 / 无差别推广 | 银发〔2019〕316号 第三条第（二）项末段 + 第（五）项（不得损害金融消费者知情权） |
+| 8 | `finance_316_art3_3_fair_competition` | W | 其他平台都是骗子 / 某某银行破产 / 某某基金跑路 / 某某平台倒闭 / 某券商被查 / 某保险公司爆雷 / 某理财暴雷 | 银发〔2019〕316号 第三条第（三）项（不得以损害公平竞争的方式进行） |
+| 9 | `finance_316_art3_4_government_use` | **V** | 国家担保 / 政府兜底 / 央行背书 / 国务院批准 / 中央财政兜底 / 国家信用担保 / 主权信用担保 | 银发〔2019〕316号 第三条第（四）项（不得利用政府公信力进行营销宣传） |
+| 10 | `finance_316_art3_6_internet` | W | 加微信 / 扫码进群 / 直播带单 / 快手直播带单 / 抖音直播带单 / 老师带单 / 导师带单 / 群内荐股 / 群内带单 / 小广告引流 | 银发〔2019〕316号 第三条第（六）项（不得利用互联网进行不当营销宣传） |
+| 11 | `finance_316_art3_7_unlicensed_send` | W | 短信群发 / 电话营销 / AI 外呼 / 智能外呼 / 短信推送 / 短信营销 / AI 智能拨号 / 电销 | 银发〔2019〕316号 第三条第（七）项（不得违规向金融消费者发送营销信息） |
+| 12 | `finance_art25_endorsement_reinforced` | W | 首席经济学家推荐 / 首席分析师 / 经济学家推荐 / 金融学家 / 基金经理推荐 / 理财师推荐 / 金融教授推荐 | 《广告法》第二十五条第（二）项 |
+| 13 | `finance_art9_abs_investment` | W | 最佳平台 / 最安全 / 最稳 / 第一平台 / 顶级理财 / 稳赚平台 / 最强团队 / 唯一合规 | 《广告法》第九条第（三）项 + 第二十五条 |
+
+### 3.5. internet_ad(9 条)
+
+| # | rule id | severity | 关键词(命中即触发) | 法规依据 |
+|---:|---|---|---|---|
+| 1 | `internet_art6_identifiable` | W | 亲测 / 种草 / 达人推荐 / 好物推荐 / 排行榜 / 测评 / 热门推荐 / 安利 / 拔草 / 爆款推荐 / 种草日记 / 科普 / 实测 / 必买清单 | 《互联网广告管理办法》（SAMR令第72号）第六条第一款 + 第二款 + 《广告法》第二十九条 |
+| 2 | `internet_art6_softarticle` | W | 软文 / 种草文 / 测评报告 / 体验分享 / 植入式广告 / 原生广告 / 内容营销 | 《互联网广告管理办法》第六条第二款 |
+| 3 | `internet_art21_paid_search` | W | 百度推广 / 搜狗推广 / 广告位 / P4P / 付费搜索 / 竞价排名 / 竞价推广 / 信息流广告 / 推广链接 | 《互联网广告管理办法》第二十一条 + 第六条第二款 |
+| 4 | `internet_art15_popup_close` | W | 打开 App 弹出 / 开屏广告 / 弹窗广告 / 弹窗无法关闭 / 强制停留 / 强制观看 | 《互联网广告管理办法》第十五条第一款 + 第二款 + 《广告法》第四十四条 |
+| 5 | `internet_art9_health_softarticle` | **V** | 健康讲座 / 养生秘笈 / 老中医 / 专家解读 / 养生堂 / 健康之路 / 养生秘方 / 调理身体 / 养生专家 / 保健秘方 / 养生达人 / 食疗秘方 | 《互联网广告管理办法》第九条第二款 + 第七条 + 《广告法》第十七条 |
+| 6 | `internet_art8_tobacco` | **V** | 电子烟 / 戒烟灵 / 新型烟草 / 雾化烟 / 加热不燃烧 / 蒸汽烟 / 烟弹 / 雾化器 | 《互联网广告管理办法》第八条第一款 + 《广告法》第二十二条 |
+| 7 | `internet_art8_rx_drug` | **V** | 处方药 / Rx / 凭处方 / 医师处方 / Rx Only / 麻醉药品 / 精神药品 | 《互联网广告管理办法》第八条第一款 + 《广告法》第十五条 |
+| 8 | `internet_art7_pre_review` | **V** | 药品互联网销售 / 医疗器械互联网 / 保健食品网售 / 特医食品网售 / 婴幼儿配方乳粉网售 / 广告审查批准文号缺失 | 《互联网广告管理办法》第七条 + 第十条 |
+| 9 | `internet_art22_algorithm_disclose` | W | 算法推荐 / 智能推荐 / 千人千面 / AI 推荐 / 个性化推送 / 算法定向 | 《互联网广告管理办法》第二十二条 + 《互联网信息服务算法推荐管理规定》（国家互联网信息办公室等四部委令第9号） |
+
+### 3.6. medical(18 条)
+
+| # | rule id | severity | 关键词(命中即触发) | 法规依据 |
+|---:|---|---|---|---|
+| 1 | `ad_signage_art16_med_abs` | **V** | 根治 / 100% 有效 / 彻底治愈 / 无副作用 | 《广告法》第十六条第一款第（一）项、第（二）项 |
+| 2 | `ad_signage_art16_med_health` | **V** | 疗效 / 治愈率 / 根治率 | 《广告法》第十六条第一款第（二）项 |
+| 3 | `ad_signage_med_art6_indications` | W | 专治 / 主治 / 疗法 / 诊疗技术 / 祖传秘方 | 《医疗广告管理办法》第六条 + 第十七条 |
+| 4 | `ad_signage_med_art7_technicality` | W | 处方药 / 疗法 / 治疗技术 / 专治 / 根除 | 《医疗广告管理办法》第七条第（一）项 + 第十七条 |
+| 5 | `ad_signage_med_art7_compare` | W | 最好医院 / 最强医院 / 第一医院 / 完胜同行 / 其他医院 | 《医疗广告管理办法》第七条第（三）项 + 第十七条 |
+| 6 | `ad_signage_med_art7_army` | W | 解放军医院 / 武警医院 / 部队医院 / 解放军总医院 | 《医疗广告管理办法》第七条第（八）项 + 第十七条 |
+| 7 | `ad_signage_med_art11_qualifications` | I | 三甲专家 / 主任医师 / 副主任医师 / 博士生导师 | 《医疗广告管理办法》第十一条 + 第十七条 |
+| 8 | `ad_signage_med_art13_newsform` | W | 本台讯 / 本报记者 / 专题报道 / 健康讲座 / 医疗资讯 | 《医疗广告管理办法》第十三条 + 第十七条 |
+| 9 | `ad_signage_medical_art4_selfuse_label` | W | 血压计 / 血糖仪 / 体温计 / 助听器 / 雾化器 / 轮椅 / 家用呼吸机 / 按摩仪 / 血氧仪 | 《医疗器械广告审查发布标准》第四条 + 第九条 / 《广告法》第五十八条 |
+| 10 | `ad_signage_medical_art5_contraindication` | W | 禁忌 / 注意事项 / 禁忌内容 / 禁用人群 | 《医疗器械广告审查发布标准》第五条 / 《广告法》第五十八条 |
+| 11 | `ad_signage_medical_art6_producer` | I | 医疗器械 / 医用 / 医用设备 / 医疗器械备案 | 《医疗器械广告审查发布标准》第六条第（一）项 |
+| 12 | `ad_signage_medical_art6_registerno` | I | 国械注准 / 国械注许 / 注册证号 / 医疗器械注册 | 《医疗器械广告审查发布标准》第六条第（三）项 |
+| 13 | `ad_signage_medical_art6_adapproval` | W | 医械广审 / 医疗器械广审文号 / 医疗器械广告批准文号 | 《医疗器械广告审查发布标准》第六条第（四）项 + 第九条 |
+| 14 | `ad_signage_medical_art7_assertion` | **V** | 100% 安全 / 绝对安全 / 零副作用 / 保证治愈 | 《医疗器械广告审查发布标准》第七条第（一）项 / 《广告法》第十六条 + 第五十八条 |
+| 15 | `ad_signage_medical_art7_cure_rate` | **V** | 治愈率 / 有效率 / 显效率 / 根治率 | 《医疗器械广告审查发布标准》第七条第（二）项 / 《广告法》第十六条 + 第五十八条 |
+| 16 | `ad_signage_medical_art7_compare` | **V** | 比 X 强 / 完胜 / 最好医疗器械 / 最强品牌 / 全国最强医院 | 《医疗器械广告审查发布标准》第七条第（三）项 / 《广告法》第十六条第（三）项 + 第五十八条 |
+| 17 | `ad_signage_medical_art7_endorsement` | W | 专家推荐 / 三甲医院 / 主任医师推荐 / 患者证言 / 康复案例 / 学会认证 | 《医疗器械广告审查发布标准》第七条第（四）项 / 《广告法》第五十八条 |
+| 18 | `ad_signage_medical_art8_commitment` | W | 无效退款 / 保险公司保险 / 保证有效 | 《医疗器械广告审查发布标准》第八条 / 《广告法》第五十八条 |
+
+### 3.7. minor(2 条)
+
+| # | rule id | severity | 关键词(命中即触发) | 法规依据 |
+|---:|---|---|---|---|
+| 1 | `ad_signage_art10_minor` | I | 儿童专用 / 宝宝必备 | 《广告法》第十条 / 食品标识监督管理办法 第八条 |
+| 2 | `ad_signage_art20_breastmilk` | **V** | 替代母乳 / 胜过母乳 / 优于母乳 / 母乳化 / 近似母乳 / 等同母乳 / 可与母乳媲美 | 《广告法》第二十条 + 第五十七条 / 《母乳代用品销售管理办法》第九条 |
+
+### 3.8. outdoor(11 条)
+
+| # | rule id | severity | 关键词(命中即触发) | 法规依据 |
+|---:|---|---|---|---|
+| 1 | `ad_signage_outdoor_art14_cert_no` | W | 户外广告登记证 / 证号缺失 / 右下角缺失 | 《户外广告登记管理规定》第十四条 + 第十五条 |
+| 2 | `ad_signage_outdoor_art4_unaudited` | W | 未经登记 / 无登记证 / 未取得登记证 | 《户外广告登记管理规定》第四条 + 第二十一条 |
+| 3 | `ad_signage_outdoor_art10_misleading` | W | 权威推荐 / 专家推荐 / 国家免检 / 质量免检 / 驰名商标 | 《户外广告登记管理规定》第十条 + 第十九条 |
+| 4 | `ad_signage_outdoor_city_art32_government` | W | 政府大楼 / 机关大院内 / 军区驻地 / 军事管理区 | 《广告法》第三十二条第（二）项 + 《城市市容和环境卫生管理条例》第十一条 |
+| 5 | `ad_signage_outdoor_city_art32_school_hospital` | W | 学校门口 / 校园内 / 幼儿园外墙 / 医院门口 | 《广告法》第三十二条第（二）项 + 《城市市容和环境卫生管理条例》第十一条 |
+| 6 | `ad_signage_outdoor_city_art32_traffic` | W | 交通信号灯 / 指路牌 / 护栏 / 岗亭 | 《广告法》第三十二条第（一）项 + 《城市市容和环境卫生管理条例》第十一条 |
+| 7 | `ad_signage_outdoor_city_art32_roof` | W | 楼顶广告 / 楼顶大牌 / 屋顶招牌 / 天面广告 | 《广告法》第三十二条第（三）项 + 各地户外广告设置管理办法 |
+| 8 | `ad_signage_outdoor_city_art32_cultural_relic` | W | 文物保护单位 / 历史建筑 / 古建筑 / 不可移动文物 | 《广告法》第三十二条第（二）项 + 《城市市容和环境卫生管理条例》第十一条 |
+| 9 | `ad_signage_outdoor_city_art32_municipal` | W | 消防栓 / 配电箱 / 燃气调压站 / 消火栓 | 《广告法》第三十二条第（一）项 + 《城市市容和环境卫生管理条例》第十一条 |
+| 10 | `ad_signage_outdoor_city_art32_heritage` | W | 景区内 / 自然保护区 / 5A 景区 / 风景名胜区 | 《广告法》第三十二条第（二）项 + 《城市市容和环境卫生管理条例》第十一条 |
+| 11 | `ad_signage_outdoor_city_art32_airport` | W | 净空保护区 / 机场附近 / 气球广告 / 飞艇广告 | 《广告法》第三十二条 + 《城市市容和环境卫生管理条例》第十一条 + 各地户外广告设置管理办法 |
+
+### 3.9. pesticide(10 条)
+
+| # | rule id | severity | 关键词(命中即触发) | 法规依据 |
+|---:|---|---|---|---|
+| 1 | `ad_signage_pesticide_art2_unregistered` | W | 农药登记证 / 农药登记号 / PD / PDN | 《农药广告审查发布规定》第二条 + 第十三条 / 《广告法》第二十一条 + 第五十八条 |
+| 2 | `ad_signage_pesticide_art3_overrange` | W | 全杀 / 万能杀虫 / 彻底根除 / 对 X 病虫草均有效 | 《农药广告审查发布规定》第三条 + 第十三条 |
+| 3 | `ad_signage_pesticide_art4_assertion` | **V** | 100% 安全 / 绝对安全 / 零副作用 / 保证有效 / 高效低毒 | 《农药广告审查发布规定》第四条第（一）项 + 第十三条 / 《广告法》第五十八条 |
+| 4 | `ad_signage_pesticide_art4_endorsement` | W | 专家推荐 / 院士推荐 / 教授推荐 / 研究所推荐 / 学会认证 / 用户证言 | 《农药广告审查发布规定》第四条第（二）项 + 第十三条 |
+| 5 | `ad_signage_pesticide_art4_cure_rate` | W | 有效率 90% / 防治效果 95% / 杀灭率 99% | 《农药广告审查发布规定》第四条第（三）项 + 第十三条 / 《广告法》第五十八条 |
+| 6 | `ad_signage_pesticide_art4_safety_violation` | W | 拌料口服 / 随意加大剂量 / 人畜同用 / 食用安全 | 《农药广告审查发布规定》第四条第（四）项 + 第十三条 |
+| 7 | `ad_signage_pesticide_art5_deprecate` | W | 不如 / 比 X 差 / 完胜同类 / 最强农药 | 《农药广告审查发布规定》第五条 + 第十三条 |
+| 8 | `ad_signage_pesticide_art6_endorsement` | W | 销量第一 / 首选 / 金奖 / 唯一 / 全国第一 | 《农药广告审查发布规定》第六条 + 第十三条 / 《广告法》第九条第（三）项 + 第五十七条 |
+| 9 | `ad_signage_pesticide_art10_commitment` | **V** | 无效退款 / 保险公司保险 / 保证 100% 有效 | 《农药广告审查发布规定》第十条 + 第十三条 / 《广告法》第五十八条 |
+| 10 | `ad_signage_pesticide_art11_approval_no` | W | 农药广审文号 / 农药广告批准文号 / (2016) 农药广审 | 《农药广告审查发布规定》第十一条 + 第十三条 / 《广告法》第五十八条 |
+
+### 3.10. realestate(7 条)
+
+| # | rule id | severity | 关键词(命中即触发) | 法规依据 |
+|---:|---|---|---|---|
+| 1 | `ad_signage_art26_re_prm` | W | 升值回报 / 投资回报 / 学区房包入学 | 《广告法》第二十六条第（一）项、第（四）项 |
+| 2 | `ad_signage_re_art26_time_distance` | W | 分钟到 / 车程 / 驾车 X 分钟 / 步行 X 分钟可达 / 距市中心 X 分钟 | 《广告法》第二十六条第（二）项 + 第五十八条 |
+| 3 | `ad_signage_re_art26_price_violation` | W | 最低价 / 一口价 / 封顶价 / 工抵房 / 内部价 / 团购价 | 《广告法》第二十六条第（三）项 + 第五十八条 |
+| 4 | `ad_signage_re_art26_planned_facility` | W | 地铁直达 / 学区确定 / 规划学校 / 规划医院 / 未来 X 号线 | 《广告法》第二十六条第（四）项 + 第五十八条 |
+| 5 | `ad_signage_re_art4_sqmeter` | W | 赠送面积 / 超大户型 / N 平米实得 / 使用面积 | 《房地产广告发布规定》第四条 + 第二十一条 |
+| 6 | `ad_signage_re_art8_superstition` | W | 风水宝地 / 龙脉 / 聚财 / 纳福 / 旺宅 / 辟邪 | 《房地产广告发布规定》第八条 + 第二十一条 |
+| 7 | `ad_signage_re_art7_license_no` | W | 内部认购 / 认筹 / 排号 / 圈存 / 小产权 / 无证销售 | 《房地产广告发布规定》第七条 + 第二十一条 |
+
+### 3.11. restricted(4 条)
+
+| # | rule id | severity | 关键词(命中即触发) | 法规依据 |
+|---:|---|---|---|---|
+| 1 | `ad_signage_art22_tob_alc` | I | 戒烟 / 解酒 | 《广告法》第二十二条、第二十三条 |
+| 2 | `ad_signage_art22_tobacco_internet` | **V** | 电子烟 / 烟弹 / 加热不燃烧 / 网售烟草 / 微商卷烟 | 《广告法》第二十二条第一款 + 第四十二条 |
+| 3 | `ad_signage_art23_alcohol_drive` | **V** | 饮酒驾驶 / 喝酒开车 / 酒驾无罪 / 喝酒上路 | 《广告法》第二十三条第（三）项 + 第四十三条 |
+| 4 | `ad_signage_art23_alcohol_relief` | **V** | 解酒 / 解乏 / 提神酒 / 壮阳酒 / 养生酒 | 《广告法》第二十三条第（四）项 + 第四十三条 |
+
+### 3.12. signage(9 条)
+
+| # | rule id | severity | 关键词(命中即触发) | 法规依据 |
+|---:|---|---|---|---|
+| 1 | `ad_signage_signage_medicine_flag` | **V** | 蓝帽子 / 保健食品 / 国食健字 | 《药品、医疗器械、保健食品、特殊医学用途配方食品广告审查管理暂行办法》第七条 + 第二十六条 |
+| 2 | `ad_signage_signage_infant_milk` | W | 进口奶源 / 生态牧场 / 母乳化 / 天然牧场 / 珍稀奶源 | 《婴幼儿配方乳粉产品配方注册管理办法》（总局令第 80 号）+《广告法》第二十条 |
+| 3 | `ad_signage_signage_otc_label` | W | OTC / 非处方药 / 甲类非处方 / 乙类非处方 | 《药品、医疗器械、保健食品、特殊医学用途配方食品广告审查管理暂行办法》第五条 + 第二十六条 |
+| 4 | `ad_signage_signage_disease_prevention` | W | 治疗 / 治愈 / 疗效 / 消炎 / 止痛 | 《广告法》第十七条 + 第五十八条 |
+| 5 | `ad_signage_signage_art29_internet_identifiable` | W | 软文 / 科普 / 知识讲座 / 专家访谈 / 消费者教育 | 《广告法》第二十九条第一款 + 第五十九条 |
+| 6 | `ad_signage_signage_art29_oneclick_close` | W | 点击关闭 / 一键关闭 / 弹窗广告 / 信息流广告 | 《广告法》第二十九条第三款 + 第五十九条 |
+| 7 | `ad_signage_signage_art30_self_publish` | I | 无证经营 / 未取得广告发布资质 / 个人发布 | 《广告法》第三十条 + 第六十二条 |
+| 8 | `ad_signage_signage_art46_pre_review` | **V** | 未审查 / 未取得审查 / 未经审查 / 未审批 / 未通过审查 | 《广告法》第四十六条 + 第五十八条 |
+| 9 | `ad_signage_signage_art44_internet_provider` | W | 自媒体广告 / 公众号广告 / 小程序广告 / 未审查 | 《广告法》第四十四条 + 第五十九条 |
+
+### 3.13. veterinary(10 条)
+
+| # | rule id | severity | 关键词(命中即触发) | 法规依据 |
+|---:|---|---|---|---|
+| 1 | `ad_signage_veterinary_art3_prohibited` | W | 兽用麻醉 / 兽用精神药品 / 兽医医疗单位配制 / 未取得兽药产品批准文号 / 未取得进口兽药注册证书 | 《兽药广告审查发布规定》第三条 + 第十二条 / 《广告法》第五十八条 |
+| 2 | `ad_signage_veterinary_art4_assertion` | **V** | 100% 有效 / 保证有效 / 绝对安全 / 零副作用 | 《兽药广告审查发布规定》第四条第（一）项 + 第十二条 / 《广告法》第五十八条 |
+| 3 | `ad_signage_veterinary_art4_endorsement` | W | 专家推荐 / 研究院推荐 / 学会推荐 / 用户证言 | 《兽药广告审查发布规定》第四条第（二）项 + 第十二条 |
+| 4 | `ad_signage_veterinary_art4_cure_rate` | W | 有效率 / 治愈率 / 防治效果 | 《兽药广告审查发布规定》第四条第（三）项 + 第十二条 / 《广告法》第五十八条 |
+| 5 | `ad_signage_veterinary_art4_safety_violation` | W | 拌料口服 / 随意加大剂量 / 人畜同用 | 《兽药广告审查发布规定》第四条第（四）项 + 第十二条 |
+| 6 | `ad_signage_veterinary_art5_deprecate` | W | 不如 / 比 X 差 / 完胜同类 | 《兽药广告审查发布规定》第五条 + 第十二条 |
+| 7 | `ad_signage_veterinary_art6_absolute` | **V** | 最高技术 / 最进步制法 / 包治百病 / 兽药仙丹 | 《兽药广告审查发布规定》第六条 + 第十二条 / 《广告法》第九条第（三）项 + 第五十七条 |
+| 8 | `ad_signage_veterinary_art7_endorsement` | W | 销量第一 / 首选 / 金奖 / 唯一 / 全国第一 | 《兽药广告审查发布规定》第七条 + 第十二条 / 《广告法》第九条第（三）项 + 第五十七条 |
+| 9 | `ad_signage_veterinary_art8_commitment` | W | 无效退款 / 保险公司保险 / 100% 有效 | 《兽药广告审查发布规定》第八条 + 第十二条 / 《广告法》第五十八条 |
+| 10 | `ad_signage_veterinary_art10_approval_no` | W | 兽药广审文号 / 兽药广告批准文号 / (2016) 兽药广审 | 《兽药广告审查发布规定》第十条 + 第十二条 / 《广告法》第五十八条 |
+
+## 4. 命中样例(假设 OCR 文本)
+
+| 招牌文本 | 命中规则 | 严重度 |
 |---|---|---|
-| **medical** | 《广告法》§16 + 《医疗广告管理办法》§6/§7/§11/§13 | `ad_signage_med_art6_indications`, `med_art7_technicality`, `med_art7_compare`, `med_art7_army`, `med_art11_qualifications`, `med_art13_newsform` |
-| **finance** | 《广告法》§25 招商有投资回报预期 | `ad_signage_art25_fin_prm`, `ad_signage_fin_art25_endorsement`, `ad_signage_fin_art25_unlawful` |
-| **cosmetic** | 《化妆品监督管理条例》§23/§25 | `cosmetic_art23_medical_explicit`, `cosmetic_art20_claim_basis` |
-| **outdoor** | 《广告法》§14/§32/§46 + 户外广告登记规定 | `ad_signage_outdoor_art14_cert_no` |
-| **pesticide** | 农药管理条例 + 农药广告管理办法 | `ad_signage_pesticide_art2_unregistered` |
-| **veterinary** | 兽药管理条例 + 兽药广告管理办法 | `ad_signage_veterinary_art3_prohibited` |
-| **internet_ad** | 《互联网广告管理办法》 | `internet_art6_identifiable` |
-| **signage** | 招牌本身规约(医疗标志、OTC 等) | `ad_signage_signage_medicine_flag` |
-| **absolute** | 《广告法》§9 绝对化用语 + §11 行政许可 + §12 专利 + §28 虚假广告 | `ad_signage_art9_abs_top`, `art9_abs_pct`, `art9_abs_emblem`, `art9_abs_authority`, `art9_abs_superstition`, `art12_fake_patent`, `art28b_fake_data` |
-| **realestate** | 《广告法》§26 + 房地产广告发布规定 | `ad_signage_art26_re_prm` |
-| **education** | 《广告法》§24 | `ad_signage_art24_edu_guar`, `edu_art24_recommendation`, `edu_art24_test_authority` |
-| **restricted** | 《广告法》§22/§23 + 烟草广告管理办法 | `ad_signage_art22_tob_alc` |
-| **minor** | 《广告法》§10 + 食品标识监督管理办法 §8 | `ad_signage_art10_minor` |
+| "本店根治 XX 疾病,治愈率 100%" | `ad_signage_art16_med_abs`、`art16_med_health`、`art9_abs_pct` | V + V + W |
+| "稳赚不赔,无风险,保本高收益" | `ad_signage_art25_fin_prm` | V |
+| "国家级 / 最高级 / 第一" | `ad_signage_art9_abs_top`、`art9_abs_pct` | W + W |
+| "本台讯:某医院专治 XX" | `ad_signage_med_art13_newsform`、`med_art6_indications` | W + W |
+| "儿童专用 / 宝宝必备" | `ad_signage_art10_minor` | I |
+| "国家专利 ZL..." | `ad_signage_art12_fake_patent` | W |
+| "学区房包入学 / 升值回报" | `ad_signage_art26_re_prm` | W |
+| "解放军医院 / 部队医院" | `ad_signage_med_art7_army` | W |
+| "销量第一 / 全网第一" | `ad_signage_art28b_fake_data` | W |
+| "考试命题人 / 阅卷老师授课" | `ad_signage_edu_art24_test_authority` | W |
+| "买二送一,买三送一,买五送二" | `ad_signage_art9_abs_top` | W(误命中:"第一"歧义) |
+| "本店不做医疗" | `ad_signage_med_art6_indications` | W(negation 缺位) |
 
-## 3. 命中样例(假设 OCR 文本)
+## 5. 能力边界
 
-| 招牌文本 | 命中规则 |
-|---|---|
-| "本店根治 XX 疾病,治愈率 100%" | `ad_signage_art16_med_abs` (V) + `art16_med_health` (V) + `art9_abs_pct` (W) |
-| "稳赚不赔,无风险,保本高收益" | `ad_signage_art25_fin_prm` (V) |
-| "国家级 / 最高级 / 第一" | `ad_signage_art9_abs_top` (W) + `art9_abs_pct` (W) |
-| "本台讯:某医院专治 XX" | `ad_signage_med_art13_newsform` (W) + `med_art6_indications` (W) |
-| "儿童专用 / 宝宝必备" | `ad_signage_art10_minor` (I) |
-| "国家专利 ZL..." | `ad_signage_art12_fake_patent` (W) |
-| "学区房包入学 / 升值回报" | `ad_signage_art26_re_prm` (W) |
-| "解放军医院 / 部队医院" | `ad_signage_med_art7_army` (W) |
-| "销量第一 / 全网第一" | `ad_signage_art28b_fake_data` (W) |
-| "考试命题人 / 阅卷老师授课" | `ad_signage_edu_art24_test_authority` (W) |
-| "买二送一,买三送一,买五送二" | `ad_signage_art9_abs_top` (W) — "第一" 误命中坑 |
-| "本店不做医疗" | `ad_signage_med_art6_indications` (W) — negation 缺位 |
-
-## 4. 能力边界
-
-能做:
+**能做**
 - 关键词命中识别违规声称
 - 多规则 co-occurrence(同一招牌可同时命中多类违规)
-- 法规条文 + 罚款额度回溯(`regulation` + `lawText` 字段)
-- 严重度三级分流(`Violation` / `Warning` / `Info`)
+- 法规条文回溯(`regulation` + `lawText` 字段)
+- 严重度三级分流
 
-不能做:
-- 上下文/否定/反讽判断
+**不能做**
+- 上下文/否定/反讽判断("本店不做医疗" 也会命中)
 - 图文不符 / 视觉比对
 - 版面识别(竖排、表格线、密集招牌)
-- 二分类软识别(给定图片 → 是否含违规)
-- 同类别内归一化严重度到具体罚款金额(当前只暴露 V/W/I,法规对应罚款金额为 §55/§57/§58/§59 各条,未自动反查)
-
-## 5. 关联文件
-
-| 路径 | 用途 |
-|---|---|
-| [app/src/main/assets/rules/ad_signage_rules.json](app/src/main/assets/rules/ad_signage_rules.json) | 116 条规则源(v4) |
-| [app/src/main/java/com/icespiritai/offline/rules/AdSignageRuleMatcher.kt](app/src/main/java/com/icespiritai/offline/rules/AdSignageRuleMatcher.kt) | Aho-Corasick 匹配器 |
-| [app/src/main/java/com/icespiritai/offline/domain/TextNormalizer.kt](app/src/main/java/com/icespiritai/offline/domain/TextNormalizer.kt) | 全/半角 + 空格 + 繁简归一化 |
-| [app/src/main/java/com/icespiritai/offline/domain/CategoryDisplay.kt](app/src/main/java/com/icespiritai/offline/domain/CategoryDisplay.kt) | category → 中文显示标签 |
-| [app/src/main/java/com/icespiritai/offline/domain/RuleHit.kt](app/src/main/java/com/icespiritai/offline/domain/RuleHit.kt) | 命中结构 |
-| [app/src/main/java/com/icespiritai/offline/rules/AdSignageRule.kt](app/src/main/java/com/icespiritai/offline/rules/AdSignageRule.kt) | 规则数据类 |
-| [app/src/test/java/com/icespiritai/offline/rules/AdSignageRuleMatcherTest.kt](app/src/test/java/com/icespiritai/offline/rules/AdSignageRuleMatcherTest.kt) | 关键词命中 / 去重测试 |
-| [知识库/广告业务/](知识库/广告业务/) | 13 份法规 markdown KB(`regulation` / `lawText` 字段摘抄自此) |
-| [docs/smoke/2026-08-14-phase1-smoke.md](docs/smoke/2026-08-14-phase1-smoke.md) | Phase 1 PaddleOCR SDK 上手 + 真实设备烟测 |
+- 二分类软识别
+- 自动反查罚则金额(法规对应罚款金额为 §55/§57/§58/§59 各条,未自动匹配)
 
 ## 6. 打磨方向(参考,未立项)
 
 | 维度 | 当前 | 候选 |
 |---|---|---|
-| 严重度 | 3 级硬编码 | 映射到具体罚款金额区间(《广告法》§55/§57/§58/§59 各条) |
-| negation | 无 | 否定/反讽上下文检测(降低 "本店不做医疗" 之类误报) |
-| co-occurrence | 平铺 | 输出 "违规面摘要"(同招牌多规则 → 1 段话) |
+| 严重度 | 3 级硬编码 | 映射到具体罚款金额区间 |
+| negation | 无 | 否定/反讽上下文检测(降低 "本店不做医疗" 误报) |
+| co-occurrence | 平铺 | 输出 "违规面摘要" |
 | 现实密度 | 关键词命中即触发 | 频率阈值(同关键词 3 次以上 vs 1 次) |
 | 类别 | 13 类固定 | 拆 / 合 / 重命名(依据现场观测) |
-| 关键词 | 116 条规则一次性 grep | 负样本回归测试集(对每个规则构造 1 条反例) |
+| 关键词 | 116 条一次性 grep | 负样本回归测试集(每规则 1 条反例) |
 | 视觉 | 不做 | 图片整体性(竖排 / 表格线 / 密集招牌)→ Phase 2 |
 
 ---
@@ -140,3 +275,4 @@ OCR 文本
 | 日期 | 事件 |
 |---|---|
 | 2026-08-19 | v0.1.10 release 后落地;对照 116 条规则 v4 生成当前快照 |
+| 2026-08-19 | 面向广告检查业务人员改写:删除关联文件章节,全量 116 条规则展开(关键词 / 法规 / 严重度) |
