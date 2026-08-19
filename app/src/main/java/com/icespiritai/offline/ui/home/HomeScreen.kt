@@ -39,7 +39,16 @@ import com.icespiritai.offline.export.ExportAction
 import java.io.File
 
 @Composable
-fun HomeScreen(onOpenSettings: () -> Unit) {
+fun HomeScreen(
+    onOpenSettings: () -> Unit,
+    /**
+     * Optional Viewer router. When provided AND the analyzer has produced at
+     * least one OCR line, double-tapping the preview invokes this callback.
+     * Defaulted to a no-op so the existing NavHost call site stays unchanged
+     * in this task — Task 12 wires the real navigation in IceSpiritNavHost.
+     */
+    onOpenViewer: () -> Unit = {},
+) {
     val viewModel: IceSpiritVisionViewModel = viewModel()
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
@@ -136,6 +145,7 @@ fun HomeScreen(onOpenSettings: () -> Unit) {
             imageUri = pendingUri,
             lineBoxes = if (showLineBoxes) lineBoxes else emptyList(),
             hits = hits,
+            onDoubleTap = onOpenViewer,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
