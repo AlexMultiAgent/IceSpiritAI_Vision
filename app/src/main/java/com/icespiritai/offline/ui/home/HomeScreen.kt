@@ -48,8 +48,17 @@ fun HomeScreen(
      * in this task — Task 12 wires the real navigation in IceSpiritNavHost.
      */
     onOpenViewer: () -> Unit = {},
+    /**
+     * Injectable ViewModel. `IceSpiritNavHost` passes a single
+     * Activity-scoped instance so the Viewer route (a sibling destination
+     * in the NavHost) can read the same `state` + `pendingUri` flows that
+     * HomeScreen writes. The default `viewModel()` keeps the existing
+     * Robolectric tests (`HomeScreenTest`, `HomeScreenScreenshotTest`)
+     * working — those tests don't stand up a NavHost, so they get a
+     * fresh ViewModel via `LocalViewModelStoreOwner.current`.
+     */
+    viewModel: IceSpiritVisionViewModel = viewModel(),
 ) {
-    val viewModel: IceSpiritVisionViewModel = viewModel()
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
     val cameraDeniedMsg = stringResource(R.string.error_camera_denied)
@@ -57,16 +66,20 @@ fun HomeScreen(
     val selectedTab by viewModel.currentTab.collectAsState()
     // pendingUri persists across Loading→Complete so the image stays visible
     // before the analyzer finishes (AnalysisState.Loading has no URI field).
-    var pendingUri by remember { mutableStateOf<Uri?>(null) }
+    // Lives on the ViewModel (not `remember` here) so the Viewer composable
+    // — a sibling NavHost destination — can read the same value via
+    // `viewModel.pendingUri.collectAsState()`.
+    val pendingUri by viewModel.pendingUri.collectAsState()
     // Holds the FileProvider URI between launching the camera and receiving
     // its result. Cleared once the TakePicture callback fires (success or not).
+    // Stays local because only the camera launcher reads it.
     var pendingCaptureUri by remember { mutableStateOf<Uri?>(null) }
 
     val pickMedia = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri: Uri? ->
         if (uri != null) {
-            pendingUri = uri
+            viewModel.setPendingUri(uri)
             viewModel.startAnalysis(uri)
         }
     }
@@ -81,7 +94,7 @@ fun HomeScreen(
         val uri = pendingCaptureUri
         pendingCaptureUri = null
         if (success && uri != null) {
-            pendingUri = uri
+            viewModel.setPendingUri(uri)
             viewModel.startAnalysis(uri)
         }
     }
@@ -118,7 +131,9 @@ fun HomeScreen(
     }
 
     fun reset() {
-        pendingUri = null
+        // viewModel.reset() now also clears pendingUri alongside the
+        // analysis state, so the previous local `pendingUri = null` is
+        // folded into the VM reset path.
         viewModel.reset()
     }
 

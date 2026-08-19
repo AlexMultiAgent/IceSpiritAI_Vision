@@ -74,6 +74,23 @@ class IceSpiritVisionViewModel(application: Application) : AndroidViewModel(appl
     private val _state = MutableStateFlow<AnalysisState>(Idle)
     val state: StateFlow<AnalysisState> = _state.asStateFlow()
 
+    /**
+     * The image URI currently staged for analysis (or shown in the viewer).
+     *
+     * `HomeScreen` is the only writer: it sets this when a capture / pick
+     * succeeds. The Viewer route reads it via `collectAsState()` so the
+     * full-screen viewer opens against the same image the user just
+     * double-tapped. Cleared by [reset] alongside the analysis state so
+     * "back to a clean slate" wipes both the preview and the in-flight
+     * analysis in one shot.
+     *
+     * Kept on the ViewModel (not in `HomeScreen`'s local `remember`) so
+     * the Viewer composable, which is a sibling destination in the
+     * `NavHost`, can read it without `savedStateHandle` plumbing.
+     */
+    private val _pendingUri = MutableStateFlow<Uri?>(null)
+    val pendingUri: StateFlow<Uri?> = _pendingUri.asStateFlow()
+
     private var currentJob: Job? = null
 
     /**
@@ -88,6 +105,7 @@ class IceSpiritVisionViewModel(application: Application) : AndroidViewModel(appl
     }
 
     fun startAnalysis(uri: Uri) {
+        _pendingUri.value = uri
         currentJob?.cancel()
         val matcher = matcherFor(_currentTab.value)
         currentJob = viewModelScope.launch {
@@ -95,9 +113,19 @@ class IceSpiritVisionViewModel(application: Application) : AndroidViewModel(appl
         }
     }
 
+    /**
+     * Set the pending URI without triggering a fresh analysis. Useful when
+     * a higher layer (e.g. an exported share intent) wants to stage a URI
+     * that the viewer should be able to open before any OCR pass runs.
+     */
+    fun setPendingUri(uri: Uri?) {
+        _pendingUri.value = uri
+    }
+
     fun reset() {
         currentJob?.cancel()
         _state.value = Idle
+        _pendingUri.value = null
     }
 
     override fun onCleared() {

@@ -3,19 +3,26 @@ package com.icespiritai.offline.ui.nav
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.icespiritai.offline.IceSpiritVisionViewModel
+import com.icespiritai.offline.domain.AnalysisState
 import com.icespiritai.offline.ui.home.HomeScreen
 import com.icespiritai.offline.ui.settings.ChangelogScreen
 import com.icespiritai.offline.ui.settings.SettingsScreen
+import com.icespiritai.offline.ui.viewer.ViewerScreen
 
 object Routes {
     const val HOME = "home"
     const val SETTINGS = "settings"
     const val CHANGELOG = "changelog"
+    const val VIEWER = "viewer"
 }
 
 /**
@@ -26,6 +33,17 @@ object Routes {
  * background (e.g. plain `Column { }` roots) would show the underlying
  * Activity window background, which follows the system night mode and
  * diverges from the Compose theme when `ThemeMode` is overridden.
+ *
+ * **ViewModel sharing**: a single [IceSpiritVisionViewModel] is hoisted
+ * to the NavHost's enclosing `LocalViewModelStoreOwner` (the Activity)
+ * and passed down to both `composable(Routes.HOME)` and
+ * `composable(Routes.VIEWER)`. `navigation-compose` gives each
+ * `NavBackStackEntry` its own `ViewModelStore`, so calling
+ * `viewModel()` *inside* a `composable` block would create a fresh VM
+ * per route — the Viewer would never see the URI the user just
+ * double-tapped in HomeScreen. Hoisting the VM at this level makes
+ * `state` + `pendingUri` live in one instance shared across both
+ * destinations.
  */
 @Composable
 fun IceSpiritNavHost(modifier: Modifier = Modifier) {
@@ -33,10 +51,18 @@ fun IceSpiritNavHost(modifier: Modifier = Modifier) {
         modifier = modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
     ) {
+        // Activity-scoped (LocalViewModelStoreOwner above the NavHost
+        // is the Activity, not a per-route NavBackStackEntry). Shared
+        // with both HomeScreen and the Viewer composable.
+        val sharedVm: IceSpiritVisionViewModel = viewModel()
         val nav = rememberNavController()
         NavHost(navController = nav, startDestination = Routes.HOME) {
             composable(Routes.HOME) {
-                HomeScreen(onOpenSettings = { nav.navigate(Routes.SETTINGS) })
+                HomeScreen(
+                    viewModel = sharedVm,
+                    onOpenSettings = { nav.navigate(Routes.SETTINGS) },
+                    onOpenViewer = { nav.navigate(Routes.VIEWER) },
+                )
             }
             composable(Routes.SETTINGS) {
                 SettingsScreen(
@@ -46,6 +72,25 @@ fun IceSpiritNavHost(modifier: Modifier = Modifier) {
             }
             composable(Routes.CHANGELOG) {
                 ChangelogScreen(onBack = { nav.popBackStack() })
+            }
+            composable(Routes.VIEWER) {
+                val state by sharedVm.state.collectAsState()
+                val pendingUri by sharedVm.pendingUri.collectAsState()
+                // Prefer the report's `lineBoxes` (populated by
+                // ImageAnalyzerRepository from the OCR pass) — but
+                // fall back to the transient OcrDone snapshot if the
+                // user pops in before RuleScanned completes. Both
+                // sources trace back to the same `ocrResult.lineBoxes`.
+                val lineBoxes = (state as? AnalysisState.Complete)?.report?.lineBoxes
+                    ?: (state as? AnalysisState.OcrDone)?.lineBoxes
+                    ?: emptyList()
+                val hitsCount = (state as? AnalysisState.Complete)?.report?.hits?.size ?: 0
+                ViewerScreen(
+                    imageUri = pendingUri,
+                    lineBoxes = lineBoxes,
+                    hitsCount = hitsCount,
+                    onBack = { nav.popBackStack() },
+                )
             }
         }
     }
