@@ -19,7 +19,7 @@ object ExportAction {
     fun share(
         context: Context,
         report: ViolationReport,
-        appVersion: String = "0.1.0",
+        appVersion: String,
     ) {
         val bytes: ByteArray
         try {

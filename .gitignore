@@ -109,3 +109,12 @@ app/src/main/assets/models/**/*.tar
 app/src/main/assets/models/**/*.md
 app/src/main/assets/models/**/.gitattributes
 app/src/main/assets/models/**/*.cache/
+
+# Wide-pattern coverage so future-named files don't slip in by accident.
+# The specific names elsewhere in this file still act as a backstop for
+# existing paths (e.g. `gradle.token.properties` listed above).
+*.aar
+*.keystore
+*.token.properties
+gradle.properties.local
+release.keystore

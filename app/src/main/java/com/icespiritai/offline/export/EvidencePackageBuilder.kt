@@ -20,7 +20,7 @@ object EvidencePackageBuilder {
         report: ViolationReport,
         imageProvider: ImageBytesProvider,
         out: OutputStream,
-        appVersion: String = "0.1.0",
+        appVersion: String,
     ) {
         ZipOutputStream(out).use { zip ->
             zip.putNextEntry(ZipEntry("image.jpg"))
@@ -65,7 +65,7 @@ object EvidencePackageBuilder {
     fun toFile(
         report: ViolationReport,
         imageProvider: ImageBytesProvider,
-        appVersion: String = "0.1.0",
+        appVersion: String,
     ): ByteArray {
         val buf = ByteArrayOutputStream()
         build(report, imageProvider, buf, appVersion)

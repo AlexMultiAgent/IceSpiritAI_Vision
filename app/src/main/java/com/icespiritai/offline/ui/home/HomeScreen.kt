@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.icespiritai.offline.BuildConfig
 import com.icespiritai.offline.IceSpiritVisionViewModel
 import com.icespiritai.offline.R
 import com.icespiritai.offline.domain.AnalysisState
@@ -201,7 +202,7 @@ fun HomeScreen(
         when (val s = state) {
             is AnalysisState.Complete -> {
                 Button(
-                    onClick = { ExportAction.share(context, s.report) },
+                    onClick = { ExportAction.share(context, s.report, BuildConfig.VERSION_NAME) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp),

@@ -47,6 +47,7 @@ class EvidencePackageBuilderTest {
             report = report,
             imageProvider = imageProvider,
             out = out,
+            appVersion = "0.0.0-test",
         )
 
         val entries = mutableMapOf<String, ByteArray>()

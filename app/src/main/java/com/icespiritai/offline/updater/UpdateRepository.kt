@@ -2,6 +2,7 @@ package com.icespiritai.offline.updater
 
 import android.content.Intent
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -105,8 +106,6 @@ object UpdateRepository {
         }
     }
 
-    // requestInstall lands in Task 6.
-
     /**
      * Pure file-IO download path (no Context). Production callers should use
      * [downloadApk]; tests can drive this variant directly with a
@@ -182,7 +181,8 @@ object UpdateRepository {
      * FileProvider. The caller is responsible for `startActivity(intent)` —
      * keeping that call out of the Repository makes it Robolectric-testable.
      */
-    fun buildInstallIntent(context: android.content.Context, file: File): Intent {
+    @VisibleForTesting
+    internal fun buildInstallIntent(context: android.content.Context, file: File): Intent {
         val uri = androidx.core.content.FileProvider.getUriForFile(
             context, context.packageName + ".fileprovider", file,
         )
