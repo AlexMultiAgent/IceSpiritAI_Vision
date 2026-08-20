@@ -376,7 +376,8 @@ androidComponents {
 // files outside the source tree (archive + JSON staging), so they live
 // in the project repo root `发布版历史存档/` dir (gitignored — translate's
 // same convention). MUST STAY IN SYNC with translate's pipeline + with
-// the JVM-mirrored helpers in LatestJsonGenerator.kt + ApkSignatureVerifier.kt.
+// the JVM-mirrored helpers in LatestJsonGenerator.kt (build) and
+// ApkSignatureVerifier.kt (runtime).
 //
 // Phase 1 differences from translate:
 //   - No CHANGELOG.md parsing (vision's CHANGELOG doesn't exist yet)
@@ -404,8 +405,15 @@ fun sha256HexForBuild(file: java.io.File): String {
 /**
  * Reads the v1 signing certificate from META-INF/CERT.{RSA,DSA,EC} and
  * returns its SHA-256 fingerprint. MUST STAY IN SYNC with
- * ApkSignatureVerifier.readFirstSignerCert (build scripts cannot import
- * app/src/main/java/).
+ * `ApkSignatureVerifier.readFirstSignerCert` at
+ * `app/src/main/java/com/icespiritai/offline/updater/ApkSignatureVerifier.kt`
+ * (build scripts cannot import from app/src/main/java/).
+ *
+ * The runtime side reads the same v1 cert from the downloaded APK and
+ * compares against `AppVersionInfo.signerCertSha256`; the build side
+ * writes the same fingerprint into `vision-latest.json`. If both sides
+ * apply different parsing rules for the PKCS#7 wrapper, SHA-256 won't
+ * match and every legitimate update is rejected.
  *
  * Required because the in-app update verifier uses the v1 path
  * (META-INF/CERT.RSA via JarFile); AGP defaults to v2-only when
