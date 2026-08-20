@@ -39,6 +39,14 @@ object UpdateRepository {
      * Process-global state. Observed by `SettingsViewModel` via
      * `viewModel.state`; mutated by `checkForUpdates` / `downloadApk` /
      * `requestInstall`. Singleton survives Activity / ViewModel lifetime.
+     *
+     * **Multi-window / multi-Activity risk**: this object is a true process
+     * singleton. If we ever introduce multi-window or split-screen UI, two
+     * Settings screens would share the same [UpdateState] — a download
+     * kicked off by one Activity would visibly progress on the other, and
+     * a cancellation on one would race the other's state machine. For now
+     * the app is single-Activity ([IceSpiritVisionActivity]) so this is
+     * acceptable; a future refactor should scope state per ViewModelStore.
      */
     val state: StateFlow<UpdateState> get() = _state
     private val _state = MutableStateFlow<UpdateState>(UpdateState.Idle)
