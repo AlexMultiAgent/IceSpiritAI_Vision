@@ -65,6 +65,7 @@ object LatestJsonGenerator {
         apkSha256: String,
         changelog: String,
         apkCumulativeDownloads: Long = 0,
+        signerCertSha256: String = "",
     ): String {
         val sb = StringBuilder(256)
         sb.append('{')
@@ -75,6 +76,10 @@ object LatestJsonGenerator {
         sb.append("\"apkSha256\":").append(jsonString(apkSha256)).append(',')
         sb.append("\"changelog\":").append(jsonString(changelog)).append(',')
         sb.append("\"apkCumulativeDownloads\":").append(apkCumulativeDownloads)
+        if (signerCertSha256.isNotEmpty()) {
+            sb.append(',')
+            sb.append("\"signerCertSha256\":").append(jsonString(signerCertSha256))
+        }
         sb.append('}')
         return sb.toString()
     }

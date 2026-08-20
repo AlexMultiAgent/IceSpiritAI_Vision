@@ -3,6 +3,7 @@ package com.icespiritai.buildhelpers
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -40,6 +41,36 @@ class LatestJsonGeneratorTest {
         )
         val info = parser.decodeFromString(TestAppVersionInfo.serializer(), json)
         assertEquals(0L, info.apkCumulativeDownloads)
+    }
+
+    @Test
+    fun buildLatestJson_emitsSignerCertSha256WhenProvided() {
+        val json = LatestJsonGenerator.buildLatestJson(
+            versionCode = 14,
+            versionName = "0.1.14",
+            apkUrl = "https://gitea.icespiritai.com/giteaadmin/vision-app/releases/download/latest/icespiritai-vision.apk",
+            apkSize = 18_000_000L,
+            apkSha256 = "a".repeat(64),
+            changelog = "## v0.1.14\n- cert-pin 接入",
+            apkCumulativeDownloads = 0L,
+            signerCertSha256 = "c".repeat(64),
+        )
+        val info = parser.decodeFromString(TestAppVersionInfo.serializer(), json)
+        assertEquals("c".repeat(64), info.signerCertSha256)
+        assertTrue("json should contain signerCertSha256 field", json.contains("\"signerCertSha256\":\"${"c".repeat(64)}\""))
+    }
+
+    @Test
+    fun buildLatestJson_omitsSignerCertSha256WhenEmpty() {
+        val json = LatestJsonGenerator.buildLatestJson(
+            versionCode = 1, versionName = "0.1.0",
+            apkUrl = "http://x/y.apk", apkSize = 1L,
+            apkSha256 = "f".repeat(64), changelog = "",
+        )
+        assertFalse(
+            "signerCertSha256 default empty should not appear in wire: $json",
+            json.contains("signerCertSha256"),
+        )
     }
 
     @Test
@@ -116,4 +147,5 @@ private data class TestAppVersionInfo(
     val apkSha256: String,
     val changelog: String = "",
     val apkCumulativeDownloads: Long = 0,
+    val signerCertSha256: String = "",
 )

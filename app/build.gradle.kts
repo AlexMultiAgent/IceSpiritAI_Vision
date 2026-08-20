@@ -525,6 +525,7 @@ tasks.register("generateVisionLatestJson") {
             "apkSha256" to sha,
             "changelog" to cl,
             "apkCumulativeDownloads" to apkCumulative,
+            "signerCertSha256" to apkCertSha256,
         )
         outJson.get().asFile.writeText(
             groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(payload)) + "\n"
