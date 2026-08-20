@@ -667,4 +667,354 @@ class FoodLabelRuleMatcherTest {
             hits.map { it.ruleId }.toSet(),
         )
     }
+
+    // --- Wave 2 Task 2.3 — 24 条未覆盖规则 fixture(2026-08-20 落地,
+    //     Art7/19/22/24/28/35-39 + 特殊食品 + 婴幼儿配方) ---
+
+    @Test
+    fun scan_art16AnimalOriginName_firesOn畜肉() {
+        val r = FoodLabelRule(
+            "food_art16_animal_origin_name",
+            "product_name",
+            "食品标识监督管理办法 第十六条第（一）项",
+            listOf("畜肉", "禽肉", "牛肉丸"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品含畜肉成分,标注清晰")
+        assertEquals(1, hits.size)
+        assertEquals("food_art16_animal_origin_name", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art16FlavorImitationName_firesOn调味() {
+        val r = FoodLabelRule(
+            "food_art16_flavor_imitation_name",
+            "product_name",
+            "食品标识监督管理办法 第十六条第（三）项",
+            listOf("调味", "香精调配", "无添加香料"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品调味配方,适合大众口味")
+        assertEquals(1, hits.size)
+        assertEquals("food_art16_flavor_imitation_name", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art19WeighMark_firesOn现场称重() {
+        val r = FoodLabelRule(
+            "food_art19_weigh_mark",
+            "net_weight",
+            "食品标识监督管理办法 第十九条",
+            listOf("计量称重", "现场称重", "按重量销售"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品现场称重销售,合规标注")
+        assertEquals(1, hits.size)
+        assertEquals("food_art19_weigh_mark", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art21StandardCode_firesOn执行标准() {
+        val r = FoodLabelRule(
+            "food_art21_standard_code",
+            "label_form",
+            "食品标识监督管理办法 第二十一条",
+            listOf("产品标准代号", "产品标准号", "执行标准"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品执行标准 GB 12345-2020,合规")
+        assertEquals(1, hits.size)
+        assertEquals("food_art21_standard_code", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art22LicenseNo_firesOnSC() {
+        val r = FoodLabelRule(
+            "food_art22_license_no",
+            "label_form",
+            "食品标识监督管理办法 第二十二条",
+            listOf("食品生产许可证", "生产许可证编号", "SC"),
+            Severity.Warning,
+        )
+        // "SC" 作为子串匹配 SC123456789 一次;不含 "生产许可证编号"/"食品生产许可证" 完整词
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("生产资质 SC123456789,合规")
+        assertEquals(1, hits.size)
+        assertEquals("food_art22_license_no", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art23WarningMark_firesOn注意事项() {
+        val r = FoodLabelRule(
+            "food_art23_warning_mark",
+            "label_form",
+            "食品标识监督管理办法 第二十三条",
+            listOf("警示语", "警示标志", "注意事项"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("请阅读注意事项,合规提示")
+        assertEquals(1, hits.size)
+        assertEquals("food_art23_warning_mark", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art24QrcodeMismatch_firesOn二维码() {
+        val r = FoodLabelRule(
+            "food_art24_qrcode_mismatch",
+            "label_form",
+            "食品标识监督管理办法 第二十四条",
+            listOf("二维码", "扫码查看", "扫码了解"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品二维码扫描,内容与标签不符")
+        assertEquals(1, hits.size)
+        assertEquals("food_art24_qrcode_mismatch", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art28HealthNameFormat_firesOn蓝帽子() {
+        val r = FoodLabelRule(
+            "food_art28_health_name_format",
+            "product_name",
+            "食品标识监督管理办法 第二十八条 / GB 7718-2011",
+            listOf("保健食品", "蓝帽子"),
+            Severity.Warning,
+        )
+        // 文本只含 "蓝帽子",不含 "保健食品" 完整词
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品为蓝帽子标识产品")
+        assertEquals(1, hits.size)
+        assertEquals("food_art28_health_name_format", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art35PlatformResponsibility_firesOn第三方平台() {
+        val r = FoodLabelRule(
+            "food_art35_platform_responsibility",
+            "label_form",
+            "食品标识监督管理办法 第三十五条 / 电子商务法 §27",
+            listOf("第三方平台", "网络交易平台", "平台内经营者"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("第三方平台应当审查入网食品经营者资质")
+        assertEquals(1, hits.size)
+        assertEquals("food_art35_platform_responsibility", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art36HealthDisclaimer_firesOn保健食品() {
+        val r = FoodLabelRule(
+            "food_art36_health_disclaimer",
+            "specific_food",
+            "食品标识监督管理办法 第三十六条 / GB 16740",
+            listOf("保健食品"),
+            Severity.Violation,
+        )
+        // 文本只含 "保健食品",不含 "蓝帽子"
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品为保健食品,需标注")
+        assertEquals(1, hits.size)
+        assertEquals("food_art36_health_disclaimer", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art36SpecialFoodZone_firesOn专柜() {
+        val r = FoodLabelRule(
+            "food_art36_special_food_zone",
+            "specific_food",
+            "食品标识监督管理办法 第三十六条",
+            listOf("专区", "专柜", "保健食品"),
+            Severity.Violation,
+        )
+        // 文本只含 "专柜",不含 "专区"/"保健食品"
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本店设置专柜,专供特殊人群")
+        assertEquals(1, hits.size)
+        assertEquals("food_art36_special_food_zone", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art39Jargon_firesOn俗称() {
+        val r = FoodLabelRule(
+            "food_art39_jargon",
+            "label_form",
+            "食品标识监督管理办法 第三十九条 / GB 7718-2011 §4.1.2",
+            listOf("俗称", "简称", "又名"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品俗称 X 食品,合规标注")
+        assertEquals(1, hits.size)
+        assertEquals("food_art39_jargon", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art39NetWeightFormat_firesOn规格() {
+        val r = FoodLabelRule(
+            "food_art39_net_weight_format",
+            "net_weight",
+            "食品标识监督管理办法 第三十九条 / GB 7718-2011 §4.1.5.3",
+            listOf("净含量", "规格", "贮存条件"),
+            Severity.Warning,
+        )
+        // 文本只含 "规格",不含 "净含量"/"贮存条件"
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品规格 200g,合规")
+        assertEquals(1, hits.size)
+        assertEquals("food_art39_net_weight_format", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art39NutritionFormat_firesOn能量() {
+        val r = FoodLabelRule(
+            "food_art39_nutrition_format",
+            "nutrition",
+            "食品标识监督管理办法 第三十九条 / GB 28050-2011",
+            listOf("营养成分表", "能量", "蛋白质"),
+            Severity.Warning,
+        )
+        // 文本只含 "能量",不含 "营养成分表"/"蛋白质"
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品每份能量 1500kJ,合规")
+        assertEquals(1, hits.size)
+        assertEquals("food_art39_nutrition_format", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art39OtherMinor_firesOn标注() {
+        val r = FoodLabelRule(
+            "food_art39_other_minor",
+            "label_form",
+            "食品标识监督管理办法 第三十九条",
+            listOf("标签", "标识", "标注"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品标注完整,合规上市")
+        assertEquals(1, hits.size)
+        assertEquals("food_art39_other_minor", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art39Traditional_firesOn繁体() {
+        val r = FoodLabelRule(
+            "food_art39_traditional",
+            "label_form",
+            "食品标识监督管理办法 第三十九条 / GB 7718-2011 §3.8",
+            listOf("繁体"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品含繁体字,合规标注")
+        assertEquals(1, hits.size)
+        assertEquals("food_art39_traditional", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art39Typo_firesOn保质期() {
+        val r = FoodLabelRule(
+            "food_art39_typo",
+            "label_form",
+            "食品标识监督管理办法 第三十九条 / GB 7718-2011 §4.1.5.2",
+            listOf("配料", "净含量", "保质期"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品保质期 12 个月,合规")
+        assertEquals(1, hits.size)
+        assertEquals("food_art39_typo", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art7AbsoluteExaggerate_firesOn国家级() {
+        val r = FoodLabelRule(
+            "food_art7_absolute_exaggerate",
+            "functional_claim",
+            "食品标识监督管理办法 第七条第（一）项",
+            listOf("国家级", "最高级", "顶级"),
+            Severity.Violation,
+        )
+        // 文本只含 "国家级",不含 "最高级"/"顶级"
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品为国家级品牌,合规标注")
+        assertEquals(1, hits.size)
+        assertEquals("food_art7_absolute_exaggerate", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art7DiseaseTreatment_firesOn抑菌() {
+        val r = FoodLabelRule(
+            "food_art7_disease_treatment",
+            "functional_claim",
+            "食品标识监督管理办法 第七条 / 广告法 §17",
+            listOf("抑菌", "消毒", "抗病毒"),
+            Severity.Violation,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品可抑菌 99%,合规宣传")
+        assertEquals(1, hits.size)
+        assertEquals("food_art7_disease_treatment", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_fsmpRegisterRequired_firesOn特医食品() {
+        val r = FoodLabelRule(
+            "food_fsmp_register_required",
+            "specific_food",
+            "特殊医学用途配方食品注册管理办法 §5 / 食品安全法 §74",
+            listOf("特殊医学用途", "特医食品"),
+            Severity.Violation,
+        )
+        // 文本只含 "特医食品",不含 "特殊医学用途" 完整短语
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品为特医食品,需注册批准")
+        assertEquals(1, hits.size)
+        assertEquals("food_fsmp_register_required", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_gb7718DiseaseClaim_firesOn治疗() {
+        val r = FoodLabelRule(
+            "food_gb7718_disease_claim",
+            "functional_claim",
+            "GB 7718-2011 §3.2 / 广告法 §17",
+            listOf("治疗", "疗效", "预防"),
+            Severity.Violation,
+        )
+        // 文本只含 "治疗",不含 "疗效"/"预防"
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品治疗高血压,合规宣传")
+        assertEquals(1, hits.size)
+        assertEquals("food_gb7718_disease_claim", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_gb7718TruthfulnessExtreme_firesOn纯天然() {
+        val r = FoodLabelRule(
+            "food_gb7718_truthfulness_extreme",
+            "label_form",
+            "GB 7718-2011 §3.4 / 食品标识监督管理办法 §42",
+            listOf("纯天然", "纯绿色", "100%"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品纯天然食品,合规标注")
+        assertEquals(1, hits.size)
+        assertEquals("food_gb7718_truthfulness_extreme", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_healthClaimUnapproved_firesOn调节血糖() {
+        val r = FoodLabelRule(
+            "food_health_claim_unapproved",
+            "functional_claim",
+            "食品标识监督管理办法 第七条 + GB 7718-2011 §3.6",
+            listOf("调节血脂", "调节血糖", "调节免疫"),
+            Severity.Violation,
+        )
+        // 文本只含 "调节血糖",不含 "调节血脂"/"调节免疫"
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品调节血糖功能,合规标注")
+        assertEquals(1, hits.size)
+        assertEquals("food_health_claim_unapproved", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_infantFormulaMilkRegister_firesOn婴幼儿配方液态乳() {
+        val r = FoodLabelRule(
+            "food_infant_formula_milk_register",
+            "specific_food",
+            "婴幼儿配方乳粉产品配方注册管理办法 §6 / 食品安全法 §74",
+            listOf("婴幼儿配方乳粉", "婴幼儿配方液态乳", "不得分装"),
+            Severity.Violation,
+        )
+        // 文本只含 "婴幼儿配方液态乳",不含 "婴幼儿配方乳粉"/"不得分装"
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品为婴幼儿配方液态乳,合规上市")
+        assertEquals(1, hits.size)
+        assertEquals("food_infant_formula_milk_register", hits[0].ruleId)
+    }
 }
