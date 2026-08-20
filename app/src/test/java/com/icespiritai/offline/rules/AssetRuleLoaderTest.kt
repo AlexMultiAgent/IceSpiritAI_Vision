@@ -67,13 +67,13 @@ class AssetRuleLoaderTest {
             "src/main/assets/rules/ad_signage_rules.json"
         ).readText(Charsets.UTF_8)
         val set = json.decodeFromString(AdSignageRuleSet.serializer(), src)
-        assertEquals(4, set.version)
+        assertEquals(5, set.version)
         assertTrue(
             "shipped ad_signage_rules.json must carry at least one rule (10 golden + 70+ incremental rules)",
             set.rules.size >= 1,
         )
         assertTrue(
-            "shipped ad_signage_rules.json must bundle 10 golden + 70+ incremental rules (v1: 10, v2: +32, v3: +43 = 85, v4: +31 = 116 total)",
+            "shipped ad_signage_rules.json must bundle 10 golden + 70+ incremental rules (v1: 10, v2: +32, v3: +43 = 85, v4: +31 = 116, v5: +2 = 118 total)",
             set.rules.size >= 110,
         )
         assertTrue("every shipped rule must bundle its full provision text", set.rules.all { it.lawText.isNotBlank() })

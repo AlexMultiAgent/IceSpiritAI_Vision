@@ -654,11 +654,14 @@ class AdSignageRuleMatcherTest {
             "ad_signage_pesticide_art6_endorsement",
             "pesticide",
             "农药广告审查发布规定 §6 / 广告法 §9(三)",
-            listOf("销量第一", "首选", "金奖", "全国第一"),
+            listOf("销量第一", "首选", "金奖", "唯一"),
             Severity.Warning,
         )
         val hits = AdSignageRuleMatcher(listOf(r)).scan("销量第一 + 首选 + 金奖 + 全国第一")
-        assertEquals(4, hits.size)
+        // "全国第一" 已从 pesticide 规则挪到 ad_signage_art28b_fake_data(更通用类目),
+        // 本规则只覆盖销量第一 / 首选 / 金奖 / 唯一,3 条
+        assertEquals(3, hits.size)
+        assertTrue(hits.none { it.matchedText == "全国第一" })
     }
 
     @Test
@@ -760,11 +763,14 @@ class AdSignageRuleMatcherTest {
             "ad_signage_veterinary_art7_endorsement",
             "veterinary",
             "兽药广告审查发布规定 §7 / 广告法 §9(三)",
-            listOf("销量第一", "首选", "金奖", "全国第一"),
+            listOf("销量第一", "首选", "金奖", "唯一"),
             Severity.Warning,
         )
         val hits = AdSignageRuleMatcher(listOf(r)).scan("销量第一 + 首选 + 金奖 + 全国第一")
-        assertEquals(4, hits.size)
+        // "全国第一" 已从 veterinary 规则挪到 ad_signage_art28b_fake_data(更通用类目),
+        // 本规则只覆盖销量第一 / 首选 / 金奖 / 唯一,3 条
+        assertEquals(3, hits.size)
+        assertTrue(hits.none { it.matchedText == "全国第一" })
     }
 
     @Test
@@ -1380,5 +1386,188 @@ class AdSignageRuleMatcherTest {
             setOf("r_cosmetic_med", "r_finance_guar", "r_internet_tobacco", "r_internet_popup"),
             hits.map { it.ruleId }.toSet(),
         )
+    }
+
+    // --- ad_signage_rules.json v5 增量规则触发测试(2026-08-20 落地,普通食品医疗宣传 + 极限词泛化) ---
+
+    // --- 极限词扩展("首个" / "首家" / "首选" / "领导品牌" 挪进通用 §9(三) 规则) ---
+
+    @Test
+    fun scan_art9AbsTop_extended_firesOn首个() {
+        // "首个" / "首家" / "首选" / "领导品牌" / "领军品牌" / "首屈一指"
+        // 现在落入通用 absolute 规则(ad_signage_art9_abs_top),不再仅 cosmetic 适用
+        val r = AdSignageRule(
+            "ad_signage_art9_abs_top",
+            "absolute",
+            "广告法 §9(三)",
+            listOf("最佳", "最好", "第一", "顶级", "唯一", "首个", "首家", "首选", "领导品牌", "领军品牌", "首屈一指"),
+            Severity.Warning,
+        )
+        // 6 keywords 各在文本中出现 1 次(避免"领军企业"被误判为命中"领军品牌")
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "本店首个公益装 + 首家旗舰店 + 首选品牌 + 行业领导品牌 + 领军品牌 + 首屈一指的设计"
+        )
+        assertEquals(6, hits.size)
+    }
+
+    @Test
+    fun scan_art28bFakeData_extended_firesOn全国第一() {
+        // "全国第一" / "全国门店数量第一" / "行业第一" / "全网销量第一" / "市场占有率领先"
+        // 已被挪进 ad_signage_art28b_fake_data(更通用类目),
+        // 不再被错误归类到 pesticide / veterinary 专属规则
+        val r = AdSignageRule(
+            "ad_signage_art28b_fake_data",
+            "absolute",
+            "广告法 §28(二) + §55",
+            listOf("销量第一", "全网第一", "市场占有率第一", "全国销量冠军", "消费者满意度第一",
+                   "全国第一", "全国销量第一", "全国门店数量第一", "全国连锁数量第一", "行业第一",
+                   "全网销量第一", "市场占有率领先", "销量遥遥领先", "全国第一品牌"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "大闸蟹十年累计销量全国第一 + 全国门店数量第一 + 行业第一 + 全网销量第一 + 市场占有率领先"
+        )
+        // 调试输出
+        println("DEBUG hit count=${hits.size} matchedTexts=${hits.map { it.matchedText }}")
+        assertTrue(hits.any { it.matchedText == "全国第一" })
+        assertTrue(hits.any { it.matchedText == "全国门店数量第一" })
+        assertTrue(hits.any { it.matchedText == "行业第一" })
+        assertTrue(hits.any { it.matchedText == "全网销量第一" })
+        assertTrue(hits.any { it.matchedText == "市场占有率领先" })
+        // 5 个核心关键词命中(加上可能在累计销量全国第一中匹配到的次级关键词)
+        assertTrue("至少 5 个命中", hits.size >= 5)
+    }
+
+    // --- 普通食品宣传保健功能(v5 新规则 signage_food_function_claim)— ---
+
+    @Test
+    fun scan_signageFoodFunctionClaim_firesOn增强免疫() {
+        val r = AdSignageRule(
+            "ad_signage_signage_food_function_claim",
+            "signage",
+            "广告法 §17 + §58 + GB 7718-2011",
+            listOf("增强免疫力", "提高免疫力", "调节免疫", "调节血糖", "控糖", "降血糖", "稳血糖",
+                   "调节血脂", "降血脂", "降胆固醇", "调节血压", "降血压", "保护心血管",
+                   "清血管", "软化血管", "抗氧化", "抗衰老", "抗疲劳", "保护视力",
+                   "缓解视疲劳", "改善视力", "护眼", "护双眼", "改善睡眠", "改善记忆",
+                   "调节内分泌", "排毒", "清理肠道", "通便", "润肠通便", "防癌", "抗癌"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "本品增强免疫力 + 提高免疫力 + 调节血糖 + 控糖稳血糖 + 降血压 + 保护心血管 + 抗氧化 + 抗衰老 + 护双眼 + 改善睡眠 + 排毒 + 防癌"
+        )
+        // 13 keywords matched: 增强免疫力 / 提高免疫力 / 调节血糖 / 控糖 / 稳血糖 / 降血压 /
+        // 保护心血管 / 抗氧化 / 抗衰老 / 护双眼 / 改善睡眠 / 排毒 / 防癌
+        assertEquals(13, hits.size)
+        assertEquals(Severity.Violation, hits[0].severity)
+    }
+
+    @Test
+    fun scan_signageFoodFunctionClaim_firesOn护眼() {
+        // 单关键词命中验证 - "护眼" 这种保健食品功能词
+        val r = AdSignageRule(
+            "ad_signage_signage_food_function_claim",
+            "signage",
+            "广告法 §17 + §58 + GB 7718-2011",
+            listOf("护眼", "护双眼", "抗氧化"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("叶黄素软糖,护眼护双眼,超强抗氧化")
+        assertEquals(3, hits.size)
+    }
+
+    // --- 普通食品针对特定疾病(v5 新规则 signage_food_disease_target)— ---
+
+    @Test
+    fun scan_signageFoodDiseaseTarget_firesOn糖尿病() {
+        val r = AdSignageRule(
+            "ad_signage_signage_food_disease_target",
+            "signage",
+            "广告法 §17 + §58 + 食品标识监督管理办法",
+            listOf("糖尿病", "高血压", "高血脂", "冠心病", "脑血栓", "动脉硬化", "癌症",
+                   "肿瘤", "中风", "老年痴呆", "阿尔茨海默", "心脑血管",
+                   "糖尿病患者", "高血压患者", "冠心病患者", "癌症患者", "肿瘤患者"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "本品是糖尿病患者 + 高血压患者 + 冠心病患者的安心选择 + 远离癌症 + 预防中风 + 心脑血管疾病人群适用"
+        )
+        assertTrue(hits.size >= 6)
+        assertTrue(hits.any { it.matchedText == "糖尿病患者" })
+        assertTrue(hits.any { it.matchedText == "糖尿病" })
+        assertTrue(hits.any { it.matchedText == "心脑血管" })
+        assertEquals(Severity.Violation, hits[0].severity)
+    }
+
+    @Test
+    fun scan_signageFoodDiseaseTarget_firesOn肿瘤() {
+        // 简化的关键词命中
+        val r = AdSignageRule(
+            "ad_signage_signage_food_disease_target",
+            "signage",
+            "广告法 §17 + §58 + 食品标识监督管理办法",
+            listOf("肿瘤", "癌症", "中风"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本保健品预防肿瘤 + 远离癌症 + 减少中风风险")
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_v5FoodRules_deduplicateEachOther() {
+        // 同一文本上的两个新规则应各自独立触发(每条 ruleId 各一条 hit),
+        // 不应在两个规则间 dedupe(ruleId 不同)
+        val foodFunction = AdSignageRule(
+            "ad_signage_signage_food_function_claim", "signage", "§17",
+            listOf("增强免疫力"), Severity.Violation,
+        )
+        val foodDisease = AdSignageRule(
+            "ad_signage_signage_food_disease_target", "signage", "§17",
+            listOf("糖尿病"), Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(foodFunction, foodDisease))
+            .scan("增强免疫力 + 糖尿病患者的安心选择")
+        assertEquals(2, hits.size)
+        assertEquals(setOf("ad_signage_signage_food_function_claim", "ad_signage_signage_food_disease_target"),
+                     hits.map { it.ruleId }.toSet())
+    }
+
+    @Test
+    fun scan_v5RulesDoNotShadowAdSignageSignageDiseasePrevention() {
+        // 验证 v5 新规则与现有直接疾病用语规则协同触发(不是替代)
+        // 文本同时含"治疗"(直接) + "增强免疫力"(间接保健),两条规则应同时命中
+        val direct = AdSignageRule(
+            "ad_signage_signage_disease_prevention", "signage", "广告法 §17",
+            listOf("治疗", "治愈"), Severity.Warning,
+        )
+        val indirect = AdSignageRule(
+            "ad_signage_signage_food_function_claim", "signage", "广告法 §17 + GB 7718",
+            listOf("增强免疫力", "保护心血管"), Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(direct, indirect))
+            .scan("本品治疗皮炎 + 增强免疫力 + 保护心血管")
+        assertEquals(3, hits.size)
+        assertEquals(setOf("ad_signage_signage_disease_prevention", "ad_signage_signage_food_function_claim"),
+                     hits.map { it.ruleId }.toSet())
+        assertTrue(hits.any { it.severity == Severity.Violation })
+        assertTrue(hits.any { it.severity == Severity.Warning })
+    }
+
+    @Test
+    fun scan_art9AbsTop_extended_doesNotIntroduceCosmeticFalsePositiveForGenericUse() {
+        // 验证 "首个" 在 ad_signage_art9_abs_top 触发时 category=absolute,
+        // 而 cosmetic_art9_abs_extended 触发时 category=cosmetic —
+        // 即同一文本上,两条规则应各自归到自己的 category(没有泛化丢类目)
+        val absRule = AdSignageRule(
+            "ad_signage_art9_abs_top", "absolute", "广告法 §9(三)",
+            listOf("首个"), Severity.Warning,
+        )
+        val cosRule = AdSignageRule(
+            "cosmetic_art9_abs_extended", "cosmetic", "化妆品条例 §22",
+            listOf("首个"), Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(absRule, cosRule)).scan("本品首个配方升级")
+        assertEquals(2, hits.size)
+        assertEquals(setOf("absolute", "cosmetic"), hits.map { it.category }.toSet())
     }
 }

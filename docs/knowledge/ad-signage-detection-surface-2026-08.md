@@ -1,14 +1,14 @@
-# ad_signage 域 判别表面 — 2026-08-19 快照
+# ad_signage 域 判别表面 — 2026-08-20 快照(v5)
 
-> 全量 116 条规则 / 13 个 category / 3 级 severity,逐条展开关键词 + 法规 + 严重度。
+> 全量 118 条规则 / 13 个 category / 3 级 severity,逐条展开关键词 + 法规 + 严重度。
 > 文档面向广告检查业务人员:拍照后能看到什么命中、依据哪条法规、严重度几级。
 
 ## 0. 总览
 
 | 字段 | 值 |
 |---|---|
-| 规则 JSON 版本 | 4 |
-| 规则总条数 | **116** |
+| 规则 JSON 版本 | 5 |
+| 规则总条数 | **118** |
 | category 数 | **13** |
 | severity 等级 | **3**(`Violation` / `Warning` / `Info`) |
 | 触发机制 | OCR 文本 → 归一化 → 关键词命中(`keywords` 任一) |
@@ -276,3 +276,4 @@
 |---|---|
 | 2026-08-19 | v0.1.10 release 后落地;对照 116 条规则 v4 生成当前快照 |
 | 2026-08-19 | 面向广告检查业务人员改写:删除关联文件章节,全量 116 条规则展开(关键词 / 法规 / 严重度) |
+| 2026-08-20 | **v5(118 条)**:导师视角 5 张测试图片复核发现 3 类漏报 → 扩展 `ad_signage_art9_abs_top`(首个/首家/首选/领导品牌/领军品牌/首屈一指)、`ad_signage_art28b_fake_data`(全国第一/全国销量第一/全国门店数量第一/全国连锁数量第一/行业第一/全网销量第一/市场占有率领先/销量遥遥领先/全国第一品牌);从 `ad_signage_pesticide_art6_endorsement` / `ad_signage_veterinary_art7_endorsement` 移除 `全国第一`(挪到通用虚假数据类目);新增 2 条 signage 普通食品医疗宣传规则 `ad_signage_signage_food_function_claim`(33 kw / Violation)+ `ad_signage_signage_food_disease_target`(20 kw / Violation)。5 张现场图回归:紫玉米 8 hit / 蟹都汇 7 hit / 杜蕾斯 2 hit,其余 2 张为 0 hit(无标准违规短语,需新域规则)。 |
