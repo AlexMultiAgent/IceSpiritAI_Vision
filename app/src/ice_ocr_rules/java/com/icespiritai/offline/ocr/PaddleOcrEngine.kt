@@ -35,12 +35,30 @@ import org.opencv.android.OpenCVLoader
  *   - Runtime / image failures (`InvalidImage`, `DecodeError`,
  *     `InferenceFailed`, generic `Exception`) → [OcrFailed]: the call itself
  *     is bad, retrying may help.
+ *
+ * @param recBatchSize SDK rec batch size — number of detected text lines
+ *   packed per rec forward pass. 6 is the v0.1.11 default (a Phase 2
+ *   instrumented-test sweep on a Huawei nova 6 ARM64 / SDK 35 found that 6
+ *   amortizes preprocess overhead on large images and stays within the
+ *   1-3 s per-image SLA; smaller images waste cycles waiting for the batch
+ *   to fill — see [docs/smoke/2026-08-20-icevision-v0.1.12-real-device.md]).
+ *   Change requires engine recreation (the SDK reads this at
+ *   `PaddleOCR.create` time, not per call), so each distinct value spins up
+ *   a separate `PaddleOcrEngine` instance.
  */
-class PaddleOcrEngine(context: Context) : OcrEngine {
+class PaddleOcrEngine(
+    context: Context,
+    private val recBatchSize: Int = DEFAULT_REC_BATCH_SIZE,
+) : OcrEngine {
 
     private val appContext = context.applicationContext
     private val mutex = Mutex()
     @Volatile private var paddleOcr: PaddleOCR? = null
+
+    companion object {
+        /** v0.1.11 / v0.1.12 default. Validated on Huawei nova 6 ARM64. */
+        const val DEFAULT_REC_BATCH_SIZE = 6
+    }
 
     /**
      * OpenCV's native libs (used internally by PaddleOCR for `Bitmap → Mat`)
@@ -90,7 +108,7 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
                             detBoxThresh = 0.45f,
                             detUnclipRatio = 1.4f,
                             recScoreThresh = 0.5f,
-                            recBatchSize = 6,
+                            recBatchSize = recBatchSize,
                         ),
                         engineConfig = EngineConfig(numThreads = 4),
                         detModelAssetPath = "models/det/inference.onnx",

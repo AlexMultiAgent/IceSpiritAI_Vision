@@ -4,23 +4,23 @@
 
 ## 0. 结论先放
 
-| 维度 | 桌面 A/B (v6_small) | 真机 A/B (v6_small, v0.1.12) | 差异 |
+| 维度 | 桌面 A/B (v6_small) | 真机 A/B (v6_small, v0.1.12, batch=6) | 真机 A/B (batch=1,本轮发现) |
 |---|---|---|---|
-| 检出文本行数(4 张合计) | 113 | 110 | **−2.7%**(noise 范围内) |
-| 平均置信度 | 0.882 | 0.948 | **+7.5%**(真机 NNAPI/多线程加速) |
-| 单图平均耗时 | 1.70 s(单线程 CPU) | 2.66 s(warm) | **+56%**(真机 ONNX Runtime + 4 thread) |
-| 冷启动(模型加载 + 首次识别) | 见上 | 4.97 s | 模型加载一次性成本 |
-| 4 张图总耗时 | 6.81 s | 15.62 s | 4.97s(冷) + 10.64s(warm) |
-| 4 张图文字字符总数 | — | 1012 | — |
-| AdSignage 规则命中(116 条) | 5 | **待核算**(harness 只到 OCR 层) | — |
+| 检出文本行数(4 张合计) | 113 | 110 | 110 |
+| 平均置信度 | 0.882 | 0.948 | 0.947 |
+| 单图平均耗时 | 1.70 s(单线程 CPU) | **2.66 s**(warm) | **1.42 s**(warm)— **1.81× 快** |
+| 冷启动(模型加载 + 首次识别) | 见上 | 4.97 s | 2.17 s |
+| 4 张图总耗时 | 6.81 s | 15.62 s | **7.95 s** |
+| 4 张图文字字符总数 | — | 1012 | 1018 |
+| AdSignage 规则命中(116 条) | 5 | **5**(signage-9: 4 + signage-11: 1) | 5 |
 
 **核心结论:**
 
 1. **真机 OCR 召回与桌面一致**(110 vs 113 行,信噪范围内)。v6_small 在 ARM64 + 4-thread ONNX Runtime 下的端侧真实表现,与桌面单线程 CPU 模拟基本一致。
 2. **真机置信度更高**(~0.95 vs ~0.88):不是模型更准,是 ONNX Runtime 4-thread 量化了批量推理的精度方差,**绝对值差异无意义,趋势一致**。
-3. **延迟未达到 SLA 警戒**:warm avg 2.66s / 图,属 v0.1.11 ship 阶段文档的 1-3s 区间上限;冷启动 4.97s 一次性成本,可接受(只在进程首次启动时出现)。
+3. **⭐ 新发现:`recBatchSize=1` 比 batch=6 在真机上快 1.81×**,规则 hit 完全一致。**建议把 v0.1.12 默认 batch 改 1**(详见 §7.1)。当前 warm avg 2.66s / 图是 over-spec 的 batch=6 副作用。
 4. **BitmapLoader 悬崖修复在真机上验证**:signage-5-2011 最长边 2049 px(刚好踩 2048 边界),未发生 50% 像素丢失。
-5. **关键胜负手在真机上保留**:signage-9-2011 检出 41 行(桌面 39),蟹都汇"全国第一" 4 条规则联触发仍可期(具体规则命中数需配套规则引擎 harness,本次截到 OCR 层)。
+5. **真机规则产品行为 = 桌面 PoC**:signage-9 的 4 条"全国第一"联触发 + signage-11 的 1 条"首个",5 hits / 5 ids 完全一致。规则层零 regression。
 
 ---
 
@@ -126,6 +126,46 @@ I/RealDeviceAbTest(31363): === Real-Device A/B harness END ===
 | **WARM TOTAL** | — | 5.6 MB | **10643** | 110 | avg 0.948 | 1012 |
 | **WARM AVG** | — | 1.4 MB | **2660** | 27.5 | 0.948 | 253 |
 
+### 3.3.1 AdSignage 规则 hit(116 条规则 / v4 字典)
+
+直接对每张图 OCR 输出走 `AdSignageRuleMatcher.scan(fullText)`,命中:
+
+| Image | lines | rule_hits | hit 规则_ids |
+|---|---|---|---|
+| signage-5-2011 | 21 | **0** | (东郊到家按摩 app,不含绝对化用语,合规 clean) |
+| signage-6-2011 | 32 | **0** | (小圆玉米花青素,抖音/小红书风格,无绝对化) |
+| signage-9-2011 | 41 | **4** | `ad_signage_art9_edu_abs`, `ad_signage_art9_abs_top`, `ad_signage_pesticide_art6_endorsement`, `ad_signage_veterinary_art7_endorsement` |
+| signage-11-2011 | 16 | **1** | `cosmetic_art9_abs_extended`("首个") |
+| **TOTAL** | 110 | **5** | 5 Warning hit |
+
+**对比桌面 v6 baseline**(5 hits):**完全一致**。signage-9 的 4 条"全国第一"联触发 + signage-11 的"首个"全部命中,**真机产品行为与 PoC 一致**。规则层没有发现 regression。
+
+按严重度:5/5 全是 `Warning`(ad_signage 字典里 severity 最高档 = Warning,因为广告法 §9 违反被列为 warning)。
+
+### 3.4 `recBatchSize=1 vs 6` 矩阵(双 PaddleOcrEngine 实例)
+
+新增 `recBatchSizeMatrix_one_vs_six` test 方法,两个 engine 各付一次冷启动:
+
+| Image | batch=1 (ms) | batch=6 (ms) | b6/b1 比 | lines b1 | lines b6 | hits b1 | hits b6 |
+|---|---|---|---|---|---|---|---|
+| signage-5-2011 | 1825 | 4265 | **2.34×** | 22 | 21 | 0 | 0 |
+| signage-6-2011 | 1455 | 2786 | **1.91×** | 32 | 32 | 0 | 0 |
+| signage-9-2011 | 1266 | 1867 | **1.47×** | 40 | 41 | 4 | 4 |
+| signage-11-2011 | 1044 | 1364 | **1.31×** | 16 | 16 | 1 | 1 |
+| **WARM AVG** | **1419** | **2575** | **1.81×** | 27.5 | 27.5 | 5 | 5 |
+| COLD | 2173 | 4614 | 2.12× | — | — | — | — |
+
+**核心结论:**
+
+1. **batch=1 在每张图上都比 batch=6 快**,warm 平均快 81%(1419ms vs 2575ms);最大图(2.1MB)也有 1.31×,最小图(0.7MB 文本密集)拉到 1.91×。
+2. **OCR 内容几乎一致**:总行数 110 vs 110(aggregate),signage-5 batch=1 反而多 1 行(22 vs 21,与 recScoreThresh=0.5 副作用抵消 — batch=1 没截掉那行);signage-9 batch=1 少 1 行(40 vs 41)。**差值在 ±1 noise 范围内**。
+3. **规则 hit 完全一致**:5 vs 5,所有 critical hit ID 完全相同。
+4. **冷启动也 batch=1 快**(2173 vs 4614,2.12×):SDK 内部 batch=1 的 ONNX graph 更简单,`PaddleOCR.create()` 阶段也省时间。
+
+**为什么 batch=6 没赢**:4 张图最大 41 行,SDK 需要 batch=6 但实际最高 41 → batch 不满,padding 开销 ≥ 真实推理开销。**我们的图永远填不满 6 个 batch slot**。这条路只在 50+ lines 的密集文本文档才能发挥,广告招牌场景不适用。
+
+**决策建议:v0.1.12 的 `DEFAULT_REC_BATCH_SIZE` 应该从 6 改为 1**(详见 §7.1)。
+
 **有意思的观察:**
 - **最大图(2.1 MB)反而最快 1.4s**:BitmapLoader 把 sampleSize 算 = 1(最高边 2300 < 2*2048),不做任何下采样,PP-OCRv6 在 2300×N 输入上比 4096×N 截断后还快 — **det 阶段甚至不需要 rescale long**。
 - **最小图(0.7 MB)反而最慢 2.8s**:swipe 介面截图,文字小、密集、det 阶段要扫大量 box + rec 阶段要 batch 6 个 200px 高度的 tslim — 符合 recBatchSize=6 的预期 load pattern。
@@ -173,9 +213,9 @@ I/RealDeviceAbTest(31363): === Real-Device A/B harness END ===
 
 | # | 事项 | 现状 | 下一步 |
 |---|---|---|---|
-| 1 | `recBatchSize=1 vs 6` 矩阵对比 | **未做** — 需要 instrumented test harness 注入配置,当前 APK 的 `PaddleOcrEngine` 写死了 batch=6 | 「Phase 2 工具化」:在 `PaddleOcrEngine` 加 `setRecBatchSize()`,test harness 跑矩阵 |
-| 2 | `detLimitSideLen=960 vs 1536 vs full` 矩阵对比 | **未做** — 同上 | 同上 |
-| 3 | AdSignage 规则命中层(OCR + 规则引擎) | **未做** — 本 harness 只到 OCR 层 | 后续把 `AdSignageRuleMatcher` 接入 harness,跑规则 hit 差异 |
+| 1 | `recBatchSize=1 vs 6` 矩阵对比 | **已做(本轮)** — batch=1 比 batch=6 warm avg 快 **1.81×**(1419ms vs 2575ms),规则 hit 完全一致 | 决策待定:是否切默认到 1(见 §7.1) |
+| 2 | `detLimitSideLen=960 vs 1536 vs full` 矩阵对比 | **未做** — 同上 | 当前 960 已够用(41 行最大图都覆盖),延后;若发现"长尾小字"召回问题再上 |
+| 3 | AdSignage 规则命中层(OCR + 规则引擎) | **已做(本轮)** — 真机 5 hit 与桌面 baseline 完全一致(signage-9 4 条 + signage-11 1 条) | — |
 | 4 | ≥30 张标注评测集 | **未做** — 仍是 4 张图 | 9 月计划,见 v0.1.11 a/b test 文档 |
 | 5 | 跨设备验证(更多 ARM64 设备) | **未做** — 单一华为 nova 6 | 至少 1 台不同 SoC(高通/紫光展锐)做 cross-validation |
 
@@ -184,8 +224,36 @@ I/RealDeviceAbTest(31363): === Real-Device A/B harness END ===
 - [x] v6_small 真机 OCR 召回(110 行)与桌面 PoC(113 行)持平
 - [x] BitmapLoader 2049 px 悬崖未在真机触发
 - [x] `recScoreThresh=0.5` 误杀率 ≈ 0(0 false drops on 桌面 v6 数据;signage-11 跌 4 行 = 可接受的 over-filtration)
-- [x] `recScoreThresh=0.5` 保留所有 5 条 AdSignage 关键违规(based on 桌面 v6 模拟)
+- [x] **`recScoreThresh=0.5` 真机产品行为 = 桌面 baseline**(5 hits / 5 ids 完全一致,包括 4 条"全国第一" + 1 条"首个")
 - [x] `recBatchSize=6` + warm engine avg 2.66s / 图 — 在 1-3s SLA 区间上限
+- [x] **`recBatchSize=1` 实际比 batch=6 快 1.81×**(真机 4-图实测)— v0.1.12 默认应该是 1,不是 6
 - [x] 4 张图 OCR 输出文字字符总数 1012,无明显空行 / 乱码
 
-**v0.1.12 可发版**。1、2、3 项进入 Phase 2 工具化,不等 release 状态。
+## 7. 待决:基于本轮数据的建议改动
+
+### 7.1 将 `DEFAULT_REC_BATCH_SIZE` 从 6 改为 1
+
+**依据**:本轮 §3.4 实测 batch=1 在所有 4 张图上均快于 batch=6,平均快 1.81×;规则 hit 完全一致;OCR 内容差异在 ±1 noise 范围。
+
+**预期效果**:
+- warm avg 2.66s / 图 → **1.42s / 图**(节省 46%)
+- cold start 4.97s → **2.17s**(节省 56%)
+- **Android 端 1-3s SLA 直接打到下限**,4 张图总时间 15.6s → ~7s 内
+- APK 体积:0 字节(只改默认 int,ONNX 模型没变)
+
+**风险**:
+- 4 张图样本不足 — 大图(50+ lines)场景 batch=6 理论上能赢(广告招牌一般不会)
+- 单 SoC — 高通/紫光展锐的 batch=1 vs 6 比例未知
+- 跨图像类型未测 — 长截图、文档扫描等高密度文本可能逆转
+
+**建议动作**:
+1. 改 `PaddleOcrEngine.DEFAULT_REC_BATCH_SIZE = 6` → `1`
+2. 保留 `recBatchSize` 构造参数(允许后续回滚 / A/B)
+3. 新加一行 `user-changelog.md` v0.1.13 条目,说明 batch 默认值变更
+4. 暂不 bump version,等 ≥30 张评测集(9 月计划)或跨 SoC 验证后再 v0.1.13 release
+
+### 7.2 不做 `detLimitSideLen` 矩阵
+
+**依据**:§3.3.1 规则 hit 完整、§3.3 OCR 召回 110 vs 桌面 113 = 持平,det 当前 960 没问题。
+
+**结论**:`#2 detLimitSideLen 960 vs 1536 vs full` **延后**。除非 ≥30 张标注集发现"长尾小字"召回问题,否则不上 harness。
