@@ -1,6 +1,7 @@
 package com.icespiritai.offline.rules
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -116,14 +117,11 @@ class AssetRuleLoaderTest {
     @Test
     fun invalidJson_throwsSerializationError() {
         val bad = "{ not valid json"
-        try {
+        assertThrows(kotlinx.serialization.SerializationException::class.java) {
             kotlinx.serialization.json.Json.decodeFromString(
                 AdSignageRuleSet.serializer(),
-                bad
+                bad,
             )
-            fail("expected SerializationException")
-        } catch (e: kotlinx.serialization.SerializationException) {
-            assertTrue(true) // expected
         }
     }
 }

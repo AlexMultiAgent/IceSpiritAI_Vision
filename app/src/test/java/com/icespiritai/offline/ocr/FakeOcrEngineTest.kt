@@ -38,11 +38,4 @@ class FakeOcrEngineTest {
         val result = engine.recognize(StubUri())
         assertEquals("test", result.fullText)
     }
-
-    @Test
-    fun `release is a no-op and does not throw`() = runTest {
-        val engine = FakeOcrEngine(cannedText = "x")
-        engine.release()
-        // no assertion needed — just confirms it doesn't throw
-    }
 }

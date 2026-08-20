@@ -227,6 +227,8 @@ class AdSignageMentorFiveImageRegressionTest {
         // 文档化为"目前无命中,后续增加 X 万 / X 万次规模数据规则时可扩展",
         // 不强制断言 hits > 0,只打印观察
         println("[dongjiao] hits=${hits.size} ids=${hits.map { it.ruleId }.sorted()}")
-        assertTrue(true)
+        // 当前未扩展到上门服务域,锚定"0 命中"为已知基线;若后续规则扩展命中
+        // 此处断言失败,提醒维护者更新预期。
+        assertEquals("东郊到家 v5 当前未扩展规则,应保持 0 命中基线", 0, hits.size)
     }
 }
