@@ -3,8 +3,9 @@ package com.icespiritai.offline.updater
 import android.content.Intent
 import android.util.Log
 import androidx.annotation.VisibleForTesting
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,6 +26,14 @@ object UpdateRepository {
     private const val TAG = "UpdateRepository"
 
     private val JSON_PARSER = Json { ignoreUnknownKeys = true }
+
+    /**
+     * Default scope for callers that haven't migrated to passing a
+     * caller-owned scope. Lives for the process lifetime; survives
+     * Activity recreation. SupervisorJob so a failure in one launched
+     * coroutine doesn't tear down the rest.
+     */
+    private val defaultScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
      * Process-global state. Observed by `SettingsViewModel` via
@@ -92,11 +101,20 @@ object UpdateRepository {
      * startup check. Translates [UpdateCheckResult] to [UpdateState] and
      * writes to [state]. Debounces against double-taps by returning
      * early if state is already [UpdateState.Checking].
+     *
+     * Caller-owned [scope]: pass `viewModelScope` (or `lifecycleScope`) so
+     * the in-flight network call cancels with the host. Defaults to a
+     * private IO scope for backward-compat callers that haven't migrated
+     * yet (e.g. background workers).
      */
-    fun checkForUpdatesAsync(jsonUrl: String, currentVersionCode: Int) {
+    fun checkForUpdatesAsync(
+        jsonUrl: String,
+        currentVersionCode: Int,
+        scope: CoroutineScope = defaultScope,
+    ) {
         if (_state.value is UpdateState.Checking) return
         _state.value = UpdateState.Checking
-        GlobalScope.launch(Dispatchers.IO) {
+        scope.launch(Dispatchers.IO) {
             val r = checkForUpdates(jsonUrl, currentVersionCode)
             _state.value = when (r) {
                 is UpdateCheckResult.UpToDate -> UpdateState.UpToDate(r.current)
@@ -154,10 +172,14 @@ object UpdateRepository {
     }
 
     /** Coroutine entry: writes to `cacheDir/update/`, publishes progress to [state]. */
-    fun downloadApk(info: AppVersionInfo, appContext: android.content.Context) {
+    fun downloadApk(
+        info: AppVersionInfo,
+        appContext: android.content.Context,
+        scope: CoroutineScope = defaultScope,
+    ) {
         val updateDir = File(appContext.cacheDir, "update")
         _state.value = UpdateState.Downloading(0L, info.apkSize)
-        GlobalScope.launch(Dispatchers.IO) {
+        scope.launch(Dispatchers.IO) {
             try {
                 val file = downloadApkTo(info, updateDir) { written ->
                     _state.value = UpdateState.Downloading(written, info.apkSize)
@@ -172,10 +194,6 @@ object UpdateRepository {
                 }
                 _state.value = UpdateState.ReadyToInstall(file)
             } catch (e: kotlinx.coroutines.CancellationException) {
-                // CancellationException is a subclass of Exception; re-throw before the broader
-                // catch so structured-concurrency cancellation propagates instead of surfacing
-                // as a "download failed" UI banner. Dormant today because GlobalScope.launch
-                // has no external cancellation source, but defensive against future callers.
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "downloadApk failed: ${e.javaClass.simpleName}")

@@ -53,7 +53,11 @@ class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
 
     /** Manual "Check for updates" tap (also invoked from [retry]). */
     fun refresh() {
-        UpdateRepository.checkForUpdatesAsync(BuildConfig.UPDATE_JSON_URL, BuildConfig.VERSION_CODE)
+        UpdateRepository.checkForUpdatesAsync(
+            BuildConfig.UPDATE_JSON_URL,
+            BuildConfig.VERSION_CODE,
+            scope = viewModelScope,
+        )
     }
 
     /**
@@ -63,7 +67,7 @@ class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
      * the cacheDir outlives any rotation-driven Activity recreation.
      */
     fun download(info: AppVersionInfo, context: Context) {
-        UpdateRepository.downloadApk(info, context.applicationContext)
+        UpdateRepository.downloadApk(info, context.applicationContext, scope = viewModelScope)
     }
 
     /**
