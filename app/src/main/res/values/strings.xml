@@ -3,26 +3,19 @@
     <string name="app_name">冰灵锐目</string>
     <string name="action_pick_image">选图</string>
     <string name="action_take_photo">拍照</string>
-    <string name="action_analyze">开始分析</string>
-    <string name="status_idle">请选择或拍摄一张图片</string>
     <string name="status_ocr_running">识别图片文字…</string>
     <string name="status_rule_scanning">扫描违规规则…</string>
     <string name="status_low_confidence">识别置信度较低,结果仅供参考</string>
-    <string name="status_no_violation">未发现违规用语</string>
-    <string name="status_violations_count">发现 %1$d 处可疑内容</string>
     <string name="error_ocr_unavailable">OCR 模型加载失败,请检查 APK 是否完整</string>
     <string name="error_ocr_failed">图片识别失败,请换一张清晰图重试</string>
     <string name="error_rules_failed">规则库加载失败</string>
     <string name="error_unknown">未知错误,请重试</string>
     <string name="action_retry">重试</string>
-    <string name="action_exit">退出</string>
     <string name="error_permission_denied">需要相机 / 媒体权限才能分析图片</string>
-    <string name="action_grant_permission">去授权</string>
     <string name="action_back">返回</string>
     <string name="error_camera_denied">需要相机权限才能拍照</string>
     <string name="hit_card_category">分类: %1$s</string>
     <string name="hit_card_regulation">依据: %1$s</string>
-    <string name="hit_card_severity">严重等级: %1$s</string>
     <string name="hit_card_show_law">查看法条原文</string>
     <string name="hit_card_hide_law">收起法条原文</string>
     <string name="tab_ad_law">广告招牌</string>
@@ -38,17 +31,13 @@
     <string name="status_error_banner">分析失败</string>
     <string name="ocr_text_label">识别文字: %1$s</string>
 
-    <string name="action_reshoot">重拍</string>
     <string name="action_export">导出取证包</string>
-    <string name="action_export_report">导出报告</string>
-    <string name="action_report_issue">上报问题</string>
 
     <string name="settings_title">设置</string>
     <string name="settings_appearance">外观</string>
     <string name="settings_appearance_system">跟随系统</string>
     <string name="settings_appearance_dark">深色雪夜</string>
     <string name="settings_appearance_light">浅色冰月</string>
-    <string name="settings_about">关于</string>
     <string name="settings_about_version">版本: %1$s</string>
     <string name="settings_view_changelog">查看更新日志</string>
     <string name="settings_view_changelog_hint">查看每个版本的修改变动</string>
@@ -88,7 +77,6 @@
     <!-- v0.1.11 image viewer (Routes.VIEWER) — see docs/superpowers/specs/2026-08-19-icevision-image-viewer-design.md -->
     <string name="viewer_title">原图查看</string>
     <string name="viewer_image_cd">原图</string>
-    <string name="viewer_gesture_hint">双指缩放 · 双击切换 · 单指拖动</string>
     <string name="viewer_empty">无可查看结果,请先拍照或选图识别</string>
     <string name="viewer_image_load_error">图片加载失败</string>
     <string name="viewer_lines_count">共 %1$d 行文字</string>
