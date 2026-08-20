@@ -175,7 +175,7 @@ fun HomeScreen(
             }
             is AnalysisState.Loading -> {
                 Text(
-                    text = stringResource(loadingLabelRes(s.stage.toLoadingStage())),
+                    text = stringResource(loadingLabelRes(s.stage)),
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(16.dp),
                 )
@@ -296,11 +296,6 @@ private fun errorMessageRes(code: ErrorCode): Int = when (code) {
     ErrorCode.OCR_FAILED -> R.string.error_ocr_failed
     ErrorCode.RULES_FAILED -> R.string.error_rules_failed
     ErrorCode.UNKNOWN -> R.string.error_unknown
-}
-
-private fun AnalysisState.Loading.Stage.toLoadingStage(): AnalysisStateLoadingStage = when (this) {
-    AnalysisState.Loading.Stage.OcrRunning -> AnalysisStateLoadingStage.OcrRunning
-    AnalysisState.Loading.Stage.RuleScanning -> AnalysisStateLoadingStage.RuleScanning
 }
 
 @Composable
