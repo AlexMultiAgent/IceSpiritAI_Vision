@@ -17,11 +17,11 @@ data class AppVersionInfo(
 sealed class UpdateCheckResult {
     data class UpToDate(val current: Int) : UpdateCheckResult()
     data class UpdateAvailable(val info: AppVersionInfo) : UpdateCheckResult()
-    sealed class Failed(val reasonTag: String) : UpdateCheckResult() {
-        object NoNetwork : Failed("no_network")
-        data class ServerError(val httpCode: Int) : Failed("server_$httpCode")
-        data class ParseError(val cause: Throwable) : Failed("parse")
-        data class DownloadInterrupted(val cause: Throwable) : Failed("interrupted")
-        data class SignatureMismatch(val actual: String?, val expected: String) : Failed("signature_mismatch")
+    sealed class Failed : UpdateCheckResult() {
+        object NoNetwork : Failed()
+        data class ServerError(val httpCode: Int) : Failed()
+        data class ParseError(val cause: Throwable) : Failed()
+        data class DownloadInterrupted(val cause: Throwable) : Failed()
+        data class SignatureMismatch(val actual: String?, val expected: String) : Failed()
     }
 }

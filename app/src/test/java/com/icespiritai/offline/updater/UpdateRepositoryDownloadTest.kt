@@ -121,7 +121,6 @@ class UpdateRepositoryDownloadTest {
             result as UpdateCheckResult.Failed.SignatureMismatch
             assertEquals("deadbeef".repeat(8), result.expected)
             assertNull("actual must be null when file is unparsable", result.actual)
-            assertEquals("signature_mismatch", result.reasonTag)
         } finally {
             tmp.delete()
         }
