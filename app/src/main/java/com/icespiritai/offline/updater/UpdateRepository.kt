@@ -186,12 +186,16 @@ object UpdateRepository {
 
     /**
      * Cert-pin gate: verifies the v1 signer certificate SHA-256 of [file] against
-     * `info.signerCertSha256`. Returns `null` (gate passed / gate skipped) when:
-     *  - `info.signerCertSha256` is empty (backward compat with vision-latest.json
-     *    published before Wave 1 Task 1.2), or
-     *  - the actual fingerprint matches `expected` (case-insensitive).
+     * `info.signerCertSha256`.
+     *
+     * Returns `null` when the gate is skipped (`info.signerCertSha256` is empty,
+     * for backward compat with `vision-latest.json` published before Wave 1
+     * Task 1.2), or when the actual fingerprint matches `expected`
+     * (case-insensitive) and the download may proceed to [UpdateState.ReadyToInstall].
+     *
      * Returns [UpdateCheckResult.Failed.SignatureMismatch] when `expected` is
-     * non-empty and the actual fingerprint is `null` (file unparsable) or differs.
+     * non-empty and the actual fingerprint is `null` (file unparsable as a JAR)
+     * or differs from `expected`.
      *
      * Extracted as `@VisibleForTesting internal` so unit tests can drive the
      * gate directly with a synthesized File without spinning the coroutine
