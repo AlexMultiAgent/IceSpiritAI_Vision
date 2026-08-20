@@ -1570,4 +1570,345 @@ class AdSignageRuleMatcherTest {
         assertEquals(2, hits.size)
         assertEquals(setOf("absolute", "cosmetic"), hits.map { it.category }.toSet())
     }
+
+    // --- Wave 2 Task 2.3 — 24 条未覆盖规则 fixture(2026-08-20 落地,
+    //     广告法 + 部门规章 + 户外 + 兽药 + 教育 + 金融 + 房地产 + signage v5 通用化) ---
+
+    @Test
+    fun scan_art10Minor_firesOn儿童专用() {
+        val r = AdSignageRule(
+            "ad_signage_art10_minor",
+            "minor",
+            "广告法 §10(2) + §57",
+            listOf("儿童专用", "宝宝必备"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本店儿童专用配方,宝宝放心")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_art10_minor", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art16MedAbs_firesOn根治() {
+        val r = AdSignageRule(
+            "ad_signage_art16_med_abs",
+            "medical",
+            "广告法 §16(1) / 医疗广告管理办法 §6",
+            listOf("根治", "100% 有效", "彻底治愈"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本品可根治慢性病")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_art16_med_abs", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art16MedHealth_firesOn疗效() {
+        val r = AdSignageRule(
+            "ad_signage_art16_med_health",
+            "medical",
+            "广告法 §16(2) / 医疗广告管理办法 §6",
+            listOf("疗效", "治愈率", "根治率"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本品疗效显著")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_art16_med_health", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art22TobAlc_firesOn戒烟() {
+        val r = AdSignageRule(
+            "ad_signage_art22_tob_alc",
+            "restricted",
+            "广告法 §22 + §42",
+            listOf("戒烟", "解酒"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("戒烟神器,告别尼古丁")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_art22_tob_alc", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art23AlcoholRelief_firesOn提神酒() {
+        val r = AdSignageRule(
+            "ad_signage_art23_alcohol_relief",
+            "restricted",
+            "广告法 §23(三) / 酒类广告管理办法 §5",
+            listOf("解酒", "解乏", "提神酒"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本店提神酒,夜间开长途")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_art23_alcohol_relief", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art24EduGuar_firesOn保过() {
+        val r = AdSignageRule(
+            "ad_signage_art24_edu_guar",
+            "education",
+            "广告法 §24(1) + §58",
+            listOf("保过", "包过", "不过退款"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("考证保过,签协议保障")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_art24_edu_guar", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art25FinPrm_firesOn稳赚不赔() {
+        val r = AdSignageRule(
+            "ad_signage_art25_fin_prm",
+            "finance",
+            "广告法 §25(一) + §58",
+            listOf("稳赚不赔", "无风险", "保本高收益"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本店理财产品稳赚不赔,签约保障")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_art25_fin_prm", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art26RePrm_firesOn升值回报() {
+        val r = AdSignageRule(
+            "ad_signage_art26_re_prm",
+            "realestate",
+            "广告法 §26(一) + §58",
+            listOf("升值回报", "投资回报", "学区房包入学"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本楼盘升值回报率高,五年翻倍")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_art26_re_prm", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art9AbsPct_firesOn100Pct() {
+        val r = AdSignageRule(
+            "ad_signage_art9_abs_pct",
+            "absolute",
+            "广告法 §9(三) — 百分比极限词",
+            listOf("100%", "百分百", "百分之百"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("100% 满意的产品,口碑保证")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_art9_abs_pct", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_art9EduAbs_firesOn最强师资() {
+        val r = AdSignageRule(
+            "ad_signage_art9_edu_abs",
+            "education",
+            "广告法 §9(三) + §24",
+            listOf("最好", "最强师资", "第一"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本校最强师资,签约培养")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_art9_edu_abs", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_eduArt24Recommendation_firesOn研究院推荐() {
+        val r = AdSignageRule(
+            "ad_signage_edu_art24_recommendation",
+            "education",
+            "广告法 §24(3) + §58",
+            listOf("研究院推荐", "学会推荐", "协会推荐"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本课程由研究院推荐,权威保障")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_edu_art24_recommendation", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_finArt25Unlawful_firesOn本金保障() {
+        val r = AdSignageRule(
+            "ad_signage_fin_art25_unlawful",
+            "finance",
+            "广告法 §25(一) + §58 / 银发〔2019〕316号 §3(二)",
+            listOf("零风险", "无风险收益", "本金保障"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本理财本金保障,签约保收益")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_fin_art25_unlawful", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_medArt7Compare_firesOn最强医院() {
+        val r = AdSignageRule(
+            "ad_signage_med_art7_compare",
+            "medical",
+            "医疗广告管理办法 §7 / 广告法 §16(三)",
+            listOf("最好医院", "最强医院", "第一医院"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本地区最强医院,联合门诊")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_med_art7_compare", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_medArt7Technicality_firesOn治疗技术() {
+        val r = AdSignageRule(
+            "ad_signage_med_art7_technicality",
+            "medical",
+            "医疗广告管理办法 §7(5) / 广告法 §16",
+            listOf("处方药", "疗法", "治疗技术"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("独家治疗技术,签约见效")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_med_art7_technicality", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_medicalArt6Producer_firesOn医用() {
+        val r = AdSignageRule(
+            "ad_signage_medical_art6_producer",
+            "medical",
+            "医疗器械广告审查发布标准 §6 + §9",
+            listOf("医疗器械", "医用", "医用设备"),
+            Severity.Violation,
+        )
+        // 文本只含 "医用",不含 "医用设备"/"医疗器械" 子串(避免 AC 同时命中多条关键词)
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本店售卖医用产品,合规上市")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_medical_art6_producer", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_medicalArt6Registerno_firesOn注册证号() {
+        val r = AdSignageRule(
+            "ad_signage_medical_art6_registerno",
+            "medical",
+            "医疗器械广告审查发布标准 §6(三)",
+            listOf("国械注准", "国械注许", "注册证号"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本店产品注册证号缺失,违规发布")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_medical_art6_registerno", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_outdoorArt10Misleading_firesOn国家免检() {
+        val r = AdSignageRule(
+            "ad_signage_outdoor_art10_misleading",
+            "outdoor",
+            "广告法 §28 + 户外广告登记管理规定 §10",
+            listOf("权威推荐", "专家推荐", "国家免检"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本店品牌国家免检产品,放心购买")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_outdoor_art10_misleading", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_outdoorCityArt32Heritage_firesOn5A景区() {
+        val r = AdSignageRule(
+            "ad_signage_outdoor_city_art32_heritage",
+            "outdoor",
+            "广告法 §32(二) / 城市市容和环境卫生管理条例 §11",
+            listOf("景区内", "自然保护区", "5A 景区"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本广告位于 5A 景区核心地带,违规设置")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_outdoor_city_art32_heritage", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_outdoorCityArt32Municipal_firesOn配电箱() {
+        val r = AdSignageRule(
+            "ad_signage_outdoor_city_art32_municipal",
+            "outdoor",
+            "广告法 §32(一) / 城市市容和环境卫生管理条例 §11",
+            listOf("消防栓", "配电箱", "燃气调压站"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本广告覆盖配电箱外壳,违规张贴")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_outdoor_city_art32_municipal", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_reArt26PriceViolation_firesOn最低价() {
+        val r = AdSignageRule(
+            "ad_signage_re_art26_price_violation",
+            "realestate",
+            "广告法 §26(五) + §58 / 房地产广告发布规定 §4",
+            listOf("最低价", "一口价", "封顶价"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本楼盘全市最低价,签约保价")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_re_art26_price_violation", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_signageOtcLabel_firesOnOTC() {
+        val r = AdSignageRule(
+            "ad_signage_signage_otc_label",
+            "signage",
+            "广告法 §15 + §57 / OTC 标识管理办法",
+            listOf("OTC", "非处方药", "甲类非处方"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本店 OTC 标识齐全,合规销售")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_signage_otc_label", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_signageArt30SelfPublish_firesOn个人发布() {
+        val r = AdSignageRule(
+            "ad_signage_signage_art30_self_publish",
+            "signage",
+            "广告法 §30 + §59",
+            listOf("无证经营", "未取得广告发布资质", "个人发布"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本店为个人发布,未经工商登记")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_signage_art30_self_publish", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_veterinaryArt4Endorsement_firesOn学会推荐() {
+        val r = AdSignageRule(
+            "ad_signage_veterinary_art4_endorsement",
+            "veterinary",
+            "兽药广告审查发布规定 §4(五) / 广告法 §16(四)",
+            listOf("专家推荐", "研究院推荐", "学会推荐"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本品由学会推荐,权威机构背书")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_veterinary_art4_endorsement", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_veterinaryArt5Deprecate_firesOn比X差() {
+        val r = AdSignageRule(
+            "ad_signage_veterinary_art5_deprecate",
+            "veterinary",
+            "兽药广告审查发布规定 §5 + 广告法 §28",
+            listOf("不如", "比 X 差", "完胜同类"),
+            Severity.Warning,
+        )
+        // 文本只含 "比 X 差"(空格被 normalizer 折叠),不含 "完胜同类"/"不如"
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本品对比同类产品比 X 差远了")
+        assertEquals(1, hits.size)
+        assertEquals("ad_signage_veterinary_art5_deprecate", hits[0].ruleId)
+    }
 }
