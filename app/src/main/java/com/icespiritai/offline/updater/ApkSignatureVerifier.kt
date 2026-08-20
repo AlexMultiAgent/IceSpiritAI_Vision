@@ -17,8 +17,9 @@ import java.util.jar.JarFile
  *
  * All three paths — build-time helper, this runtime verifier, and the
  * JSON field — MUST stay byte-for-byte aligned: the in-app update
- * double-gate compares this fingerprint against `AppVersionInfo.apkSha256`
- * of the download to defeat tampering between upload and download. If the
+ * double-gate compares this fingerprint against
+ * `AppVersionInfo.signerCertSha256` to defeat tampering between upload
+ * and download. If the
  * build helper computes one hash and this function computes a different
  * one for the same APK, every legitimate update is rejected.
  *
