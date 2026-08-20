@@ -20,6 +20,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.annotation.VisibleForTesting
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -299,7 +300,8 @@ private fun errorMessageRes(code: ErrorCode): Int = when (code) {
 }
 
 @Composable
-fun HomeScreenBare(onCapture: () -> Unit, onPick: () -> Unit) {
+@VisibleForTesting
+internal fun HomeScreenBare(onCapture: () -> Unit, onPick: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
         Text("冰灵锐目", style = MaterialTheme.typography.titleLarge)
         Text(
