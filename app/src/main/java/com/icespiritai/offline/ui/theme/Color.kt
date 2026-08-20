@@ -7,6 +7,14 @@ import androidx.compose.ui.graphics.Color
 // `app/src/main/res/values/colors.xml`; dark values mirror Chat's
 // `app/src/main/res/values-night/colors.xml`. Single source of truth
 // for visual hex values; pin test in `ColorTokensTest`.
+//
+// **Cross-project constraint**: any change here must be mirrored in
+// IceSpiritAI_Chat (and any other IceSpirit* project that adopts the
+// `ice_chat_*` palette). The 1:1 hex alignment is a deliberate
+// brand-identity decision; divergence would break the family.
+// TODO(audit P2-11): before pruning unused tokens, run a grep across
+// IceSpiritAI_Chat for the same names to confirm cross-project
+// symmetry. Don't delete unilaterally.
 
 // Dark scheme (Night — slate navy, A 调 enforcement tone)
 val DarkIceChatBg = Color(0xFF08131B)
