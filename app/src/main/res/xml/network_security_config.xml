@@ -1,4 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  WHY cleartextTrafficPermitted="true" for 125.211.45.14:
+  Gitea release server currently serves HTTP only on this IP:port. The in
+  app update channel (UpdateRepository.checkForUpdates + downloadApk) hits
+  vision-latest.json + the APK via this single host. Without cleartext
+  allowance, the in app update flow is blocked.
+
+  SECURITY POSTURE (Wave 1 v0.1.14):
+    - Cleartext is whitelisted ONLY for this single IP. All other hosts
+      default to HTTPS via the implicit <base-config> (system CAs only).
+    - apkSha256 byte-level verification (UpdateRepository.downloadApkTo)
+      guards against transport tampering: even a MITM that serves a
+      different APK over this cleartext channel is rejected because the
+      downloaded file's SHA-256 won't match vision-latest.json's apkSha256.
+    - signerCertSha256 byte-level verification (UpdateRepository
+      .verifySignatureForDownload, Wave 1 Task 1.4) provides a second
+      gate against APK content tampering.
+
+  DEFERRED (audit P0-2):
+    Once the Gitea server has TLS terminated (self-signed or LE cert),
+    change the URLs in app/build.gradle.kts to https://, REMOVE this
+    <domain-config cleartextTrafficPermitted="true"> block (or replace
+    with <pin-set> digest="SHA-256">base64-of-spki</pin-set>), and
+    add <base-config cleartextTrafficPermitted="false">. cert-pin via
+    <pin-set> on plain HTTP is technically a no-op (no TLS handshake
+    to pin against), so this block stays until TLS is in place.
+-->
 <network-security-config>
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">125.211.45.14</domain>
