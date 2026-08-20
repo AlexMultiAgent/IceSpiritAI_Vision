@@ -3,7 +3,6 @@ package com.icespiritai.offline.settings
 import com.icespiritai.offline.ui.theme.ThemeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -46,10 +45,5 @@ class SettingsViewModelTest {
         vm.setThemeMode(ThemeMode.LIGHT)
 
         assertEquals(ThemeMode.LIGHT, backing.value)
-    }
-
-    private class FakeThemeSettingsSource(private val backing: MutableStateFlow<ThemeMode>) : ThemeSettingsSource {
-        override val themeMode: Flow<ThemeMode> = backing
-        override suspend fun setThemeMode(mode: ThemeMode) { backing.value = mode }
     }
 }
