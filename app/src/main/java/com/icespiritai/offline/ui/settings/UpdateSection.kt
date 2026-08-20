@@ -125,6 +125,8 @@ private fun failureLabel(result: com.icespiritai.offline.updater.UpdateCheckResu
             stringResource(R.string.update_failed_parse)
         is com.icespiritai.offline.updater.UpdateCheckResult.Failed.DownloadInterrupted ->
             stringResource(R.string.update_failed_download)
+        is com.icespiritai.offline.updater.UpdateCheckResult.Failed.SignatureMismatch ->
+            stringResource(R.string.update_failed_signature)
     }
 
 private fun currentVersionString(versionCode: Int): String =

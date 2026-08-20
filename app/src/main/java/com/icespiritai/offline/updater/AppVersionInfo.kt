@@ -22,5 +22,6 @@ sealed class UpdateCheckResult {
         data class ServerError(val httpCode: Int) : Failed("server_$httpCode")
         data class ParseError(val cause: Throwable) : Failed("parse")
         data class DownloadInterrupted(val cause: Throwable) : Failed("interrupted")
+        data class SignatureMismatch(val actual: String?, val expected: String) : Failed("signature_mismatch")
     }
 }

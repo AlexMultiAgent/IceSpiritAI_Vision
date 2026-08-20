@@ -162,6 +162,14 @@ object UpdateRepository {
                 val file = downloadApkTo(info, updateDir) { written ->
                     _state.value = UpdateState.Downloading(written, info.apkSize)
                 }
+                // Double-gate cert check (after APK bytes on disk; before announcing install-ready).
+                // Backward compat: empty `signerCertSha256` (older vision-latest.json) skips gate.
+                verifySignatureForDownload(info, file)?.let { mismatch ->
+                    Log.w(TAG, "signature mismatch: expected=${mismatch.expected.take(16)}… actual=${mismatch.actual?.take(16) ?: "null"}")
+                    file.delete()
+                    _state.value = UpdateState.Failed(mismatch)
+                    return@launch
+                }
                 _state.value = UpdateState.ReadyToInstall(file)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // CancellationException is a subclass of Exception; re-throw before the broader
@@ -173,6 +181,34 @@ object UpdateRepository {
                 Log.w(TAG, "downloadApk failed: ${e.javaClass.simpleName}")
                 _state.value = UpdateState.Failed(UpdateCheckResult.Failed.DownloadInterrupted(e))
             }
+        }
+    }
+
+    /**
+     * Cert-pin gate: verifies the v1 signer certificate SHA-256 of [file] against
+     * `info.signerCertSha256`. Returns `null` (gate passed / gate skipped) when:
+     *  - `info.signerCertSha256` is empty (backward compat with vision-latest.json
+     *    published before Wave 1 Task 1.2), or
+     *  - the actual fingerprint matches `expected` (case-insensitive).
+     * Returns [UpdateCheckResult.Failed.SignatureMismatch] when `expected` is
+     * non-empty and the actual fingerprint is `null` (file unparsable) or differs.
+     *
+     * Extracted as `@VisibleForTesting internal` so unit tests can drive the
+     * gate directly with a synthesized File without spinning the coroutine
+     * wrapper, Context, or cacheDir plumbing.
+     */
+    @VisibleForTesting
+    internal fun verifySignatureForDownload(
+        info: AppVersionInfo,
+        file: File,
+    ): UpdateCheckResult.Failed.SignatureMismatch? {
+        val expected = info.signerCertSha256
+        if (expected.isEmpty()) return null
+        val actual = ApkSignatureVerifier.readFirstSignerCert(file)
+        return if (actual == null || !actual.equals(expected, ignoreCase = true)) {
+            UpdateCheckResult.Failed.SignatureMismatch(actual = actual, expected = expected)
+        } else {
+            null
         }
     }
 

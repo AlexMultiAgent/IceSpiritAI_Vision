@@ -81,6 +81,7 @@
     <string name="update_failed_server">服务器返回 HTTP %1$d</string>
     <string name="update_failed_parse">更新信息格式错误</string>
     <string name="update_failed_download">下载失败,请重试</string>
+    <string name="update_failed_signature">签名校验失败,已丢弃安装包</string>
     <string name="update_retry_button">重试</string>
     <string name="update_recheck_button">重新检查</string>
 

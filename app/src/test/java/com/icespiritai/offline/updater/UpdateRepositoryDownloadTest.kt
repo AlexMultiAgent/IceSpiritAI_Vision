@@ -3,6 +3,7 @@ package com.icespiritai.offline.updater
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -82,6 +83,48 @@ class UpdateRepositoryDownloadTest {
         }
         assertTrue("IOException expected on HTTP 500", threw)
         outDir.deleteRecursively()
+    }
+
+    @Test
+    fun signatureGate_skipsWhenSignerCertSha256IsEmpty() {
+        // Backward compat: vision-latest.json published before Wave 1 Task 1.2
+        // carries no signerCertSha256; gate must NOT block such updates.
+        val tmp = Files.createTempFile("icespirit-notapk", ".bin").toFile()
+        tmp.writeText("not a real apk, but the verifier must not even be invoked")
+        val infoNoCert = info.copy(signerCertSha256 = "")
+        try {
+            val result = UpdateRepository.verifySignatureForDownload(infoNoCert, tmp)
+            assertNull(
+                "empty signerCertSha256 must skip the cert-pin gate (download → ReadyToInstall)",
+                result,
+            )
+        } finally {
+            tmp.delete()
+        }
+    }
+
+    @Test
+    fun signatureGate_flagsMismatchWhenActualIsNullAndExpectedNonEmpty() {
+        // File is plain text, not a JAR/ZIP — ApkSignatureVerifier returns null.
+        // Gate must surface SignatureMismatch(actual=null, expected=...) and NOT fall
+        // through to ReadyToInstall.
+        val tmp = Files.createTempFile("icespirit-notapk2", ".bin").toFile()
+        tmp.writeText("plain text — JarFile will reject this and return null")
+        val expectedHex = "deadbeef".repeat(8) // 64 chars
+        val infoPinned = info.copy(signerCertSha256 = expectedHex)
+        try {
+            val result = UpdateRepository.verifySignatureForDownload(infoPinned, tmp)
+            assertTrue(
+                "expected SignatureMismatch branch when actual is null",
+                result is UpdateCheckResult.Failed.SignatureMismatch,
+            )
+            result as UpdateCheckResult.Failed.SignatureMismatch
+            assertEquals("deadbeef".repeat(8), result.expected)
+            assertNull("actual must be null when file is unparsable", result.actual)
+            assertEquals("signature_mismatch", result.reasonTag)
+        } finally {
+            tmp.delete()
+        }
     }
 
     private class FakeApkConn(
