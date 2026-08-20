@@ -65,9 +65,9 @@ class BitmapLoaderTest {
     @Test
     fun downsampledBitmap_returnsBitmapWhoseLongestEdgeDoesNotExceedMaxEdge() {
         val bytes = readFixtureBytes("test.png")
-        val bitmap = BitmapLoader.downsampledBitmap(bytes, maxEdgePx = 4096)
-        assertNotNull(bitmap)
-        val longest = maxOf(bitmap!!.width, bitmap.height)
+        val ds = BitmapLoader.downsampledBitmapWithScale(bytes, maxEdgePx = 4096)
+        assertNotNull(ds)
+        val longest = maxOf(ds!!.bitmap.width, ds.bitmap.height)
         assertTrue("Longest edge $longest should be <= 4096", longest <= 4096)
     }
 

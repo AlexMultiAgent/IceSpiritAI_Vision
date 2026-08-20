@@ -26,11 +26,6 @@ object BitmapLoader {
         null
     }
 
-    fun downsampledBitmap(
-        bytes: ByteArray,
-        maxEdgePx: Int = DEFAULT_MAX_EDGE_PX,
-    ): Bitmap? = downsampledBitmapWithScale(bytes, maxEdgePx)?.bitmap
-
     fun downsampledBitmapWithScale(
         bytes: ByteArray,
         maxEdgePx: Int = DEFAULT_MAX_EDGE_PX,
