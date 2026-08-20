@@ -864,5 +864,10 @@ dependencies {
     // requires espresso-core alongside compose.ui.test.junit4 (which provides
     // the Espresso <-> Compose interop hook).
     androidTestImplementation(libs.androidx.espresso.core)
+    // espresso-intents: ExportActionShareTest (P0-3 audit fix) needs to
+    // capture the ACTION_SEND chooser dispatched from ExportAction.share()
+    // on a real device so we can assert MIME, FLAG_GRANT_READ_URI_PERMISSION
+    // and FileProvider authority.
+    androidTestImplementation(libs.androidx.espresso.intents)
     debugImplementation(libs.compose.ui.test.manifest)
 }
