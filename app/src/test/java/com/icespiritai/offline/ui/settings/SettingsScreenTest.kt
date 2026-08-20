@@ -43,7 +43,7 @@ class SettingsScreenTest {
     @Test
     fun `renders the top-bar title`() {
         composeRule.setContent {
-            SettingsScreen(onBack = {}, onOpenChangelog = {})
+            SettingsScreen(onBack = {}, onOpenChangelog = {}, onOpenUpdateDetail = {})
         }
         composeRule.onNodeWithText("设置").assertExists()
     }
@@ -52,7 +52,7 @@ class SettingsScreenTest {
     fun `clicking the back arrow invokes onBack`() {
         var backs = 0
         composeRule.setContent {
-            SettingsScreen(onBack = { backs++ }, onOpenChangelog = {})
+            SettingsScreen(onBack = { backs++ }, onOpenChangelog = {}, onOpenUpdateDetail = {})
         }
         composeRule.onNodeWithContentDescription("返回").performClick()
         assertEquals(1, backs)
@@ -61,7 +61,7 @@ class SettingsScreenTest {
     @Test
     fun `renders the Appearance section`() {
         composeRule.setContent {
-            SettingsScreen(onBack = {}, onOpenChangelog = {})
+            SettingsScreen(onBack = {}, onOpenChangelog = {}, onOpenUpdateDetail = {})
         }
         composeRule.onNodeWithText("外观").assertExists()
     }
@@ -69,7 +69,7 @@ class SettingsScreenTest {
     @Test
     fun `renders the Update section`() {
         composeRule.setContent {
-            SettingsScreen(onBack = {}, onOpenChangelog = {})
+            SettingsScreen(onBack = {}, onOpenChangelog = {}, onOpenUpdateDetail = {})
         }
         composeRule.onNodeWithText("更新").assertExists()
     }
@@ -77,7 +77,7 @@ class SettingsScreenTest {
     @Test
     fun `renders the Changelog row label and hint`() {
         composeRule.setContent {
-            SettingsScreen(onBack = {}, onOpenChangelog = {})
+            SettingsScreen(onBack = {}, onOpenChangelog = {}, onOpenUpdateDetail = {})
         }
         composeRule.onNodeWithText("查看更新日志").assertExists()
         composeRule.onNodeWithText("查看每个版本的修改变动").assertExists()
@@ -87,7 +87,7 @@ class SettingsScreenTest {
     fun `clicking the Changelog row invokes onOpenChangelog`() {
         var opens = 0
         composeRule.setContent {
-            SettingsScreen(onBack = {}, onOpenChangelog = { opens++ })
+            SettingsScreen(onBack = {}, onOpenChangelog = { opens++ }, onOpenUpdateDetail = {})
         }
         composeRule.onNodeWithText("查看更新日志").performClick()
         assertEquals(1, opens)
@@ -96,7 +96,7 @@ class SettingsScreenTest {
     @Test
     fun `renders the version footer`() {
         composeRule.setContent {
-            SettingsScreen(onBack = {}, onOpenChangelog = {})
+            SettingsScreen(onBack = {}, onOpenChangelog = {}, onOpenUpdateDetail = {})
         }
         // string is "版本: %1$s" — the prefix "版本:" must appear.
         composeRule.onNodeWithText("版本:", substring = true).assertExists()

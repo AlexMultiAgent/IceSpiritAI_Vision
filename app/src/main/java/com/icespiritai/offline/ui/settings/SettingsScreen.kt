@@ -38,6 +38,7 @@ import com.icespiritai.offline.settings.SettingsViewModel
 fun SettingsScreen(
     onBack: () -> Unit,
     onOpenChangelog: () -> Unit,
+    onOpenUpdateDetail: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -62,13 +63,18 @@ fun SettingsScreen(
         },
         modifier = modifier,
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(padding),
+        ) {
             AppearanceSection(
                 current = themeMode,
                 onSelect = viewModel::setThemeMode,
             )
             HorizontalDivider()
-            UpdateSection(viewModel = viewModel)
+            UpdateSection(
+                viewModel = viewModel,
+                onOpenUpdateDetail = onOpenUpdateDetail,
+            )
             HorizontalDivider()
             ChangelogRow(onClick = onOpenChangelog)
             HorizontalDivider()

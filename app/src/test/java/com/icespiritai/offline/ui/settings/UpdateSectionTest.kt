@@ -46,7 +46,7 @@ class UpdateSectionTest {
     @Test
     fun `renders the section title`() {
         composeRule.setContent {
-            UpdateSection(viewModel = idleViewModel())
+            UpdateSection(viewModel = idleViewModel(), onOpenUpdateDetail = {})
         }
         composeRule.onNodeWithText("更新").assertExists()
     }
@@ -57,7 +57,7 @@ class UpdateSectionTest {
         // We deliberately do NOT click the button because it would fire a
         // real HTTP request to the Gitea release server.
         composeRule.setContent {
-            UpdateSection(viewModel = idleViewModel())
+            UpdateSection(viewModel = idleViewModel(), onOpenUpdateDetail = {})
         }
         composeRule.onNodeWithText("检查更新").assertExists()
     }

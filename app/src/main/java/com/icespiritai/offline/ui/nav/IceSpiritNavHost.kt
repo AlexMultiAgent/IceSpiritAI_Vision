@@ -16,12 +16,14 @@ import com.icespiritai.offline.domain.AnalysisState
 import com.icespiritai.offline.ui.home.HomeScreen
 import com.icespiritai.offline.ui.settings.ChangelogScreen
 import com.icespiritai.offline.ui.settings.SettingsScreen
+import com.icespiritai.offline.ui.settings.UpdateDetailScreen
 import com.icespiritai.offline.ui.viewer.ViewerScreen
 
 object Routes {
     const val HOME = "home"
     const val SETTINGS = "settings"
     const val CHANGELOG = "changelog"
+    const val UPDATE_DETAIL = "update_detail"
     const val VIEWER = "viewer"
 }
 
@@ -68,10 +70,14 @@ fun IceSpiritNavHost(modifier: Modifier = Modifier) {
                 SettingsScreen(
                     onBack = { nav.popBackStack() },
                     onOpenChangelog = { nav.navigate(Routes.CHANGELOG) },
+                    onOpenUpdateDetail = { nav.navigate(Routes.UPDATE_DETAIL) },
                 )
             }
             composable(Routes.CHANGELOG) {
                 ChangelogScreen(onBack = { nav.popBackStack() })
+            }
+            composable(Routes.UPDATE_DETAIL) {
+                UpdateDetailScreen(onBack = { nav.popBackStack() })
             }
             composable(Routes.VIEWER) {
                 val state by sharedVm.state.collectAsState()

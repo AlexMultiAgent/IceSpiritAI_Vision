@@ -31,6 +31,7 @@ import com.icespiritai.offline.updater.UpdateState
 @Composable
 fun UpdateSection(
     viewModel: SettingsViewModel,
+    onOpenUpdateDetail: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.updateState.collectAsStateWithLifecycle()
@@ -69,11 +70,12 @@ fun UpdateSection(
                             stringResource(R.string.update_available_banner, s.info.versionName),
                             style = MaterialTheme.typography.bodyLarge,
                         )
-                        Spacer(Modifier.height(4.dp))
-                        Text(s.info.changelog, style = MaterialTheme.typography.bodySmall)
                         Spacer(Modifier.height(8.dp))
                         Button(onClick = { viewModel.download(s.info, context) }) {
                             Text(stringResource(R.string.update_download_button))
+                        }
+                        TextButton(onClick = onOpenUpdateDetail) {
+                            Text(stringResource(R.string.update_detail_button))
                         }
                     }
                 }

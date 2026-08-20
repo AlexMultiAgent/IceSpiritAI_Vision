@@ -73,6 +73,9 @@
     <string name="update_failed_signature">签名校验失败,已丢弃安装包</string>
     <string name="update_retry_button">重试</string>
     <string name="update_recheck_button">重新检查</string>
+    <string name="update_detail_button">查看更新详情</string>
+    <string name="update_detail_title">更新详情</string>
+    <string name="update_detail_no_pending">当前没有可用更新</string>
 
     <!-- v0.1.11 image viewer (Routes.VIEWER) — see docs/superpowers/specs/2026-08-19-icevision-image-viewer-design.md -->
     <string name="viewer_title">原图查看</string>
