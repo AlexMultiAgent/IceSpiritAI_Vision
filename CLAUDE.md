@@ -115,6 +115,17 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 
 两个脚本幂等,执行后即可 `./gradlew.bat assembleDebug -PmodelProfile=ice_ocr_rules`。
 
+## Instrumented test / 真机 A/B (androidTest)
+
+跑 `connectedDebugAndroidTest` 在华为 nova 6(ANN-AN00,SDK 35)上踩过的坑,后人不要重蹈:
+
+- **`connectedDebugAndroidTest` 不接 `--tests`**(常规 JUnit 平台参数 AGP 不透传)。单 class 过滤用 Gradle property:`-Pandroid.testInstrumentationRunnerArguments.class=com.icespiritai.offline.ocr.Xxx`(AGP 透传为 `-e class <FQN>` 到 AndroidJUnitRunner)。
+- **`app/src/androidTest/assets/` 打进的是 test APK,不是 main APK**。Fixture 图必须放这里,**不要** `adb push /sdcard/` + ContentResolver — 流程不稳,`openInputStream` 走不通。要么 assets,要么 staging 到 `appCtx.cacheDir` 后从 test APK assets 拷入。
+- **Logcat ring buffer 几分钟内轮转 — 测试后再 `adb logcat -d` 拉不到自己 tag 的数据**。配套模式:`adb logcat -c; (adb logcat -v time TAG:I '*:S' > file.out) &; ./gradlew connectedDebugAndroidTest ...` 后台捕获必须在测试启动前开,test harness 用 `Log.i("MyTag", ...)` 落数据。
+- **`@Test fun foo() = runBlocking { ... Log.i(...) }` 返回 Int**(Log.i 的返回),JUnit 校验拒绝("Method should be void"),`runBlocking` body 末尾必须显式 `Unit`。
+- **真机冷启动 vs warm 延迟必须分开报**。`PaddleOCR.create()` 模型加载一次性 ~5s,per-image warm 平均 ~2.6s(华为 nova 6 ARM64 + 4-thread),混在一起看不出趋势。harness 模式:1 次 cold + N 次 warm,分别计 `cold_ms` / `warm_total_ms` / `warm_avg_ms`。
+- **华为 nova 6 PackageManager ghost state**:`adb install -r` 可能 `INSTALL_FAILED_UPDATE_INCOMPATIBLE: Existing package ... signatures do not match`,但 `pm list packages` 看不到该包。`pm uninstall` / `pm uninstall -k` 均 `DELETE_FAILED_INTERNAL_ERROR`;`pm clear` 报 "Failed" 但 exit 0。**workaround**:`adb shell pm clear com.icespiritai.vision` 后再 `adb install -r APK` 即可 — `pm clear` 虽报错但会把 ghost state 清掉。
+
 ## 开发环境
 
 - **JDK 17**:buildSrc 锁定 `jvmToolchain(17)`(forward-path baseline)。WIN runner 默认 `JAVA_HOME` 是 JDK 25(找不到匹配 toolchain,build 启动失败)。本仓库已手动 stage 的路径:`/c/Users/37311/.gradle/jdks/jdk-17.0.18+8`(OpenJDK 17.0.18+8)。运行命令前必须显式 `export JAVA_HOME="/c/Users/37311/.gradle/jdks/jdk-17.0.18+8"`。`gradle.properties` 另开 `org.gradle.java.installations.auto-download=true` 兜底(foojay 镜像在 CN 受限,通常需手动 stage)。
