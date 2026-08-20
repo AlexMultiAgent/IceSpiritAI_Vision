@@ -1,0 +1,88 @@
+package com.icespiritai.offline.rules
+
+import androidx.test.core.app.ApplicationProvider
+import com.icespiritai.offline.domain.RuleLoadFailed
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+/**
+ * Loader-level tests for AdSignageRuleLoader — the seam between the bundled
+ * `rules/ad_signage_rules.json` asset and the AdSignageRuleMatcher used by
+ * the ViewModel. Pairs with `AssetRuleLoaderTest`, which tests the JSON
+ * schema independently; this test exercises the full IO path through
+ * `context.assets.open(...)`.
+ *
+ * Malformed-JSON coverage is intentionally left to `AssetRuleLoaderTest` —
+ * Robolectric's AssetManager cannot inject a synthetic bad-JSON file
+ * without wrapping the loader seam, and that refactor is out of scope.
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33])
+class AdSignageRuleLoaderTest {
+
+    @Test
+    fun load_realAssets_doesNotThrow() {
+        // The bundled asset is profile-dependent: `shell` ships empty rules
+        // (skeleton), `ice_ocr_rules` ships the full v5 dataset. Either way,
+        // the loader must complete without throwing and return a List.
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val rules = AdSignageRuleLoader(ctx).load()
+        assertNotNull("loader must return a non-null List", rules)
+        // Whichever profile, returned rules must satisfy the per-rule
+        // invariant: if any rule exists, it must have a non-blank provision
+        // and a unique id. Skeleton profile yields [] which vacuously holds.
+        assertTrue(
+            "every loaded rule must bundle a non-blank provision",
+            rules.all { it.lawText.isNotBlank() },
+        )
+        assertTrue(
+            "every loaded rule id must be unique",
+            rules.map { it.id }.toSet().size == rules.size,
+        )
+    }
+
+    @Test
+    fun load_explicitAssetPath_doesNotThrow() {
+        // Same shape-of-return guarantee when the constructor receives an
+        // explicit path — covers the variant where a future caller passes
+        // a non-default path.
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val rules = AdSignageRuleLoader(ctx, path = "rules/ad_signage_rules.json").load()
+        assertNotNull(rules)
+    }
+
+    @Test
+    fun load_missingPath_throwsRuleLoadFailed() {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        try {
+            AdSignageRuleLoader(ctx, path = "rules/__definitely_does_not_exist__.json").load()
+            fail("expected RuleLoadFailed for missing asset path")
+        } catch (e: RuleLoadFailed) {
+            assertTrue(
+                "RuleLoadFailed message should reference the missing path",
+                e.message?.contains("__definitely_does_not_exist__") == true,
+            )
+            assertNotNull("RuleLoadFailed must retain its cause", e.cause)
+        }
+    }
+
+    @Test
+    fun load_emptyPath_throwsRuleLoadFailed() {
+        // Empty string is not a valid AssetManager key — AssetManager throws
+        // and the loader wraps it in RuleLoadFailed.
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        try {
+            AdSignageRuleLoader(ctx, path = "").load()
+            fail("expected RuleLoadFailed for empty asset path")
+        } catch (e: RuleLoadFailed) {
+            // Just assert the failure mode — message text is implementation-defined.
+            assertEquals(RuleLoadFailed::class.java, e::class.java)
+        }
+    }
+}
