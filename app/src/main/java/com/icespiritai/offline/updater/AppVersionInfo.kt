@@ -11,6 +11,7 @@ data class AppVersionInfo(
     val apkSha256: String,
     val changelog: String = "",
     val apkCumulativeDownloads: Long = 0,
+    val signerCertSha256: String = "",
 )
 
 sealed class UpdateCheckResult {
