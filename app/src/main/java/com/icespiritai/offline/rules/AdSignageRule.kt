@@ -15,6 +15,7 @@ data class AdSignageRule(
      * card can show the exact legal wording offline without a network lookup.
      */
     val lawText: String = "",
+    val sourceMarkers: List<String> = emptyList(),
 )
 
 /**
