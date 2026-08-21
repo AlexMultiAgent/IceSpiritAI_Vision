@@ -126,6 +126,17 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 - **真机冷启动 vs warm 延迟必须分开报**。`PaddleOCR.create()` 模型加载一次性 ~5s,per-image warm 平均 ~2.6s(华为 nova 6 ARM64 + 4-thread),混在一起看不出趋势。harness 模式:1 次 cold + N 次 warm,分别计 `cold_ms` / `warm_total_ms` / `warm_avg_ms`。
 - **华为 nova 6 PackageManager ghost state**:`adb install -r` 可能 `INSTALL_FAILED_UPDATE_INCOMPATIBLE: Existing package ... signatures do not match`,但 `pm list packages` 看不到该包。`pm uninstall` / `pm uninstall -k` 均 `DELETE_FAILED_INTERNAL_ERROR`;`pm clear` 报 "Failed" 但 exit 0。**workaround**:`adb shell pm clear com.icespiritai.vision` 后再 `adb install -r APK` 即可 — `pm clear` 虽报错但会把 ghost state 清掉。
 
+## Unit test 踩坑(2026-08-21 v0.1.14)
+
+- **Robolectric + Compose `LazyColumn` viewport 太小,首屏 item 不一定 compose**:`composeRule.onNodeWithText("v0.1.X", substring=true).assertExists()` 在 LazyColumn 渲染的列表上稳定失败,即使 LazyColumn 顶部第一个 entry 也没被合成(Robolectric 默认 Activity metrics 太小,LazyColumn 没到 viewport 就跳过 item 合成)。**不要给 LazyColumn 的滚动断言加 `waitForIdle` / `performScrollTo`** — flaky 不会消失。替代方案:把"最新版渲染正确"这种断言改成 **parser-level unit test**(JVM,无 Compose):
+  ```kotlin
+  val ctx = ApplicationProvider.getApplicationContext<Context>()
+  val md = ctx.assets.open("user-changelog.md").bufferedReader().use { it.readText() }
+  val entries = VersionHistoryRenderer.parse(md)
+  assertEquals("v0.1.X", entries.first().version)
+  ```
+  这样断言的是 `VersionHistoryRenderer.parse` 的契约(纯函数),不依赖 Compose 合成 / LazyColumn viewport,稳定 + 快;适用场景:任何"asset 第一段 = shipping version"的回归 pin(每个版本 bump 都要改这里的字面量)。
+
 ## 开发环境
 
 - **JDK 17**:buildSrc 锁定 `jvmToolchain(17)`(forward-path baseline)。WIN runner 默认 `JAVA_HOME` 是 JDK 25(找不到匹配 toolchain,build 启动失败)。本仓库已手动 stage 的路径:`/c/Users/37311/.gradle/jdks/jdk-17.0.18+8`(OpenJDK 17.0.18+8)。运行命令前必须显式 `export JAVA_HOME="/c/Users/37311/.gradle/jdks/jdk-17.0.18+8"`。`gradle.properties` 另开 `org.gradle.java.installations.auto-download=true` 兜底(foojay 镜像在 CN 受限,通常需手动 stage)。
@@ -141,6 +152,19 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 - 所有 commit 作者必须是 `AlexMultiAgent`(仓库 git config 已锁)。**绝不要** 加 `Co-Authored-By: Claude` trailer——也包括 `Co-Authored-By: AlexMultiAgent <noreply@anthropic.com>` 这种把 `user.name` 替换成 `AlexMultiAgent` 但保留 anthropic 邮箱的隐性 AI agent trailer(2026-08-20 audit 发现历史 commit 全部命中此形式)。提交前 `git log -1 --format='%B' | grep -i 'Co-Authored-By'` 应为空。
 - `gradle.token.properties`(Gitea PAT)、`~/.gradle/gradle.properties`(release signing)已在 `.gitignore`,不要尝试 commit 它们。
 - 提交前 `git status` 检查是否包含敏感文件;`git add` 用具体路径,避免 `git add -A`。
+
+## 发布流水线踩坑(2026-08-21 v0.1.14)
+
+- **`uploadVisionReleaseToGitea` 大文件 POST 偶发卡住(HTTP 100 + curl 超时)**:
+  - 症状:删除已有 APK + JSON 成功(`HTTP=204`),但随后 `POST .../assets` 上传 APK 一直返回 HTTP 100,10m 内不返最终 status code,`--max-time 600` 触发超时
+  - **不要回滚代码**:这只是 Gitea 端瞬时问题,APK 已字节级通过 cert-pin gate(本地的 `发布版历史存档/最新版改名上传/icespritai-vision.apk` 是权威 source of truth);先看 `发布版历史存档/最新版改名上传/vision-latest.json` 的 `signerCertSha256` 是否 = `4a21f4...3043`
+  - 恢复步骤(纯 curl,与 build.gradle.kts 内的 curl 等价):
+    1. 先 POST vision-latest.json(1.4 KB,~1s 内完成)→ 客户端至少能拉到 v0.1.14 metadata
+    2. 再 POST icespritai-vision.apk(`--max-time 900` 替 `--max-time 600`,给大文件更宽裕)
+    3. 删残留:DELETE 任何重复 asset id(curl 探测失败的中间状态可能留下重复 JSON)
+  - 客户端视角最终态校验:
+    - `curl -sI <apkUrl>` 应返 `Content-Length: <本地 APK size>` + `HTTP 200`
+    - `curl <jsonUrl>` 应含 `versionCode:14`、`signerCertSha256: 4a21f4...3043`
 
 ## 文档索引
 
