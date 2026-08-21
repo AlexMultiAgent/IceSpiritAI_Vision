@@ -57,7 +57,7 @@ class AdSignageMentorFiveImageRegressionTest {
             // 右侧 billboard:墅蓝·多行玉米种子
             "墅蓝·多行",
             "有效增加玉米单行数",
-            "增产必选",
+            "必增产",
             "服务电话:400-658-9878",
             // 左侧 billboard:青芒农业
             "青芒农业",
@@ -283,5 +283,30 @@ class AdSignageMentorFiveImageRegressionTest {
             "baseline art11 命中的 matchedText 应是 '万人'(AC 首个 claim kw)",
             "万人", art11.first().matchedText,
         )
+    }
+
+    @Test
+    fun mentorReview_cornSeed_yieldGuaranteeFires() {
+        // v0.1.16 扩展:玉米种子「必增产」是 §27 产量保证 / 功效断言模式,报 Violation
+        val matcher = AdSignageRuleMatcher(loadRealRules())
+        val hits = matcher.scan(fixtures.getValue("5_2011_highway_billboard"))
+        val ids = hits.map { it.ruleId }.toSet()
+        val art27 = hits.filter { it.ruleId == "ad_signage_art27_seed_yield_guarantee" }
+
+        // 必须命中 §27 规则(原 0 命中 → 至少 1 个 Violation)
+        assertTrue(
+            "玉米种子广告应命中 §27 产量保证规则,实际 ids: $ids",
+            "ad_signage_art27_seed_yield_guarantee" in ids,
+        )
+        assertEquals(
+            "玉米种子广告应至少 1 个 §27 命中(legacy 路径按 distinct keyword 去重)",
+            1, art27.size,
+        )
+        assertEquals(Severity.Violation, art27.first().severity)
+        // regulation 字段仅引《广告法》第二十七条 + 第五十八条
+        assertEquals("《广告法》第二十七条 + 第五十八条", art27.first().regulation)
+        assertEquals("必增产", art27.first().matchedText)
+        // category = 新增 agricultural
+        assertEquals("agricultural", art27.first().category)
     }
 }

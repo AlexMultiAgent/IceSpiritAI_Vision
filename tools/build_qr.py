@@ -29,9 +29,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # for a new APK.
 #
 # The asset name `icespiritai-vision.apk` is set by
-# `app/build.gradle.kts :: archiveVisionRelease` (the in-app update
-# channel filename, separate from `app-release.apk` which is the
-# permanently archived copy under `发布版历史存档/`).
+# `app/build.gradle.kts :: archiveVisionRelease` (renames `app-release.apk`
+# to `icespiritai-vision.apk` so the Gitea multipart upload registers the
+# asset under that filename — same as the in-app update channel).
 DEFAULT_URL = "http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/icespiritai-vision.apk"
 DEFAULT_OUT_DIR = REPO_ROOT / "docs" / "promo"
 DEFAULT_LOGO = REPO_ROOT / "app/src/main/res/drawable-nodpi/ic_launcher_foreground.png"

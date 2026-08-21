@@ -1,5 +1,17 @@
 # 用户更新日志
 
+## v0.1.16 · 2026-08-21
+
+- **新增规则:广告法 第二十七条 · 农作物种子 / 种养殖广告无根据的产量 / 效益保证**(severity `Violation`)
+  - 新规则 id `ad_signage_art27_seed_yield_guarantee`,category `agricultural`(新增 CategoryDisplay 中文 label 「农业投入品广告」)
+  - 触发模式:种子 / 种苗 / 农药 / 兽药 / 饲料 / 化肥广告中含「必增产 / 保证增产 / 确保增产 / 承诺增产 / 产量保证 / 产量承诺 / 高产保证 / 保证丰产 / 保证稳产 / 效益保证 / 效益承诺 / 增产达 / 亩产保证 / 科学上无法验证」等无根据的产量 / 效益断言或保证性承诺
+  - 法规依据:《广告法》第二十七条(原文已在 `知识库/广告业务/中华人民共和国广告法.md` L185-193,适用判别要点已扩 §27 条目)+ 第五十八条处罚条款
+  - 触发案例:玉米种子高速广告「必增产」现在报 Violation(此前 0 命中)
+- **`AdSignageRule` 规则库 v5 → v6**(118 → 120 条)
+- **fixture 转写修正**:`AdSignageMentorFiveImageRegressionTest` 中 5_2011 玉米种子广告 fixture 文本「增产必选」修正为「必增产」(与原图 OCR 一致;此前手转写笔误)
+- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`)
+- `versionCode 15→16`,`versionName 0.1.15→0.1.16`
+
 ## v0.1.15 · 2026-08-21
 
 - **新增规则：广告法 第十一条第二款 · 数据未标明出处**（severity `Warning`）

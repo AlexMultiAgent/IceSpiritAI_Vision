@@ -61,8 +61,8 @@ android {
         applicationId = "com.icespiritai.vision"
         minSdk = 26
         targetSdk = 37
-        versionCode = 15
-        versionName = "0.1.15"
+        versionCode = 16
+        versionName = "0.1.16"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -369,15 +369,19 @@ androidComponents {
 //
 //   assembleRelease
 //     -> generateVisionLatestJson  (verifies cert + emits vision-latest.json)
-//     -> archiveVisionRelease       (copies APK to archive + stages for upload)
+//     -> archiveVisionRelease       (stages renamed APK + JSON into build/)
 //     -> uploadVisionReleaseToGitea (curl.exe idempotent upload to Gitea)
 //
-// All three are remote-side-effect-tasks (the upload one) or produce
-// files outside the source tree (archive + JSON staging), so they live
-// in the project repo root `发布版历史存档/` dir (gitignored — translate's
-// same convention). MUST STAY IN SYNC with translate's pipeline + with
-// the JVM-mirrored helpers in LatestJsonGenerator.kt (build) and
-// ApkSignatureVerifier.kt (runtime).
+// 2026-08-21: removed the versioned-archive copy that previously wrote
+// to `发布版历史存档/`. Staging now lives under `build/generated/release-staging/`
+// (gitignored via `build/`) so release artifacts never leak outside the
+// build tree. The APK rename to `icespiritai-vision.apk` is still done
+// in `archiveVisionRelease` because the Gitea release asset name is the
+// basename of the multipart upload — clients read that exact filename.
+//
+// MUST STAY IN SYNC with translate's pipeline + with the JVM-mirrored
+// helpers in LatestJsonGenerator.kt (build) and ApkSignatureVerifier.kt
+// (runtime).
 //
 // Phase 1 differences from translate:
 //   - No CHANGELOG.md parsing (vision's CHANGELOG doesn't exist yet)
@@ -466,9 +470,9 @@ tasks.register("generateVisionLatestJson") {
         val dir = apkDir.get().asFile
         // AGP 9.x default release output filename is `app-release.apk`. We
         // keep that name (no in-place rename — AGP 9 removed
-        // `android.applicationVariants.all`); the versioned archive copy in
-        // `archiveVisionRelease` carries the `icespiritai-vision-vX.Y.Z.apk`
-        // convention for archaeology / rollback.
+        // `android.applicationVariants.all`); `archiveVisionRelease` does
+        // the rename to `icespiritai-vision.apk` downstream — required for
+        // the Gitea release asset name (multipart upload basename).
         val apk = dir.listFiles { f -> f.name == "app-release.apk" }
             ?.singleOrNull()
             ?: error("generateVisionLatestJson: expected app-release.apk in $dir, found ${dir.listFiles()?.size ?: 0} files")
@@ -547,22 +551,21 @@ tasks.register("generateVisionLatestJson") {
 
 // ----- archiveVisionRelease -----
 //
-// Copies the signed release APK to 发布版历史存档/ (versioned archive)
-// and stages a renamed copy (icespiritai-vision.apk) +
-// vision-latest.json into 发布版历史存档/最新版改名上传/ for the Gitea
-// upload. The versioned archive preserves every release's APK; the
-// upload staging dir holds only the latest release's renamed APK + JSON.
-val archiveDir = rootProject.file("发布版历史存档")
-val uploadStagingDir = rootProject.file("发布版历史存档/最新版改名上传")
+// Stages the signed release APK as `icespiritai-vision.apk` (the Gitea
+// release asset name = multipart upload basename — clients read this
+// filename directly) + vision-latest.json into a build-local staging
+// dir consumed by uploadVisionReleaseToGitea. Lives under
+// `build/generated/release-staging/` rather than the repo root so
+// release artifacts never leak outside the build tree.
+val uploadStagingDir = layout.buildDirectory.dir("generated/release-staging").get().asFile
 
 tasks.register("archiveVisionRelease") {
     group = "build"
-    description = "Copy the signed release APK to 发布版历史存档/ + stage renamed APK + JSON into 最新版改名上传/."
+    description = "Stage renamed APK + vision-latest.json into build/generated/release-staging/ for upload."
     val apkDir = layout.buildDirectory.dir("outputs/apk/release")
     inputs.dir(apkDir)
     val outJson = apkDir.map { it.file("vision-latest.json") }
     inputs.file(outJson)
-    outputs.dir(archiveDir)
     outputs.dir(uploadStagingDir)
     dependsOn("generateVisionLatestJson")
     doLast {
@@ -575,33 +578,18 @@ tasks.register("archiveVisionRelease") {
             "archiveVisionRelease: expected ${json.absolutePath} but it does not exist. Did generateVisionLatestJson run first?"
         }
 
-        // 1. Versioned archive: APK only (preserves per-release history).
-        if (!archiveDir.exists()) archiveDir.mkdirs()
-        require(archiveDir.isDirectory) {
-            "archiveVisionRelease: ${archiveDir.absolutePath} exists but is not a directory"
-        }
-        // Archive filename uses the versioned convention
-        // (icespiritai-vision-vX.Y.Z.apk) so multiple releases can coexist in
-        // the archive dir without overwriting each other. We don't rename the
-        // source APK (AGP 9 removed applicationVariants.all); the renamed
-        // archive copy preserves archaeology + rollback.
-        val versionedName = "icespiritai-vision-v${android.defaultConfig.versionName}.apk"
-        val apkArchiveDest = archiveDir.resolve(versionedName)
-        // Byte-for-byte copy via buffered streams so the APK signature
-        // stays intact (Windows File.copy can mangle binary writes if
-        // not opened in binary mode).
-        FileInputStream(apk).use { ins ->
-            FileOutputStream(apkArchiveDest).use { out ->
-                ins.copyTo(out, bufferSize = 64 * 1024)
-            }
-        }
-
-        // 2. Upload staging: APK renamed to icespiritai-vision.apk + JSON.
+        // Upload staging: APK renamed to icespiritai-vision.apk + JSON.
+        // The Gitea release asset name comes from the multipart upload
+        // basename, so the rename is non-negotiable — clients fetch
+        // `<gitea>/.../latest/icespiritai-vision.apk` directly.
         if (!uploadStagingDir.exists()) uploadStagingDir.mkdirs()
         require(uploadStagingDir.isDirectory) {
             "archiveVisionRelease: ${uploadStagingDir.absolutePath} exists but is not a directory"
         }
         val apkUploadDest = uploadStagingDir.resolve("icespiritai-vision.apk")
+        // Byte-for-byte copy via buffered streams so the APK signature
+        // stays intact (Windows File.copy can mangle binary writes if
+        // not opened in binary mode).
         FileInputStream(apk).use { ins ->
             FileOutputStream(apkUploadDest).use { out ->
                 ins.copyTo(out, bufferSize = 64 * 1024)
@@ -611,8 +599,7 @@ tasks.register("archiveVisionRelease") {
         json.copyTo(jsonUploadDest, overwrite = true)
 
         logger.lifecycle(
-            "archiveVisionRelease: copied ${apk.name} -> ${apkArchiveDest.absolutePath} " +
-                "(apkSize=${apk.length()}); staged icespiritai-vision.apk -> ${apkUploadDest.absolutePath}, " +
+            "archiveVisionRelease: staged icespiritai-vision.apk -> ${apkUploadDest.absolutePath}, " +
                 "vision-latest.json -> ${jsonUploadDest.absolutePath}"
         )
     }

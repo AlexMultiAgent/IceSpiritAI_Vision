@@ -48,6 +48,7 @@ object AdSignageCategory {
         "veterinary" -> "兽药类广告"
         "cosmetic" -> "化妆品广告"
         "internet_ad" -> "互联网广告"
+        "agricultural" -> "农业投入品广告"
         else -> category
     }
 }

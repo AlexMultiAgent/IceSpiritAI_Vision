@@ -2,6 +2,17 @@
 # Domain-specific rules (model staging, mirror staging, etc.) intentionally omitted
 # for the initial Vision scaffold; add when needed.
 
+# Per-machine ad-hoc test fixtures (real-device photos + transcriptions).
+# 2026-08-21: never stage these — they contain real OCR captures and
+# research notes that should stay local.
+测试集/
+
+# Historical release APK archive. The Gradle release pipeline no longer
+# writes here as of 2026-08-21 (staging moved to build/generated/release-staging/),
+# but the directory persists on disk with prior releases. Keep ignored so
+# it doesn't pollute git status.
+发布版历史存档/
+
 # .claude/ holds both per-machine transient state AND project-shared automation.
 # Allow the project-shared surface; ignore the rest.
 .claude/home_*.png
@@ -85,9 +96,6 @@ logcat_output.txt
 .idea/gradle.xml
 .idea/navEditor.xml
 .idea/assetWizardSettings.xml
-
-# Release APK local archive.
-发布版历史存档/
 
 # uploadVisionReleaseToGitea Gradle task reads this for the Gitea PAT.
 # Tracked: gradle.token.properties.example (template).

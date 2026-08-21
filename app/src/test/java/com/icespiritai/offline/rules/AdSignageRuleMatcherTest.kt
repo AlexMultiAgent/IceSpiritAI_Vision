@@ -2070,4 +2070,64 @@ class AdSignageRuleMatcherTest {
         )
         assertEquals(0, hits.size)
     }
+
+    // --- 《广告法》第二十七条 农作物种子 / 种养殖广告 产量 / 效益保证 ---
+    @Test fun scan_art27SeedYieldGuarantee_firesOnBiZengchan() {
+        val r = AdSignageRule(
+            id = "ad_signage_art27_seed_yield_guarantee",
+            category = "agricultural",
+            regulation = "《广告法》第二十七条 + 第五十八条",
+            keywords = listOf(
+                "必增产", "保证增产", "确保增产", "承诺增产",
+                "产量保证", "产量承诺", "高产保证", "保证丰产", "保证稳产",
+                "效益保证", "效益承诺", "增产达", "亩产保证",
+                "科学上无法验证"
+            ),
+            severity = Severity.Violation
+        )
+        // 真实 5_2011 玉米种子广告原文:右侧 billboard "必增产" + "服务电话:400-658-9878"
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "墅蓝·多行 玉米种子\n必增产\n增产必选\n服务电话:400-658-9878"
+        )
+        // 命中: 必增产 → 1 hit(absence 规则不适用 §27,所以走 legacy 路径,keyword 命中即报)
+        // 注:"增产必选" 不在 keyword 列表中,不应命中
+        assertEquals("必增产 应触发 §27", 1, hits.size)
+        assertEquals("ad_signage_art27_seed_yield_guarantee", hits[0].ruleId)
+        assertEquals(Severity.Violation, hits[0].severity)
+        assertEquals("必增产", hits[0].matchedText)
+    }
+
+    @Test fun scan_art27SeedYieldGuarantee_firesOnGuaranteeIncrease() {
+        val r = AdSignageRule(
+            id = "ad_signage_art27_seed_yield_guarantee",
+            category = "agricultural",
+            regulation = "《广告法》第二十七条 + 第五十八条",
+            keywords = listOf("必增产", "保证增产", "确保增产", "承诺增产"),
+            severity = Severity.Violation
+        )
+        // "保证增产" / "确保增产" / "承诺增产" 都是 §27(二) 功效保证的不同写法
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "本品种保证增产,确保增产,承诺增产"
+        )
+        // 经 TextNormalizer 归一后:"保证增产" / "确保增产" / "承诺增产" 是 3 个 distinct keywords
+        // (归一后仍是 3 个 distinct,因为它们字面不同)
+        assertTrue("保证增产系列应命中 ≥3", hits.size >= 3)
+        assertTrue(hits.all { it.ruleId == "ad_signage_art27_seed_yield_guarantee" })
+        assertTrue(hits.all { it.severity == Severity.Violation })
+    }
+
+    @Test fun scan_art27SeedYieldGuarantee_doesNotFireOnNormalAgricultureCopy() {
+        val r = AdSignageRule(
+            id = "ad_signage_art27_seed_yield_guarantee",
+            category = "agricultural",
+            regulation = "《广告法》第二十七条 + 第五十八条",
+            keywords = listOf("必增产", "保证增产", "确保增产", "承诺增产"),
+            severity = Severity.Violation
+        )
+        // 正常种子广告:仅说"有效增加玉米单行数",没有保证/断言/承诺
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "有效增加玉米单行数\n品种:青芒农业\n建桩待 1.5 亿种植 10 亿\n股票代码 Z:1526999"
+        )
+        assertEquals("正常种子广告文案不应触发 §27", 0, hits.size)
+    }
 }
