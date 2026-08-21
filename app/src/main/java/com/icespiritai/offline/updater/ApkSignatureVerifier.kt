@@ -1,11 +1,31 @@
 package com.icespiritai.offline.updater
 
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.security.MessageDigest
 import java.security.cert.CertificateFactory
 import java.util.jar.JarFile
+
+/**
+ * Outcome of comparing an APK's v1 signer-cert fingerprint against the
+ * pinned `AppVersionInfo.signerCertSha256`.
+ *
+ * - [Match]  — cert present and equals the expected SHA-256 (case-insensitive).
+ *   Empty `actualCertSha256` represents the v1-spec "skip gate" path (empty
+ *   expected), which the in-app update flow treats as "no pinning enforced,
+ *   accept".
+ * - [Mismatch] — expected was non-empty AND (no cert could be parsed from
+ *   the APK, or the parsed cert's SHA-256 did not match). `actual = null`
+ *   means the verifier could not even produce a fingerprint (no v1
+ *   signature block, parse failure, etc.) — caller MUST treat this as
+ *   "unverifiable, block the update", same as a non-null mismatch.
+ */
+sealed class VerifierResult {
+    data class Match(val actualCertSha256: String) : VerifierResult()
+    data class Mismatch(val expected: String, val actual: String?) : VerifierResult()
+}
 
 /**
  * Reads the v1 signer certificate SHA-256 fingerprint from an APK file.
@@ -50,7 +70,12 @@ object ApkSignatureVerifier {
      * Any failure is logged at warn level (class name only, no PII / cert
      * bytes) and returns `null` — callers treat `null` as "unverifiable,
      * block the update".
+     *
+     * Kept public + `@VisibleForTesting` so unit tests can drive the raw
+     * fingerprint path. Production callers should use [verify], which wraps
+     * this into a [VerifierResult] suitable for pattern-matching.
      */
+    @VisibleForTesting
     fun readFirstSignerCert(apk: File): String? = try {
         if (!apk.exists()) return null
         JarFile(apk).use { jar ->
@@ -65,6 +90,38 @@ object ApkSignatureVerifier {
     } catch (t: Throwable) {
         Log.w(TAG, "readFirstSignerCert failed: ${t.javaClass.simpleName}")
         null
+    }
+
+    /**
+     * Compare the APK's v1 signer-cert fingerprint against [expectedCertSha256].
+     *
+     * Returns:
+     *  - [VerifierResult.Match] when [expectedCertSha256] is empty (v1-spec
+     *    "skip gate" path — no pinning enforced, accept). The carried
+     *    `actualCertSha256` is the empty string in that case, NOT the
+     *    actual fingerprint, so callers don't accidentally log it as
+     *    "verified against".
+     *  - [VerifierResult.Match] when [expectedCertSha256] is non-empty and
+     *    case-insensitively matches the parsed cert's SHA-256 hex.
+     *  - [VerifierResult.Mismatch] when [expectedCertSha256] is non-empty
+     *    AND the cert could not be parsed (`actual = null`) or its SHA-256
+     *    did not match (`actual = "<parsed hex>"`). Caller MUST treat both
+     *    shapes as "block the update".
+     *
+     * The case-insensitive comparison matters because [readFirstSignerCert]
+     * emits lower-case hex but the pinned value in `vision-latest.json` may
+     * carry any casing depending on which tool computed it; build-time
+     * `extractApkCertificateSha256` happens to also emit lower-case, but the
+     * runtime must not assume that.
+     */
+    fun verify(apk: File, expectedCertSha256: String): VerifierResult {
+        if (expectedCertSha256.isEmpty()) return VerifierResult.Match("")
+        val actual = readFirstSignerCert(apk)
+        return if (actual != null && actual.equals(expectedCertSha256, ignoreCase = true)) {
+            VerifierResult.Match(actual)
+        } else {
+            VerifierResult.Mismatch(expected = expectedCertSha256, actual = actual)
+        }
     }
 
     /**
