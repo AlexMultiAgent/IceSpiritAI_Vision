@@ -1911,4 +1911,88 @@ class AdSignageRuleMatcherTest {
         assertEquals(1, hits.size)
         assertEquals("ad_signage_veterinary_art5_deprecate", hits[0].ruleId)
     }
+
+    // --- 《广告法》第十一条第二款 absence 复合匹配(TDD, 2026-08-21 v0.1.15) ---
+    //
+    // 当 rule.sourceMarkers 非空时,matcher 跑两遍 AC:
+    //   1. claim keywords → 收集 RuleHit
+    //   2. source markers → 收集命中的 ruleIds
+    // 最终过滤:对一个 absence rule,只要它的 source marker 在文本里出现,就
+    // 抑制该 rule 的所有 claim hits(数据有出处 = 合法)。所有 117 条既有规则
+    // 的 sourceMarkers = emptyList(),走的是旧路径,行为字节级不变。
+    // `scan_emptySourceMarkers_legacyPathUnchanged` 在改动期间 pin 这条路径。
+
+    @Test
+    fun scan_absenceRule_firesWhenClaimPresentSourceAbsent() {
+        val r = AdSignageRule(
+            id = "ad_signage_art11_data_citation",
+            category = "signage",
+            regulation = "《广告法》第十一条第二款",
+            keywords = listOf("万", "累计"),
+            severity = Severity.Warning,
+            sourceMarkers = listOf("据", "报告", "来源"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("全国技师超9万人｜累计服务超1000万次")
+        assertEquals(1, hits.size)
+        assertEquals(Severity.Warning, hits.first().severity)
+        // matchedText 应记录 claim 关键词,不是 source
+        assertTrue(hits.first().matchedText in listOf("万", "累计"))
+    }
+
+    @Test
+    fun scan_absenceRule_doesNotFireWhenSourceMarkerPresent() {
+        val r = AdSignageRule(
+            id = "ad_signage_art11_data_citation",
+            category = "signage",
+            regulation = "《广告法》第十一条第二款",
+            keywords = listOf("万"),
+            severity = Severity.Warning,
+            sourceMarkers = listOf("据", "报告"),
+        )
+        // claim 在,source "据 艾瑞" 也在 → absence 不成立
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("据艾瑞 2024 年报告,本品牌累计服务超1000万次")
+        assertEquals(0, hits.size)
+    }
+
+    @Test
+    fun scan_emptySourceMarkers_legacyPathUnchanged() {
+        val r = AdSignageRule(
+            id = "existing_rule",
+            category = "signage",
+            regulation = "x",
+            keywords = listOf("最佳"),
+            severity = Severity.Warning,
+        )
+        // sourceMarkers 默认 emptyList() → 旧规则行为不变
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本店是当地最佳餐厅")
+        assertEquals(1, hits.size)
+    }
+
+    @Test
+    fun scan_absenceRule_absentSourceMarkerNullReturnsEmpty() {
+        val r = AdSignageRule(
+            id = "ad_signage_art11_data_citation",
+            category = "signage",
+            regulation = "《广告法》第十一条第二款",
+            keywords = listOf("万"),
+            severity = Severity.Warning,
+            sourceMarkers = listOf("据"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("今天天气真好")
+        assertEquals(0, hits.size)
+    }
+
+    @Test
+    fun scan_absenceRule_sharedKeywordBetweenClaimAndSource_doesNotFire() {
+        val r = AdSignageRule(
+            id = "ad_signage_art11_data_citation",
+            category = "signage",
+            regulation = "《广告法》第十一条第二款",
+            keywords = listOf("调查"),
+            severity = Severity.Warning,
+            sourceMarkers = listOf("调查"),  // 同词既是 claim 也是 source
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("调查显示 90% 用户首选")
+        assertEquals(0, hits.size)
+    }
 }
