@@ -1,5 +1,10 @@
 package com.icespiritai.offline.rules
 
+import com.icespiritai.offline.domain.Severity
+import com.icespiritai.offline.domain.TextNormalizer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -219,16 +224,64 @@ class AdSignageMentorFiveImageRegressionTest {
     }
 
     @Test
-    fun mentorReview_dongjiaoMassage_realisticMinimumHits() {
-        // 东郊到家 0 命中可能合理(主要是不规范的招聘广告 + 不可核实规模数据,
-        // 不一定落入目前规则);这里只验证:若有命中,category 应该合理。
+    fun mentorReview_dongjiaoMassage_art11DataCitationFires() {
+        // v0.1.15 扩展:东郊到家"全国技师超 X 万人 | 累计服务超 X 万次"
+        // 落入《广告法》第十一条第二款 — 数据未标明出处。
+        // Absence 规则按 rule-level 去重,本 fixture 仅触发 1 次。
         val matcher = AdSignageRuleMatcher(loadRealRules())
         val hits = matcher.scan(fixtures.getValue("11_2011_dongjiao_massage"))
-        // 文档化为"目前无命中,后续增加 X 万 / X 万次规模数据规则时可扩展",
-        // 不强制断言 hits > 0,只打印观察
-        println("[dongjiao] hits=${hits.size} ids=${hits.map { it.ruleId }.sorted()}")
-        // 当前未扩展到上门服务域,锚定"0 命中"为已知基线;若后续规则扩展命中
-        // 此处断言失败,提醒维护者更新预期。
-        assertEquals("东郊到家 v5 当前未扩展规则,应保持 0 命中基线", 0, hits.size)
+        val art11 = hits.filter { it.ruleId == "ad_signage_art11_data_citation" }
+
+        // 必须恰好 1 个 §11(2) 命中(absence 规则按 rule-level 去重)
+        assertEquals("东郊到家应恰好 1 个 §11(2) 命中", 1, art11.size)
+        // 严重度 = Warning(程序性遗漏,不是 Violation)
+        assertEquals(Severity.Warning, art11.first().severity)
+        // regulation 字段仅引《广告法》第十一条第二款(跨域引用原则守护)
+        assertEquals("《广告法》第十一条第二款", art11.first().regulation)
+    }
+
+    /**
+     * 端侧 OCR 输出 baseline 回归 pin:由 PaddleOcrFixtureTest (Task 5)
+     * 在华为 nova 6 上产出的真机 OCR 输出,确保 §11(2) 在端侧跑得通。
+     * 这条测试与 [mentorReview_dongjiaoMassage_art11DataCitationFires] 的差别在于:
+     * 后者用导师手写 fixture 测规则逻辑,本条用真机 OCR 文本测 OCR→规则端到端。
+     */
+    private fun loadDongjiaoBaseline(): String {
+        // 兼容 Gradle 跑 test 时 cwd 不一定是项目根目录。
+        // 优先级:1) 项目根相对路径 / 2) ice_ocr_rules profile 路径
+        //        3) cwd 相对路径(本机直接跑测试的常见形态)
+        val candidates = listOf(
+            File("src/test/resources/fixtures/dongjiao_baseline.json"),
+            File("app/src/test/resources/fixtures/dongjiao_baseline.json"),
+            File("../app/src/test/resources/fixtures/dongjiao_baseline.json"),
+        )
+        val f = candidates.firstOrNull { it.exists() && it.length() > 100 }
+            ?: error("expected dongjiao_baseline.json >100 bytes at one of: " +
+                "${candidates.joinToString { it.absolutePath }} " +
+                "(cwd=${System.getProperty("user.dir")})")
+        val raw = f.readText(Charsets.UTF_8)
+        val obj = Json {
+            ignoreUnknownKeys = true; isLenient = true
+        }.parseToJsonElement(raw).let { it as JsonObject }
+        return (obj["fullText"] as JsonPrimitive).content
+    }
+
+    @Test
+    fun dongjiaoBaseline_art11DataCitationFires() {
+        // 端侧 OCR 输出 baseline 回归 pin:由 PaddleOcrFixtureTest (Task 5)
+        // 在华为 nova 6 上产出的真机 OCR 输出,确保 §11(2) 在端侧跑得通。
+        val ocrText = TextNormalizer.forMatching(loadDongjiaoBaseline())
+        val matcher = AdSignageRuleMatcher(loadRealRules())
+        val hits = matcher.scan(ocrText)
+        val art11 = hits.filter { it.ruleId == "ad_signage_art11_data_citation" }
+
+        assertEquals("dongjiao_baseline OCR 应命中 §11(2)", 1, art11.size)
+        assertEquals(Severity.Warning, art11.first().severity)
+        // OCR baseline L12 含 "全国技师超9万人累计服务超1000万次",
+        // AC 按文本流从左到右扫描,首个 claim kw 在 "万人" 处结束。
+        assertEquals(
+            "baseline art11 命中的 matchedText 应是 '万人'(AC 首个 claim kw)",
+            "万人", art11.first().matchedText,
+        )
     }
 }
