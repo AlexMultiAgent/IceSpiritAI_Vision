@@ -1995,4 +1995,79 @@ class AdSignageRuleMatcherTest {
         val hits = AdSignageRuleMatcher(listOf(r)).scan("调查显示 90% 用户首选")
         assertEquals(0, hits.size)
     }
+
+    // --- 真实文案 fixture:东郊文案 (2026-08-21 v0.1.15 上线) ---
+    //
+    // 规则配置取自 app/src/main/assets/rules/ad_signage_rules.json 的
+    // "ad_signage_art11_data_citation" 条目 (keywords / sourceMarkers 切片与
+    // JSON 完全对齐)。fixture 文本是实地拍摄的东郊文案:
+    //   "全国技师超9万人｜累计服务超1000万次"
+    // claim 关键词 "万" / "累计" 命中(absence rule 触发),
+    // 文本中无 source marker("据" / "报告" / "来源" / 年份字符串 等) →
+    // 最终过滤后保留 1 条 Warning hit。
+
+    @Test
+    fun scan_dongjiao_realWorldFixture_triggersArt11() {
+        val r = AdSignageRule(
+            id = "ad_signage_art11_data_citation",
+            category = "signage",
+            regulation = "《广告法》第十一条第二款",
+            // JSON keywords 切片(去掉全角 %/％ 等易与 punctuation 撞车的项,保留核心 token)
+            keywords = listOf(
+                "万人", "万次", "万家", "万份", "万件", "万店", "万瓶",
+                "亿人", "亿次", "亿份", "亿元", "亿件",
+                "百分之",
+                "倍",
+                "全国超", "全国第一", "全国领先",
+                "累计", "累计用户", "累计服务", "累计销售",
+                "同比增长", "环比增长", "增长率",
+                "销量第一", "排名第一", "份额第一",
+                "调查", "调查显示", "研究报告", "报告显示",
+                "研究表明", "专家表示", "专家指出",
+                "数据表明", "事实证明",
+            ),
+            // JSON sourceMarkers 切片(去掉"截至"等会与正文日期写法撞车的项,
+            // 保留 "据" / "报告" / "来源" 等核心出处指示词 + 一组年份字符串样本)
+            sourceMarkers = listOf(
+                "出处", "来源", "数据来源", "据", "据某", "据该",
+                "报告", "调查报告", "白皮书", "统计报告",
+                "调查", "研究", "研究表明", "调查显示",
+                "引用", "引自", "引证",
+                "截止", "截止到", "统计于",
+                "2024", "2024年", "2024年1月", "2024年6月", "2024年12月",
+                "2025", "2025年", "2025年1月", "2025年6月",
+            ),
+            severity = Severity.Warning,
+        )
+        val text = "全国技师超9万人｜累计服务超1000万次"
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(text)
+        val art11 = hits.filter { it.ruleId == "ad_signage_art11_data_citation" }
+        assertEquals(1, art11.size)
+        assertEquals(Severity.Warning, art11.first().severity)
+        assertEquals("signage", art11.first().category)
+        // matchedText 应是 claim 关键词,而不是 source marker;且非空
+        val matched = art11.first().matchedText
+        assertTrue("matchedText must not be empty, actual='$matched'", matched.isNotEmpty())
+        assertTrue(
+            "matchedText must be a claim keyword (not a source marker), actual='$matched'",
+            matched in r.keywords,
+        )
+    }
+
+    @Test
+    fun scan_dongjiao_realWorldFixtureWithSourceMarker_doesNotFire() {
+        // 反向 fixture:同一文案但加上出处,absence 不成立,无 hit
+        val r = AdSignageRule(
+            id = "ad_signage_art11_data_citation",
+            category = "signage",
+            regulation = "《广告法》第十一条第二款",
+            keywords = listOf("万", "累计"),
+            sourceMarkers = listOf("据", "2024年", "来源"),
+            severity = Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "据 2024 年艾瑞报告,本品牌全国技师超9万人,累计服务超1000万次"
+        )
+        assertEquals(0, hits.size)
+    }
 }
