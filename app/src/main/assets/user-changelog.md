@@ -1,5 +1,21 @@
 # 用户更新日志
 
+## v0.1.15 · 2026-08-21
+
+- **新增规则：广告法 第十一条第二款 · 数据未标明出处**（severity `Warning`）
+  - 新规则 id `ad_signage_art11_data_citation`，category `signage`
+  - 触发模式：广告使用数据 / 统计资料 / 调查结果 / 文摘 / 引用语（典型句式 "X 万人 / 累计 X 万次 / 同比增长 X% / 排名第一"），且**未标明出处**（无 "数据来源 / 据 X 报告 / 截至 YYYY" 等表述）
+  - claim 触发词 38 个；sourceMarker 缓解词 21 个 + 2020-2030 完整年份（154 条）→ 命中 claim 且全无 sourceMarker 即报 Warning
+  - 触发案例：东郊到家 "全国技师超 9 万人 | 累计服务超 1000 万次" 现在报 Warning（此前 0 命中）
+- **`AdSignageRule` 扩展 `sourceMarkers` 字段 + `AdSignageRuleMatcher` 增加 absence 复合匹配**
+  - 旧规则 `sourceMarkers = emptyList()` 时行为字节级等价，118 条既有规则零回归
+- **东郊到家 OCR 真机 fixture 测试**（`PaddleOcrFixtureTest`，androidTest）：真机跑 PaddleOcrEngine，固化 baseline 至 `app/src/test/resources/fixtures/dongjiao_baseline.json`；端侧可检出 + 触发 §11(2)
+- **5 张 mentor 图 OCR smoke test**（`MentorOcrSmokeTest`，androidTest）：防止 OCR 阈值调过头；预发版跑
+- **知识库 `中华人民共和国广告法.md`**：适用判别要点加跨域引用原则（广告招牌 tab 不引食品标识等非广告业法规）+ §11(2) 判别要点
+- 单元测试全绿（`testDebugUnitTest -PmodelProfile=shell`）；真机 androidTest 已过（华为 nova 6）
+- 已知边界：v1 absence 检测是全局 sourceMarker 检测，商业套语 "据用户反馈" 会被误识别为已标注来源（假阴性）；v2 同段复检会收紧，留作后续 spec
+- `versionCode 14→15`，`versionName 0.1.14→0.1.15`
+
 ## v0.1.14 · 2026-08-21
 
 - 修复 v0.1.13 的 UI 缺陷:设置页「检查更新」中,新版本可用卡片的下载按钮被展开的 changelog 挤出屏幕、点不到
