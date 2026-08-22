@@ -93,18 +93,23 @@ class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
     }
 
     /**
-     * User-initiated cancellation of the in-flight download. Recomputes the
-     * downloadId from the last [AppVersionInfo] passed to [download] (same
-     * SHA-256-short helper [UpdateRepository.downloadApk] uses internally)
-     * and forwards to [UpdateRepository.cancel].
+     * User-initiated cancellation of the in-flight download. Resolves the
+     * `downloadId` from two possible sources, in priority order:
      *
-     * No-op if no download has been kicked off from this VM yet — guards
-     * against the resume-coordinator path starting a service whose id the VM
-     * can't reconstruct.
+     *  1. [lastDownloadInfo] — set by a same-VM [download] call. Always
+     *     authoritative when present (covers the in-VM happy path).
+     *  2. [UpdateState.Downloading.downloadId] — extracted from the live
+     *     [updateState] StateFlow. Covers the cold-resume path, where the
+     *     `UpdateResumeWorker` woke the app mid-download with a fresh
+     *     SettingsViewModel whose `lastDownloadInfo` is null.
+     *
+     * Falls back to a no-op if neither source has a downloadId — guards
+     * against a stray cancel tap before any download has been kicked off.
      */
     fun cancel(context: Context) {
-        val info = lastDownloadInfo ?: return
-        val downloadId = sha256Short(info.apkUrl + ":" + info.versionCode)
+        val infoId = lastDownloadInfo?.let { sha256Short(it.apkUrl + ":" + it.versionCode) }
+        val stateId = (updateState.value as? UpdateState.Downloading)?.downloadId
+        val downloadId = infoId ?: stateId ?: return
         UpdateRepository.cancel(context.applicationContext, downloadId)
     }
 

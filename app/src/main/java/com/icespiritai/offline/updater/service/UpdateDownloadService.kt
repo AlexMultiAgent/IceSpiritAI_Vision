@@ -83,6 +83,19 @@ class UpdateDownloadService : Service() {
                 stateStore.upsert(effective.copy(bytesWritten = 0))
             }
 
+            // Publish the live Downloading transition BEFORE the byte stream starts,
+            // so any observing UI (or a freshly-resumed SettingsViewModel that has
+            // no cached `lastDownloadInfo`) can extract the downloadId directly from
+            // the StateFlow for its cancel path. totalBytes is best-effort at this
+            // point — for a fresh download it's 0 until the first progress callback
+            // lands; for a resume it's the persisted value, but we use the on-disk
+            // resumeFrom offset which is the authoritative byte count.
+            UpdateRepository.onDownloadStarted(
+                downloadId = effective.downloadId,
+                written = resumeFrom ?: 0L,
+                total = effective.totalBytes,
+            )
+
             runDownload(effective, resumeFrom)
         }
     }

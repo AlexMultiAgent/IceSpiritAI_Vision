@@ -174,6 +174,21 @@ object UpdateRepository {
      * StateFlow value). The Service runs on Dispatchers.IO; these are safe to call
      * from any thread.
      */
+
+    /**
+     * Live-path start transition. Called by [UpdateDownloadService] right before
+     * it begins (or resumes) the byte-stream read. Carries the same `downloadId`
+     * the Service will use for its own in-flight bookkeeping, so a subsequent
+     * [SettingsViewModel.cancel] can extract the id directly from the observed
+     * [UpdateState] instead of relying on a VM-side cache that may be empty
+     * when the user reopens the app mid-resume (the cold-start
+     * [UpdateResumeWorker] path produces a fresh SettingsViewModel whose
+     * `lastDownloadInfo` is null).
+     */
+    fun onDownloadStarted(downloadId: String, written: Long, total: Long) {
+        _state.value = UpdateState.Downloading(downloadId, written, total)
+    }
+
     fun onDownloadVerified(record: DownloadRecord, result: VerifierResult, file: File) {
         _state.value = when (result) {
             is VerifierResult.Match -> UpdateState.ReadyToInstall(file)
