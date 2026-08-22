@@ -22,6 +22,18 @@ import java.io.File
 
 class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
 
+    /**
+     * Last [AppVersionInfo] passed to [download]. Held so [cancel] can
+     * recompute the same `downloadId` that [UpdateRepository.downloadApk]
+     * minted for the FGS intent (see [sha256Short]). Cleared on VM destroy
+     * (default ViewModel scope) — sufficient for the user-cancellation
+     * flow, which always follows a same-VM [download] call.
+     *
+     * Not a [StateFlow]: no observer needs this externally — it is purely
+     * a write-once-then-read-once hand-off between [download] and [cancel].
+     */
+    private var lastDownloadInfo: AppVersionInfo? = null
+
     val themeMode: StateFlow<ThemeMode> = source.themeMode.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
@@ -68,9 +80,37 @@ class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
      *
      * The actual byte-stream download + cert-pin gate live in the FGS
      * (`UpdateDownloadService`); this call only fires the Intent.
+     *
+     * Caches [info] in [lastDownloadInfo] so a subsequent [cancel] can recompute
+     * the same downloadId that [UpdateRepository.downloadApk] minted for the
+     * service Intent. Currently the FGS does not push a [UpdateState.Downloading]
+     * transition carrying `downloadId`, so the VM-side cache is the only source
+     * of truth for the cancel path.
      */
     fun download(info: AppVersionInfo, context: Context) {
+        lastDownloadInfo = info
         UpdateRepository.downloadApk(context.applicationContext, info)
+    }
+
+    /**
+     * User-initiated cancellation of the in-flight download. Recomputes the
+     * downloadId from the last [AppVersionInfo] passed to [download] (same
+     * SHA-256-short helper [UpdateRepository.downloadApk] uses internally)
+     * and forwards to [UpdateRepository.cancel].
+     *
+     * No-op if no download has been kicked off from this VM yet — guards
+     * against the resume-coordinator path starting a service whose id the VM
+     * can't reconstruct.
+     */
+    fun cancel(context: Context) {
+        val info = lastDownloadInfo ?: return
+        val downloadId = sha256Short(info.apkUrl + ":" + info.versionCode)
+        UpdateRepository.cancel(context.applicationContext, downloadId)
+    }
+
+    private fun sha256Short(s: String): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        return md.digest(s.toByteArray()).joinToString("") { "%02x".format(it) }.take(16)
     }
 
     /**
