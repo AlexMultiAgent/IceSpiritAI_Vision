@@ -29,12 +29,3 @@ sealed class UpdateCheckResult {
         data class SignatureMismatch(val actual: String?, val expected: String) : Failed("signature_mismatch")
     }
 }
-
-/**
- * Top-level alias for [UpdateCheckResult.Failed.DownloadInterrupted]. Lets callers
- * (Service / Worker / Repository) write `DownloadInterrupted.Cancelled` instead of
- * the fully-nested path. Kept as a typealias (not a top-level sealed class) so all
- * variants remain reachable through the parent [UpdateCheckResult.Failed] hierarchy
- * for serialization + UI rendering.
- */
-typealias DownloadInterrupted = UpdateCheckResult.Failed.DownloadInterrupted
