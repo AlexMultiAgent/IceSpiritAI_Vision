@@ -65,9 +65,12 @@ class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
      * (caller-supplied via [androidx.compose.ui.platform.LocalContext]); the
      * `applicationContext` is what reaches [UpdateRepository.downloadApk] so
      * the cacheDir outlives any rotation-driven Activity recreation.
+     *
+     * The actual byte-stream download + cert-pin gate live in the FGS
+     * (`UpdateDownloadService`); this call only fires the Intent.
      */
     fun download(info: AppVersionInfo, context: Context) {
-        UpdateRepository.downloadApk(info, context.applicationContext, scope = viewModelScope)
+        UpdateRepository.downloadApk(context.applicationContext, info)
     }
 
     /**

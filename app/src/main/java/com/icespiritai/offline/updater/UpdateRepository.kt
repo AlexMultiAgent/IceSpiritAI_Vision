@@ -1,8 +1,9 @@
 package com.icespiritai.offline.updater
 
+import android.content.Context
 import android.content.Intent
-import android.util.Log
 import androidx.annotation.VisibleForTesting
+import com.icespiritai.offline.updater.service.UpdateDownloadService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -14,8 +15,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URL
@@ -38,7 +37,8 @@ object UpdateRepository {
     /**
      * Process-global state. Observed by `SettingsViewModel` via
      * `viewModel.state`; mutated by `checkForUpdates` / `downloadApk` /
-     * `requestInstall`. Singleton survives Activity / ViewModel lifetime.
+     * `requestInstall` / the Service's terminal callbacks. Singleton
+     * survives Activity / ViewModel lifetime.
      *
      * **Multi-window / multi-Activity risk**: this object is a true process
      * singleton. If we ever introduce multi-window or split-screen UI, two
@@ -133,81 +133,68 @@ object UpdateRepository {
     }
 
     /**
-     * Pure file-IO download path (no Context). Production callers should use
-     * [downloadApk]; tests can drive this variant directly with a
-     * `Files.createTempDirectory`.
+     * Coroutine entry: starts the FGS via Intent. Download progress lives in
+     * [com.icespiritai.offline.updater.service.UpdateDownloadService]. The state
+     * transitions publish through [state] from the Service's callbacks
+     * (onDownloadVerified / onDownloadFailed / onDownloadCancelled).
      *
-     * The caller owns the dispatcher — this is a plain suspend block, so it
-     * must be invoked from an IO-capable context ([downloadApk] uses
-     * `Dispatchers.IO`). Network read timeout is 5 minutes, tuned for a
-     * ~20 MB APK over a slow LAN link to the Gitea release host.
-     *
-     * [onProgress] receives the cumulative bytes written to disk after each
-     * chunk; the caller publishes it to [state].
+     * The Service owns the actual byte-stream read, partial-file resume, and
+     * cert-pin gate; this Repository entry is fire-and-forget.
      */
-    suspend fun downloadApkTo(
+    fun downloadApk(
+        context: Context,
         info: AppVersionInfo,
-        updateDir: File,
-        onProgress: (Long) -> Unit = {},
-    ): File {
-        updateDir.mkdirs()
-        val outFile = File(updateDir, "icespiritai-vision.apk")
-        val conn = openConnection(info.apkUrl).apply {
-            connectTimeout = 15_000
-            readTimeout = 300_000
+    ) {
+        val downloadId = sha256Short(info.apkUrl + ":" + info.versionCode)
+        val updateDir = File(context.cacheDir, "update").apply { mkdirs() }
+        val destPath = File(updateDir, "$downloadId.apk").absolutePath
+        val intent = Intent(UpdateDownloadActions.ACTION_DOWNLOAD).apply {
+            setClass(context, UpdateDownloadService::class.java)
+            putExtra(UpdateDownloadActions.EXTRA_DOWNLOAD_ID, downloadId)
+            putExtra(UpdateDownloadActions.EXTRA_URL, info.apkUrl)
+            putExtra(UpdateDownloadActions.EXTRA_DEST_PATH, destPath)
+            putExtra(UpdateDownloadActions.EXTRA_SIGNER_CERT_SHA256, info.signerCertSha256)
+            putExtra(UpdateDownloadActions.EXTRA_VERSION_NAME, info.versionName)
+            putExtra(UpdateDownloadActions.EXTRA_RESUME, false)
         }
-        try {
-            if (conn.responseCode !in 200..299) {
-                throw IOException("http_${conn.responseCode}")
-            }
-            var written = 0L
-            conn.inputStream.use { input ->
-                FileOutputStream(outFile).use { output ->
-                    val buf = ByteArray(8192)
-                    while (true) {
-                        val n = input.read(buf)
-                        if (n <= 0) break
-                        output.write(buf, 0, n)
-                        written += n
-                        onProgress(written)
-                    }
-                }
-            }
-            return outFile
-        } finally {
-            conn.disconnect()
+        context.startForegroundService(intent)
+    }
+
+    private fun sha256Short(s: String): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        return md.digest(s.toByteArray()).joinToString("") { "%02x".format(it) }.take(16)
+    }
+
+    /**
+     * Service callbacks — invoked by [UpdateDownloadService] at terminal points
+     * of the download lifecycle. Each callback translates the Service-side event
+     * into an [UpdateState] transition for the UI to observe.
+     *
+     * Kept as `fun` (not `suspend`) because they only mutate [_state] (a thread-safe
+     * StateFlow value). The Service runs on Dispatchers.IO; these are safe to call
+     * from any thread.
+     */
+    fun onDownloadVerified(record: DownloadRecord, result: VerifierResult, file: File) {
+        _state.value = when (result) {
+            is VerifierResult.Match -> UpdateState.ReadyToInstall(file)
+            is VerifierResult.Mismatch -> UpdateState.Failed(
+                UpdateCheckResult.Failed.SignatureMismatch(
+                    expected = result.expected, actual = result.actual,
+                )
+            )
         }
     }
 
-    /** Coroutine entry: writes to `cacheDir/update/`, publishes progress to [state]. */
-    fun downloadApk(
-        info: AppVersionInfo,
-        appContext: android.content.Context,
-        scope: CoroutineScope = defaultScope,
-    ) {
-        val updateDir = File(appContext.cacheDir, "update")
-        _state.value = UpdateState.Downloading(0L, info.apkSize)
-        scope.launch(Dispatchers.IO) {
-            try {
-                val file = downloadApkTo(info, updateDir) { written ->
-                    _state.value = UpdateState.Downloading(written, info.apkSize)
-                }
-                // Double-gate cert check (after APK bytes on disk; before announcing install-ready).
-                // Backward compat: empty `signerCertSha256` (older vision-latest.json) skips gate.
-                verifySignatureForDownload(info, file)?.let { mismatch ->
-                    Log.w(TAG, "signature mismatch: expected=${mismatch.expected.take(16)}… actual=${mismatch.actual?.take(16) ?: "null"}")
-                    file.delete()
-                    _state.value = UpdateState.Failed(mismatch)
-                    return@launch
-                }
-                _state.value = UpdateState.ReadyToInstall(file)
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "downloadApk failed: ${e.javaClass.simpleName}")
-                _state.value = UpdateState.Failed(UpdateCheckResult.Failed.DownloadInterrupted.Other(e))
-            }
-        }
+    fun onDownloadFailed(record: DownloadRecord, failed: UpdateCheckResult.Failed.DownloadInterrupted) {
+        _state.value = UpdateState.Failed(failed)
+    }
+
+    fun onDownloadCancelled(record: DownloadRecord) {
+        _state.value = UpdateState.Failed(UpdateCheckResult.Failed.DownloadInterrupted.Cancelled)
+    }
+
+    fun setReadyToInstall(file: File, versionName: String) {
+        _state.value = UpdateState.ReadyToInstall(file)
     }
 
     /**
@@ -224,22 +211,79 @@ object UpdateRepository {
      * or differs from `expected`.
      *
      * Extracted as `@VisibleForTesting internal` so unit tests can drive the
-     * gate directly with a synthesized File without spinning the coroutine
-     * wrapper, Context, or cacheDir plumbing.
+     * gate directly with a synthesized File without spinning the Service,
+     * Context, or cacheDir plumbing.
      */
     @VisibleForTesting
     internal fun verifySignatureForDownload(
         info: AppVersionInfo,
         file: File,
     ): UpdateCheckResult.Failed.SignatureMismatch? {
-        val expected = info.signerCertSha256
-        if (expected.isEmpty()) return null
-        val actual = ApkSignatureVerifier.readFirstSignerCert(file)
-        return if (actual == null || !actual.equals(expected, ignoreCase = true)) {
-            UpdateCheckResult.Failed.SignatureMismatch(actual = actual, expected = expected)
-        } else {
-            null
+        val r = ApkSignatureVerifier.verify(file, info.signerCertSha256)
+        return when (r) {
+            is VerifierResult.Match -> null
+            is VerifierResult.Mismatch -> UpdateCheckResult.Failed.SignatureMismatch(
+                expected = r.expected, actual = r.actual,
+            )
         }
+    }
+
+    /**
+     * Retry by Failed subtype. Called from SettingsViewModel when user taps "retry".
+     * - Cancelled → restore UpdateAvailable so user can re-tap "Download"
+     * - NetworkUnreachable / Other → resumeService (Service will pick up partial)
+     * - SignatureMismatch → fresh download (Service will re-download, file deleted on mismatch)
+     * - else (NoNetwork / ServerError / ParseError) → re-run checkForUpdates
+     */
+    fun retry(context: Context, info: AppVersionInfo?, currentVersionCode: Int) {
+        when (val cur = _state.value) {
+            is UpdateState.Failed -> when (val r = cur.result) {
+                is UpdateCheckResult.Failed.DownloadInterrupted.Cancelled -> {
+                    if (info != null) _state.value = UpdateState.UpdateAvailable(info)
+                }
+                is UpdateCheckResult.Failed.DownloadInterrupted.NetworkUnreachable,
+                is UpdateCheckResult.Failed.DownloadInterrupted.Other -> {
+                    if (info != null) resumeService(context, info)
+                }
+                is UpdateCheckResult.Failed.SignatureMismatch -> {
+                    if (info != null) downloadApk(context, info)
+                }
+                else -> checkForUpdatesAsync(currentVersionInfoUrl(), currentVersionCode)
+            }
+            else -> { /* no-op: only Failed is retryable */ }
+        }
+    }
+
+    private fun currentVersionInfoUrl(): String {
+        // The JSON URL is normally injected via SettingsViewModel; for retry we re-use
+        // the same lookup pattern. Default to the prod host.
+        return "https://icespiritai-vision.example/vision-latest.json"
+    }
+
+    private fun resumeService(context: Context, info: AppVersionInfo) {
+        val downloadId = sha256Short(info.apkUrl + ":" + info.versionCode)
+        val intent = Intent(UpdateDownloadActions.ACTION_DOWNLOAD).apply {
+            setClass(context, UpdateDownloadService::class.java)
+            putExtra(UpdateDownloadActions.EXTRA_DOWNLOAD_ID, downloadId)
+            putExtra(UpdateDownloadActions.EXTRA_URL, info.apkUrl)
+            putExtra(UpdateDownloadActions.EXTRA_DEST_PATH,
+                File(context.cacheDir, "update/$downloadId.apk").absolutePath)
+            putExtra(UpdateDownloadActions.EXTRA_SIGNER_CERT_SHA256, info.signerCertSha256)
+            putExtra(UpdateDownloadActions.EXTRA_VERSION_NAME, info.versionName)
+            putExtra(UpdateDownloadActions.EXTRA_RESUME, true)
+        }
+        context.startForegroundService(intent)
+    }
+
+    /**
+     * User-initiated cancellation. Sends ACTION_CANCEL to the running FGS.
+     */
+    fun cancel(context: Context, downloadId: String) {
+        val intent = Intent(UpdateDownloadActions.ACTION_CANCEL).apply {
+            setClass(context, UpdateDownloadService::class.java)
+            putExtra(UpdateDownloadActions.EXTRA_DOWNLOAD_ID, downloadId)
+        }
+        context.startService(intent)
     }
 
     /**
@@ -248,7 +292,7 @@ object UpdateRepository {
      * keeping that call out of the Repository makes it Robolectric-testable.
      */
     @VisibleForTesting
-    internal fun buildInstallIntent(context: android.content.Context, file: File): Intent {
+    internal fun buildInstallIntent(context: Context, file: File): Intent {
         val uri = androidx.core.content.FileProvider.getUriForFile(
             context, context.packageName + ".fileprovider", file,
         )
@@ -259,7 +303,7 @@ object UpdateRepository {
     }
 
     /** Convenience: build + startActivity. */
-    fun requestInstall(context: android.content.Context, file: File) {
+    fun requestInstall(context: Context, file: File) {
         context.startActivity(buildInstallIntent(context, file))
     }
 }

@@ -7,8 +7,8 @@ import android.os.IBinder
 import com.icespiritai.offline.AppGraph
 import com.icespiritai.offline.updater.ApkDownloader
 import com.icespiritai.offline.updater.ApkSignatureVerifier
-import com.icespiritai.offline.updater.DownloadInterrupted
 import com.icespiritai.offline.updater.DownloadRecord
+import com.icespiritai.offline.updater.UpdateCheckResult.Failed.DownloadInterrupted
 import com.icespiritai.offline.updater.DownloadStateStore
 import com.icespiritai.offline.updater.FetchOutcome
 import com.icespiritai.offline.updater.FetchResult
