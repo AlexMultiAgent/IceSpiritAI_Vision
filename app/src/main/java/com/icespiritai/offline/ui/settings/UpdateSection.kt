@@ -115,7 +115,12 @@ fun UpdateSection(
                         val showRetry = s.result !is
                             com.icespiritai.offline.updater.UpdateCheckResult.Failed.DownloadInterrupted.Cancelled
                         if (showRetry) {
-                            TextButton(onClick = { viewModel.retry() }) {
+                            TextButton(onClick = {
+                                viewModel.retry(
+                                    context = context,
+                                    jsonUrl = com.icespiritai.offline.BuildConfig.UPDATE_JSON_URL,
+                                )
+                            }) {
                                 Text(stringResource(R.string.update_retry_button))
                             }
                         }

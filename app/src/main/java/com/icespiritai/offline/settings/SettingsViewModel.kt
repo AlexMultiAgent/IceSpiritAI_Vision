@@ -135,19 +135,48 @@ class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
     }
 
     /**
-     * Smart retry: every [UpdateState.Failed] branch currently routes to
-     * [refresh] (the download path has its own retry via [download], invoked
-     * when a new [UpdateAvailable] lands). Keeping the explicit dispatch
-     * documents which failures map to which recovery action.
+     * Smart retry by Failed subtype (spec §5.6):
+     *  - [UpdateCheckResult.Failed.DownloadInterrupted.NetworkUnreachable] /
+     *    [UpdateCheckResult.Failed.DownloadInterrupted.Other]: hand off to
+     *    [UpdateRepository.retry], which resumes the FGS — the Service
+     *    re-fetches the partial via Range / If-Range.
+     *  - [UpdateCheckResult.Failed.SignatureMismatch]: also [UpdateRepository.retry],
+     *    which kicks a fresh download (Service deletes the existing file on
+     *    mismatch and starts over).
+     *  - [UpdateCheckResult.Failed.NoNetwork] /
+     *    [UpdateCheckResult.Failed.ServerError] /
+     *    [UpdateCheckResult.Failed.ParseError]: re-run the metadata check via
+     *    [refresh] — there's no partial APK to resume from.
+     *  - [UpdateCheckResult.Failed.DownloadInterrupted.Cancelled]: [UpdateRepository.retry]
+     *    restores [UpdateState.UpdateAvailable] so the user can re-tap "Download".
+     *
+     * [context] is the caller Activity (used only as a delivery vehicle for
+     * [UpdateRepository.downloadApk] / `resumeService` which take
+     * `applicationContext` internally). [jsonUrl] is forwarded so the
+     * Repository has no prod-host hard-code.
      */
-    fun retry() {
+    fun retry(context: Context, jsonUrl: String) {
         when (val current = updateState.value) {
-            is UpdateState.Failed -> when (current.result) {
-                is UpdateCheckResult.Failed.DownloadInterrupted -> {
-                    // Server fetch failed mid-download — re-check, no cached info to reuse.
-                    refresh()
+            is UpdateState.Failed -> {
+                when (current.result) {
+                    is UpdateCheckResult.Failed.DownloadInterrupted.NetworkUnreachable,
+                    is UpdateCheckResult.Failed.DownloadInterrupted.Other,
+                    is UpdateCheckResult.Failed.SignatureMismatch,
+                    is UpdateCheckResult.Failed.DownloadInterrupted.Cancelled -> {
+                        UpdateRepository.retry(
+                            context = context.applicationContext,
+                            info = lastDownloadInfo,
+                            currentVersionCode = BuildConfig.VERSION_CODE,
+                            jsonUrl = jsonUrl,
+                        )
+                    }
+                    is UpdateCheckResult.Failed.NoNetwork,
+                    is UpdateCheckResult.Failed.ServerError,
+                    is UpdateCheckResult.Failed.ParseError -> {
+                        // Pure metadata failures — no partial APK to resume from.
+                        refresh()
+                    }
                 }
-                else -> refresh()
             }
             else -> refresh()
         }

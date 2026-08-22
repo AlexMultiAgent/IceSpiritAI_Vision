@@ -176,16 +176,19 @@ object UpdateRepository {
      */
 
     /**
-     * Live-path start transition. Called by [UpdateDownloadService] right before
-     * it begins (or resumes) the byte-stream read. Carries the same `downloadId`
-     * the Service will use for its own in-flight bookkeeping, so a subsequent
-     * [SettingsViewModel.cancel] can extract the id directly from the observed
-     * [UpdateState] instead of relying on a VM-side cache that may be empty
-     * when the user reopens the app mid-resume (the cold-start
-     * [UpdateResumeWorker] path produces a fresh SettingsViewModel whose
-     * `lastDownloadInfo` is null).
+     * Live-path progress transition. Called repeatedly by
+     * [UpdateDownloadService] from inside the byte-stream [ApkDownloader.fetch]
+     * `onProgress` callback — both at start (so a freshly-resumed
+     * SettingsViewModel that has no cached `lastDownloadInfo` can extract the
+     * downloadId directly from the StateFlow for its cancel path) and on every
+     * subsequent 500 ms tick (so the UI progress bar advances in real time).
+     *
+     * Carries the same `downloadId` the Service uses for its own in-flight
+     * bookkeeping, so [SettingsViewModel.cancel] can resolve it from the
+     * observed [UpdateState] without relying on a VM-side cache that may be
+     * empty after a cold-resume.
      */
-    fun onDownloadStarted(downloadId: String, written: Long, total: Long) {
+    fun onDownloadProgress(downloadId: String, written: Long, total: Long) {
         _state.value = UpdateState.Downloading(downloadId, written, total)
     }
 
@@ -248,9 +251,17 @@ object UpdateRepository {
      * - Cancelled → restore UpdateAvailable so user can re-tap "Download"
      * - NetworkUnreachable / Other → resumeService (Service will pick up partial)
      * - SignatureMismatch → fresh download (Service will re-download, file deleted on mismatch)
-     * - else (NoNetwork / ServerError / ParseError) → re-run checkForUpdates
+     * - else (NoNetwork / ServerError / ParseError) → re-run checkForUpdates against
+     *   [jsonUrl] (the caller is responsible for the URL — Repository has no
+     *   access to BuildConfig and a hard-coded prod host would silently break
+     *   staging / smoke runs).
      */
-    fun retry(context: Context, info: AppVersionInfo?, currentVersionCode: Int) {
+    fun retry(
+        context: Context,
+        info: AppVersionInfo?,
+        currentVersionCode: Int,
+        jsonUrl: String,
+    ) {
         when (val cur = _state.value) {
             is UpdateState.Failed -> when (val r = cur.result) {
                 is UpdateCheckResult.Failed.DownloadInterrupted.Cancelled -> {
@@ -263,16 +274,10 @@ object UpdateRepository {
                 is UpdateCheckResult.Failed.SignatureMismatch -> {
                     if (info != null) downloadApk(context, info)
                 }
-                else -> checkForUpdatesAsync(currentVersionInfoUrl(), currentVersionCode)
+                else -> checkForUpdatesAsync(jsonUrl, currentVersionCode)
             }
             else -> { /* no-op: only Failed is retryable */ }
         }
-    }
-
-    private fun currentVersionInfoUrl(): String {
-        // The JSON URL is normally injected via SettingsViewModel; for retry we re-use
-        // the same lookup pattern. Default to the prod host.
-        return "https://icespiritai-vision.example/vision-latest.json"
     }
 
     private fun resumeService(context: Context, info: AppVersionInfo) {

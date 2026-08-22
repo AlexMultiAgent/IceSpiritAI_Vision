@@ -89,8 +89,10 @@ class UpdateDownloadService : Service() {
             // the StateFlow for its cancel path. totalBytes is best-effort at this
             // point — for a fresh download it's 0 until the first progress callback
             // lands; for a resume it's the persisted value, but we use the on-disk
-            // resumeFrom offset which is the authoritative byte count.
-            UpdateRepository.onDownloadStarted(
+            // resumeFrom offset which is the authoritative byte count. The same
+            // callback is then invoked on every 500 ms tick from runDownload's
+            // onProgress lambda so the UI progress bar advances in real time.
+            UpdateRepository.onDownloadProgress(
                 downloadId = effective.downloadId,
                 written = resumeFrom ?: 0L,
                 total = effective.totalBytes,
@@ -105,6 +107,7 @@ class UpdateDownloadService : Service() {
         var resumeOffset = resumeFrom
         var lastEtag = record.etag
         var lastNotifUpdate = 0L
+        var lastStateUpdate = 0L
 
         while (true) {
             val outcome = ApkDownloader.fetch(
@@ -120,6 +123,18 @@ class UpdateDownloadService : Service() {
                             nm?.notify(notifIdFor(record), it)
                         }
                         lastNotifUpdate = now
+                    }
+                    // Push live progress to the StateFlow at the same 500 ms cadence
+                    // so UpdateSection's progress bar advances (the bar reads from
+                    // UpdateRepository.state, not from DataStore). Decoupled from
+                    // lastNotifUpdate: if either side lags the other won't stall.
+                    if (now - lastStateUpdate >= 500) {
+                        UpdateRepository.onDownloadProgress(
+                            downloadId = record.downloadId,
+                            written = written,
+                            total = record.totalBytes,
+                        )
+                        lastStateUpdate = now
                     }
                     scope.launch { stateStore.upsert(record.copy(bytesWritten = written)) }
                 },
