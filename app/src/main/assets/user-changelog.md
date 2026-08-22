@@ -1,5 +1,19 @@
 # 用户更新日志
 
+## v0.1.17 · 2026-08-22
+
+- **应用内更新支持后台下载 + 锁屏不掉线**(Foreground Service,`foregroundServiceType="dataSync"`,Android 14+ 红线)
+  - 进入设置 → [下载更新] 后即便立刻锁屏,下载仍在通知栏 + App 内 `UpdateSection` 双通道进度持续推进
+  - 通知三通道:进行中 / 可安装 / 失败;每条通知带 `取消 / 安装 / 稍后 / 重试` 动作按钮
+- **断点续传**:HTTP `Range: bytes=N-` + `If-Range: <etag>`;FGS 退避 2 / 4 / 8 s,最多 3 次;落地后由 `DownloadStateStore`(DataStore Preferences)持久化到进程被杀也活得下来
+- **冷启动自动续传**:Application.onCreate 里跑 `UpdateResumeCoordinator.scanAndDispatch()`,正在下载的 partial 自动入队 `UpdateResumeWorker`(WorkManager,`NetworkType.CONNECTED` 约束),无需用户点重试
+- **签名校验失败 / 取消 / 退避耗尽** 三种 Failed subtype 在 `UpdateSection` 区分文案(「签名校验失败,请联系开发者」/「已取消」/「网络不可达,请重试」),失败自动清理 partial + DataStore,不留垃圾
+- **真机回归 4 项**(`CancelFromNotificationTest` / `UpdateResumeCoordinatorAndroidTest` / `ProcessKillResumeTest` / `UpdateDownloadServiceColdTest`),覆盖 cancel → cleanup、Coordinator → Worker 入队、force-stop → 重启续传、cold + warm 启动时延(实测 cold_ms=4 / warm_avg_ms=3,均 <5 s)
+- **`POST_NOTIFICATIONS` / `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_DATA_SYNC` / `WAKE_LOCK` 运行时权限** + `<service android:foregroundServiceType="dataSync">` 已在 `AndroidManifest.xml` 声明
+- 烟测场景(锁屏 / Wi-Fi 切换 / 飞行模式 / 上划杀进程 / 通知权限拒绝 / 签名校验失败)见 `docs/smoke/2026-08-22-update-fgs-resume.md`
+- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`);真机 androidTest 4/4 pass(华为 nova 6)
+- `versionCode 16→17`,`versionName 0.1.16→0.1.17`
+
 ## v0.1.16 · 2026-08-21
 
 - **新增规则:广告法 第二十七条 · 农作物种子 / 种养殖广告无根据的产量 / 效益保证**(severity `Violation`)
