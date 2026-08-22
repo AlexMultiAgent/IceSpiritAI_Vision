@@ -3,7 +3,6 @@ package com.icespiritai.offline.updater.service
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
-import androidx.test.core.app.ApplicationProvider
 import com.icespiritai.offline.updater.ApkSignatureVerifier
 import com.icespiritai.offline.updater.DownloadRecord
 import com.icespiritai.offline.updater.DownloadStateStore
@@ -47,7 +46,6 @@ class UpdateResumeCoordinatorTest {
             )
         )
         val coord = UpdateResumeCoordinator(
-            context = ApplicationProvider.getApplicationContext(),
             stateStore = stateStore,
             // SAM conversion of ApkSignatureVerifier's `verify(File, String): VerifierResult`
             // method into the fun-interface. Not actually invoked by this test.
@@ -83,7 +81,6 @@ class UpdateResumeCoordinatorTest {
         var sinkFile: File? = null
         var sinkVersion: String? = null
         val coord = UpdateResumeCoordinator(
-            context = ApplicationProvider.getApplicationContext(),
             stateStore = stateStore,
             verifier = ApkSignatureVerifier::verify,
             verifierResultSink = { /* no-op */ },

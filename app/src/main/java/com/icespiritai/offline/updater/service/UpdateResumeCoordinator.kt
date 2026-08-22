@@ -1,7 +1,5 @@
 package com.icespiritai.offline.updater.service
 
-import android.content.Context
-import com.icespiritai.offline.updater.ApkSignatureVerifier
 import com.icespiritai.offline.updater.DownloadRecord
 import com.icespiritai.offline.updater.DownloadStateStore
 import com.icespiritai.offline.updater.VerifierResult
@@ -24,16 +22,10 @@ import java.io.File
  * it from any coroutine context — production callers should use
  * [kotlinx.coroutines.Dispatchers.IO]; tests call it inside
  * [kotlinx.coroutines.runBlocking] and naturally await completion.
- *
- * The [context] field is currently unused by the routing logic itself
- * (the coordinator only touches the file system + DataStore), but it is
- * kept in the constructor so that future implementations (e.g. posting a
- * notification on [failedSink]) can use it without changing call sites.
  */
 class UpdateResumeCoordinator(
-    @Suppress("unused") private val context: Context,
     private val stateStore: DownloadStateStore,
-    private val verifier: ApkSignatureVerifierType,
+    private val verifier: Verifier,
     private val verifierResultSink: (VerifierResult) -> Unit,
     private val resumeWorkerLauncher: (downloadId: String) -> Unit,
     private val readyToInstallSink: (File, String) -> Unit,
@@ -43,10 +35,11 @@ class UpdateResumeCoordinator(
     /**
      * Strategy hook for the v1 signer-cert fingerprint check. Production
      * wiring passes a SAM-converted reference to
-     * [ApkSignatureVerifier.verify]; tests can pass a stub that returns
-     * deterministic [VerifierResult] values.
+     * [com.icespiritai.offline.updater.ApkSignatureVerifier.verify];
+     * tests can pass a stub that returns deterministic [VerifierResult]
+     * values.
      */
-    fun interface ApkSignatureVerifierType {
+    fun interface Verifier {
         fun verify(file: File, expectedCertSha256: String): VerifierResult
     }
 
