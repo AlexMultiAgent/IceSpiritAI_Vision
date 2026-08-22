@@ -10,6 +10,11 @@
     <!-- required by Coil 2.7 NetworkObserver for cache invalidation -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- UpdateDownloadService: foreground-service download pipeline (Android 13+ / 14+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <uses-feature
         android:name="android.hardware.camera"
@@ -42,6 +47,11 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_provider_paths" />
         </provider>
+
+        <service
+            android:name=".updater.service.UpdateDownloadService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
 
     </application>
 
