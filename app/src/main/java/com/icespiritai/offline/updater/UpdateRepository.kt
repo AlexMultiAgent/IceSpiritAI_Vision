@@ -96,11 +96,11 @@ object UpdateRepository {
         } catch (e: UnknownHostException) {
             UpdateCheckResult.Failed.NoNetwork
         } catch (e: SocketTimeoutException) {
-            UpdateCheckResult.Failed.DownloadInterrupted(e)
+            UpdateCheckResult.Failed.DownloadInterrupted.Other(e)
         } catch (e: SerializationException) {
             UpdateCheckResult.Failed.ParseError(e)
         } catch (e: java.io.IOException) {
-            UpdateCheckResult.Failed.DownloadInterrupted(e)
+            UpdateCheckResult.Failed.DownloadInterrupted.Other(e)
         }
     }
 
@@ -205,7 +205,7 @@ object UpdateRepository {
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "downloadApk failed: ${e.javaClass.simpleName}")
-                _state.value = UpdateState.Failed(UpdateCheckResult.Failed.DownloadInterrupted(e))
+                _state.value = UpdateState.Failed(UpdateCheckResult.Failed.DownloadInterrupted.Other(e))
             }
         }
     }
