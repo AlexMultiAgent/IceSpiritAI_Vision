@@ -89,6 +89,10 @@ fun UpdateSection(
                 LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(4.dp))
                 Text(stringResource(R.string.update_downloading, doneMb, totalMb))
+                Spacer(Modifier.height(4.dp))
+                TextButton(onClick = { viewModel.cancel(context) }) {
+                    Text(stringResource(R.string.update_cancel))
+                }
             }
             is UpdateState.ReadyToInstall -> {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
@@ -106,8 +110,19 @@ fun UpdateSection(
                     Column(Modifier.padding(12.dp)) {
                         Text(failureLabel(s.result), style = MaterialTheme.typography.bodyMedium)
                         Spacer(Modifier.height(4.dp))
-                        TextButton(onClick = { viewModel.retry() }) {
-                            Text(stringResource(R.string.update_retry_button))
+                        // User explicitly cancelled — no retry prompt; tapping
+                        // "Download" again from UpdateAvailable is the recovery.
+                        val showRetry = s.result !is
+                            com.icespiritai.offline.updater.UpdateCheckResult.Failed.DownloadInterrupted.Cancelled
+                        if (showRetry) {
+                            TextButton(onClick = {
+                                viewModel.retry(
+                                    context = context,
+                                    jsonUrl = com.icespiritai.offline.BuildConfig.UPDATE_JSON_URL,
+                                )
+                            }) {
+                                Text(stringResource(R.string.update_retry_button))
+                            }
                         }
                     }
                 }
@@ -125,10 +140,14 @@ private fun failureLabel(result: com.icespiritai.offline.updater.UpdateCheckResu
             stringResource(R.string.update_failed_server, result.httpCode)
         is com.icespiritai.offline.updater.UpdateCheckResult.Failed.ParseError ->
             stringResource(R.string.update_failed_parse)
-        is com.icespiritai.offline.updater.UpdateCheckResult.Failed.DownloadInterrupted ->
-            stringResource(R.string.update_failed_download)
         is com.icespiritai.offline.updater.UpdateCheckResult.Failed.SignatureMismatch ->
-            stringResource(R.string.update_failed_signature)
+            stringResource(R.string.update_failed_cert_mismatch)
+        is com.icespiritai.offline.updater.UpdateCheckResult.Failed.DownloadInterrupted.Cancelled ->
+            stringResource(R.string.update_failed_cancelled)
+        is com.icespiritai.offline.updater.UpdateCheckResult.Failed.DownloadInterrupted.NetworkUnreachable ->
+            stringResource(R.string.update_failed_network_unreachable)
+        is com.icespiritai.offline.updater.UpdateCheckResult.Failed.DownloadInterrupted.Other ->
+            stringResource(R.string.update_failed_download)
     }
 
 private fun currentVersionString(versionCode: Int): String =

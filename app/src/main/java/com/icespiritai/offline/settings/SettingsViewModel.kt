@@ -22,6 +22,18 @@ import java.io.File
 
 class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
 
+    /**
+     * Last [AppVersionInfo] passed to [download]. Held so [cancel] can
+     * recompute the same `downloadId` that [UpdateRepository.downloadApk]
+     * minted for the FGS intent (see [sha256Short]). Cleared on VM destroy
+     * (default ViewModel scope) — sufficient for the user-cancellation
+     * flow, which always follows a same-VM [download] call.
+     *
+     * Not a [StateFlow]: no observer needs this externally — it is purely
+     * a write-once-then-read-once hand-off between [download] and [cancel].
+     */
+    private var lastDownloadInfo: AppVersionInfo? = null
+
     val themeMode: StateFlow<ThemeMode> = source.themeMode.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
@@ -65,9 +77,45 @@ class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
      * (caller-supplied via [androidx.compose.ui.platform.LocalContext]); the
      * `applicationContext` is what reaches [UpdateRepository.downloadApk] so
      * the cacheDir outlives any rotation-driven Activity recreation.
+     *
+     * The actual byte-stream download + cert-pin gate live in the FGS
+     * (`UpdateDownloadService`); this call only fires the Intent.
+     *
+     * Caches [info] in [lastDownloadInfo] so a subsequent [cancel] can recompute
+     * the same downloadId that [UpdateRepository.downloadApk] minted for the
+     * service Intent. Currently the FGS does not push a [UpdateState.Downloading]
+     * transition carrying `downloadId`, so the VM-side cache is the only source
+     * of truth for the cancel path.
      */
     fun download(info: AppVersionInfo, context: Context) {
-        UpdateRepository.downloadApk(info, context.applicationContext, scope = viewModelScope)
+        lastDownloadInfo = info
+        UpdateRepository.downloadApk(context.applicationContext, info)
+    }
+
+    /**
+     * User-initiated cancellation of the in-flight download. Resolves the
+     * `downloadId` from two possible sources, in priority order:
+     *
+     *  1. [lastDownloadInfo] — set by a same-VM [download] call. Always
+     *     authoritative when present (covers the in-VM happy path).
+     *  2. [UpdateState.Downloading.downloadId] — extracted from the live
+     *     [updateState] StateFlow. Covers the cold-resume path, where the
+     *     `UpdateResumeWorker` woke the app mid-download with a fresh
+     *     SettingsViewModel whose `lastDownloadInfo` is null.
+     *
+     * Falls back to a no-op if neither source has a downloadId — guards
+     * against a stray cancel tap before any download has been kicked off.
+     */
+    fun cancel(context: Context) {
+        val infoId = lastDownloadInfo?.let { sha256Short(it.apkUrl + ":" + it.versionCode) }
+        val stateId = (updateState.value as? UpdateState.Downloading)?.downloadId
+        val downloadId = infoId ?: stateId ?: return
+        UpdateRepository.cancel(context.applicationContext, downloadId)
+    }
+
+    private fun sha256Short(s: String): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        return md.digest(s.toByteArray()).joinToString("") { "%02x".format(it) }.take(16)
     }
 
     /**
@@ -87,19 +135,48 @@ class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
     }
 
     /**
-     * Smart retry: every [UpdateState.Failed] branch currently routes to
-     * [refresh] (the download path has its own retry via [download], invoked
-     * when a new [UpdateAvailable] lands). Keeping the explicit dispatch
-     * documents which failures map to which recovery action.
+     * Smart retry by Failed subtype (spec §5.6):
+     *  - [UpdateCheckResult.Failed.DownloadInterrupted.NetworkUnreachable] /
+     *    [UpdateCheckResult.Failed.DownloadInterrupted.Other]: hand off to
+     *    [UpdateRepository.retry], which resumes the FGS — the Service
+     *    re-fetches the partial via Range / If-Range.
+     *  - [UpdateCheckResult.Failed.SignatureMismatch]: also [UpdateRepository.retry],
+     *    which kicks a fresh download (Service deletes the existing file on
+     *    mismatch and starts over).
+     *  - [UpdateCheckResult.Failed.NoNetwork] /
+     *    [UpdateCheckResult.Failed.ServerError] /
+     *    [UpdateCheckResult.Failed.ParseError]: re-run the metadata check via
+     *    [refresh] — there's no partial APK to resume from.
+     *  - [UpdateCheckResult.Failed.DownloadInterrupted.Cancelled]: [UpdateRepository.retry]
+     *    restores [UpdateState.UpdateAvailable] so the user can re-tap "Download".
+     *
+     * [context] is the caller Activity (used only as a delivery vehicle for
+     * [UpdateRepository.downloadApk] / `resumeService` which take
+     * `applicationContext` internally). [jsonUrl] is forwarded so the
+     * Repository has no prod-host hard-code.
      */
-    fun retry() {
+    fun retry(context: Context, jsonUrl: String) {
         when (val current = updateState.value) {
-            is UpdateState.Failed -> when (current.result) {
-                is UpdateCheckResult.Failed.DownloadInterrupted -> {
-                    // Server fetch failed mid-download — re-check, no cached info to reuse.
-                    refresh()
+            is UpdateState.Failed -> {
+                when (current.result) {
+                    is UpdateCheckResult.Failed.DownloadInterrupted.NetworkUnreachable,
+                    is UpdateCheckResult.Failed.DownloadInterrupted.Other,
+                    is UpdateCheckResult.Failed.SignatureMismatch,
+                    is UpdateCheckResult.Failed.DownloadInterrupted.Cancelled -> {
+                        UpdateRepository.retry(
+                            context = context.applicationContext,
+                            info = lastDownloadInfo,
+                            currentVersionCode = BuildConfig.VERSION_CODE,
+                            jsonUrl = jsonUrl,
+                        )
+                    }
+                    is UpdateCheckResult.Failed.NoNetwork,
+                    is UpdateCheckResult.Failed.ServerError,
+                    is UpdateCheckResult.Failed.ParseError -> {
+                        // Pure metadata failures — no partial APK to resume from.
+                        refresh()
+                    }
                 }
-                else -> refresh()
             }
             else -> refresh()
         }
