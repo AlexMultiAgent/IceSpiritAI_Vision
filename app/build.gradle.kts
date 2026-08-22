@@ -52,6 +52,20 @@ object ReleaseSigningCert {
     const val DEFAULT_SHA256 = "4a21f417782d561dccd31ff0a10e4d643d13d00a8a2be77b4e9eeee0660b3043"
 }
 
+// Client-side pin for the in-app update channel. Mirrors the build-side
+// ReleaseSigningCert.DEFAULT_SHA256 and is overridable via the SAME
+// ICESPIRITAI_RELEASE_CERT_SHA256 env var / gradle property that
+// generateVisionLatestJson honours. Baked into BuildConfig so the app
+// verifies downloaded APKs against a value it already knows at build time,
+// instead of trusting the signerCertSha256 carried in the (cleartext)
+// vision-latest.json — a MITM cannot then supply a self-consistent
+// {JSON + APK} pair and pass the gate.
+val releaseCertSha256 = providers.environmentVariable("ICESPIRITAI_RELEASE_CERT_SHA256")
+    .orElse(providers.gradleProperty("ICESPIRITAI_RELEASE_CERT_SHA256"))
+    .orElse(ReleaseSigningCert.DEFAULT_SHA256)
+    .get()
+    .lowercase()
+
 android {
     namespace = "com.icespiritai.offline"
     compileSdk = 37
@@ -61,8 +75,8 @@ android {
         applicationId = "com.icespiritai.vision"
         minSdk = 26
         targetSdk = 37
-        versionCode = 17
-        versionName = "0.1.17"
+        versionCode = 18
+        versionName = "0.1.18"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -74,6 +88,9 @@ android {
 
         buildConfigField("String", "UPDATE_JSON_URL",
             "\"http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/vision-latest.json\"")
+
+        buildConfigField("String", "UPDATE_EXPECTED_CERT_SHA256",
+            "\"$releaseCertSha256\"")
     }
 
     signingConfigs {

@@ -45,16 +45,15 @@ class IceSpiritVisionActivity : ComponentActivity() {
             }
         }
 
-        // In-app update: silent startup check. Runs on lifecycleScope so
-        // process death cancels it cleanly. The check is fire-and-forget —
-        // any state mutation lands in `UpdateRepository.state` and is
-        // observed by `SettingsViewModel.updateState`.
-        lifecycleScope.launch {
-            UpdateRepository.checkForUpdatesAsync(
-                jsonUrl = BuildConfig.UPDATE_JSON_URL,
-                currentVersionCode = BuildConfig.VERSION_CODE,
-            )
-        }
+        // In-app update: silent startup check. checkForUpdatesAsync owns a
+        // process-wide default scope, so the check survives Activity
+        // recreation (a fresh Activity would otherwise re-fire it). Its
+        // state mutations land in `UpdateRepository.state`, which is observed
+        // by `SettingsViewModel.updateState`. Fire-and-forget.
+        UpdateRepository.checkForUpdatesAsync(
+            jsonUrl = BuildConfig.UPDATE_JSON_URL,
+            currentVersionCode = BuildConfig.VERSION_CODE,
+        )
 
         // Notification PendingIntents for [立即安装] / [稍后] launch the
         // Activity with ACTION_INSTALL / ACTION_LATER. Handle the action

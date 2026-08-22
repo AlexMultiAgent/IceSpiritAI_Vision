@@ -303,9 +303,9 @@ private fun errorMessageRes(code: ErrorCode): Int = when (code) {
 @VisibleForTesting
 internal fun HomeScreenBare(onCapture: () -> Unit, onPick: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
-        Text("冰灵锐目", style = MaterialTheme.typography.titleLarge)
+        Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge)
         Text(
-            text = "请对正图片后点击拍照",
+            text = stringResource(R.string.status_image_hint),
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(16.dp),
         )

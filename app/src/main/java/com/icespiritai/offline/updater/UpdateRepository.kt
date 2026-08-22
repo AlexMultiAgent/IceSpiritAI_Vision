@@ -3,6 +3,7 @@ package com.icespiritai.offline.updater
 import android.content.Context
 import android.content.Intent
 import androidx.annotation.VisibleForTesting
+import com.icespiritai.offline.BuildConfig
 import com.icespiritai.offline.updater.service.UpdateDownloadService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -192,9 +193,14 @@ object UpdateRepository {
         _state.value = UpdateState.Downloading(downloadId, written, total)
     }
 
-    fun onDownloadVerified(record: DownloadRecord, result: VerifierResult, file: File) {
+    /**
+     * Live-path terminal transition. [file] is only consumed by the [VerifierResult.Match]
+     * branch (ReadyToInstall); a Mismatch carries no usable file, so callers may omit it
+     * (the Service deletes the bad file before reporting).
+     */
+    fun onDownloadVerified(record: DownloadRecord, result: VerifierResult, file: File? = null) {
         _state.value = when (result) {
-            is VerifierResult.Match -> UpdateState.ReadyToInstall(file)
+            is VerifierResult.Match -> UpdateState.ReadyToInstall(file ?: File(record.destPath))
             is VerifierResult.Mismatch -> UpdateState.Failed(
                 UpdateCheckResult.Failed.SignatureMismatch(
                     expected = result.expected, actual = result.actual,
@@ -236,8 +242,11 @@ object UpdateRepository {
     internal fun verifySignatureForDownload(
         info: AppVersionInfo,
         file: File,
+        expectedCertSha256: String = BuildConfig.UPDATE_EXPECTED_CERT_SHA256.ifBlank {
+            info.signerCertSha256
+        },
     ): UpdateCheckResult.Failed.SignatureMismatch? {
-        val r = ApkSignatureVerifier.verify(file, info.signerCertSha256)
+        val r = ApkSignatureVerifier.verify(file, expectedCertSha256)
         return when (r) {
             is VerifierResult.Match -> null
             is VerifierResult.Mismatch -> UpdateCheckResult.Failed.SignatureMismatch(

@@ -1,0 +1,29 @@
+name: Android CI
+
+on:
+  push:
+    branches: [ main, "feature/**", "update/**" ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Assemble (shell profile)
+        run: ./gradlew assembleDebug -PmodelProfile=shell --no-daemon
+
+      - name: Unit tests (shell profile)
+        run: ./gradlew testDebugUnitTest -PmodelProfile=shell --no-daemon

@@ -1,5 +1,14 @@
 # 用户更新日志
 
+## v0.1.18 · 2026-08-22
+
+- **断点续传修复**:`UpdateResumeWorker` 触发的冷启动续传,`UpdateDownloadService` 现在会从 DataStore 记录重建下载 URL / 目标路径 / 签名证书。此前缺失这三种 extra 会直接 `return`,导致「上划杀进程 → 重新打开」后续传不生效(可能触发 `ForegroundServiceDidNotStartInTimeException`)
+- **Android 12+ 后台 FGS 兜底**:WorkManager 在后台唤醒进程时启动前台服务若抛 `ForegroundServiceStartNotAllowedException`,worker 会 `retry()` 等待前台后重试,不再崩溃 / ANR
+- **更新通道信任锚点**:客户端在 `BuildConfig` 中固定签名证书 SHA-256,后续下载校验不再信任明文 HTTP 下发的 `signerCertSha256`,抵御 MITM 下发自洽的「JSON + APK」伪造对;`vision-latest.json` 缺失该字段时也按客户端固定值校验
+- **并发 / 健壮性**:`UpdateDownloadService.inFlight` 改用 `ConcurrentHashMap` 线程安全集合,并清除 `return` 路径上的幻影 id 泄漏;`cleanup()` 去掉阻塞式 `runBlocking`,改为挂起删除
+- **安全 / 文档 / CI**:禁用应用备份(`allowBackup=false`,App 保存实拍图与取证包);README 与版本目录注释对齐真实构建栈(AGP 9.3 / Kotlin 2.4.10 / Gradle 9.7 / compileSdk 37);新增 GitHub Actions CI(跑 `assembleDebug` + `testDebugUnitTest`)
+- `versionCode 17→18`,`versionName 0.1.17→0.1.18`
+
 ## v0.1.17 · 2026-08-22
 
 - **应用内更新支持后台下载 + 锁屏不掉线**(Foreground Service,`foregroundServiceType="dataSync"`,Android 14+ 红线)

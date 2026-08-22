@@ -16,6 +16,11 @@
     - signerCertSha256 byte-level verification (UpdateRepository
       .verifySignatureForDownload, Wave 1 Task 1.4) provides a second
       gate against APK content tampering.
+    - v0.1.18+: the client pins the signer cert via
+      BuildConfig.UPDATE_EXPECTED_CERT_SHA256 (the build-time release cert).
+      This makes the signerCertSha256 in the (cleartext) JSON advisory, not
+      the trust anchor — a MITM can no longer pass the gate by serving a
+      self-consistent {JSON + APK} pair.
 
   DEFERRED (audit P0-2):
     Once the Gitea server has TLS terminated (self-signed or LE cert),

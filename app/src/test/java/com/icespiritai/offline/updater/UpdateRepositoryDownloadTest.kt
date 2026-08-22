@@ -1,5 +1,6 @@
 package com.icespiritai.offline.updater
 
+import com.icespiritai.offline.BuildConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -24,16 +25,18 @@ class UpdateRepositoryDownloadTest {
     )
 
     @Test
-    fun signatureGate_skipsWhenSignerCertSha256IsEmpty() {
-        // Backward compat: vision-latest.json published before Wave 1 Task 1.2
-        // carries no signerCertSha256; gate must NOT block such updates.
+    fun signatureGate_skipsWhenExpectedCertIsEmpty() {
+        // A build that compiles no pin (expectedCertSha256 == "") must not block
+        // updates — applies to the legacy "no pinning enforced" path.
         val tmp = Files.createTempFile("icespirit-notapk", ".bin").toFile()
         tmp.writeText("not a real apk, but the verifier must not even be invoked")
         val infoNoCert = info.copy(signerCertSha256 = "")
         try {
-            val result = UpdateRepository.verifySignatureForDownload(infoNoCert, tmp)
+            val result = UpdateRepository.verifySignatureForDownload(
+                infoNoCert, tmp, expectedCertSha256 = "",
+            )
             assertNull(
-                "empty signerCertSha256 must skip the cert-pin gate (download → ReadyToInstall)",
+                "empty expected cert must skip the cert-pin gate (download → ReadyToInstall)",
                 result,
             )
         } finally {
@@ -51,14 +54,37 @@ class UpdateRepositoryDownloadTest {
         val expectedHex = "deadbeef".repeat(8) // 64 chars
         val infoPinned = info.copy(signerCertSha256 = expectedHex)
         try {
-            val result = UpdateRepository.verifySignatureForDownload(infoPinned, tmp)
+            val result = UpdateRepository.verifySignatureForDownload(
+                infoPinned, tmp, expectedCertSha256 = expectedHex,
+            )
             assertTrue(
                 "expected SignatureMismatch branch when actual is null",
                 result is UpdateCheckResult.Failed.SignatureMismatch,
             )
             result as UpdateCheckResult.Failed.SignatureMismatch
-            assertEquals("deadbeef".repeat(8), result.expected)
+            assertEquals(expectedHex, result.expected)
             assertNull("actual must be null when file is unparsable", result.actual)
+        } finally {
+            tmp.delete()
+        }
+    }
+
+    @Test
+    fun signatureGate_enforcesClientPinWhenJsonOmitsCert() {
+        // The client pin (BuildConfig.UPDATE_EXPECTED_CERT_SHA256) must be the
+        // trust anchor: even when vision-latest.json omits signerCertSha256,
+        // an unparsable/bad APK is rejected against the pinned value instead of
+        // being accepted for "backward compat".
+        val tmp = Files.createTempFile("icespirit-notapk3", ".bin").toFile()
+        tmp.writeText("plain text — not a real APK")
+        try {
+            val result = UpdateRepository.verifySignatureForDownload(
+                info, tmp, // no override → resolves to BuildConfig pin
+            )
+            assertTrue(result is UpdateCheckResult.Failed.SignatureMismatch)
+            result as UpdateCheckResult.Failed.SignatureMismatch
+            assertEquals(BuildConfig.UPDATE_EXPECTED_CERT_SHA256, result.expected)
+            assertNull(result.actual)
         } finally {
             tmp.delete()
         }

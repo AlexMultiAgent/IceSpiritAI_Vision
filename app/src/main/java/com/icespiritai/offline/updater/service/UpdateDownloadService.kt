@@ -4,6 +4,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.os.IBinder
+import com.icespiritai.offline.BuildConfig
 import com.icespiritai.offline.AppGraph
 import com.icespiritai.offline.updater.ApkDownloader
 import com.icespiritai.offline.updater.ApkSignatureVerifier
@@ -21,17 +22,20 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
 
 class UpdateDownloadService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var notifier: UpdateDownloadNotifier
     private lateinit var stateStore: DownloadStateStore
-    private val inFlight = mutableSetOf<String>()
+    // ConcurrentHashMap-backed set: onStartCommand (main thread) and the IO
+    // coroutines (onDownloadComplete / handleCancel / cleanup) mutate this from
+    // different threads. A plain mutableSetOf is not thread-safe.
+    private val inFlight: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     override fun onCreate() {
         super.onCreate()
@@ -52,24 +56,51 @@ class UpdateDownloadService : Service() {
 
     private fun handleDownload(intent: Intent) {
         val id = intent.getStringExtra(UpdateDownloadActions.EXTRA_DOWNLOAD_ID) ?: return
-        if (!inFlight.add(id)) return  // idempotent: same id already running
-
-        val url = intent.getStringExtra(UpdateDownloadActions.EXTRA_URL) ?: return
-        val destPath = intent.getStringExtra(UpdateDownloadActions.EXTRA_DEST_PATH) ?: return
-        val certSha = intent.getStringExtra(UpdateDownloadActions.EXTRA_SIGNER_CERT_SHA256) ?: return
+        val url = intent.getStringExtra(UpdateDownloadActions.EXTRA_URL)
+        val destPath = intent.getStringExtra(UpdateDownloadActions.EXTRA_DEST_PATH)
+        val certSha = intent.getStringExtra(UpdateDownloadActions.EXTRA_SIGNER_CERT_SHA256)
         val versionName = intent.getStringExtra(UpdateDownloadActions.EXTRA_VERSION_NAME) ?: ""
         val resume = intent.getBooleanExtra(UpdateDownloadActions.EXTRA_RESUME, false)
 
+        // The WorkManager resume path (UpdateResumeWorker) sends only
+        // downloadId + resume=true. Reconstruct URL / dest / cert from the
+        // persisted DataStore record so the download actually resumes —
+        // otherwise the service would bail out here and resume silently fails.
+        if (!inFlight.add(id)) return  // idempotent: same id already running
+
         scope.launch {
+            val persisted = stateStore.get(id)
+            val freshMetadataMissing = url == null || destPath == null || certSha == null
+            if (persisted == null && freshMetadataMissing) {
+                // Nothing to resume and no fresh metadata: drop the phantom id
+                // so it is not permanently stuck for this service lifetime.
+                inFlight.remove(id)
+                return@launch
+            }
+
+            val effUrl = url ?: persisted?.url
+            val effDest = destPath ?: persisted?.destPath
+            // Client-side cert pin is authoritative; the JSON/extra value is
+            // only a fallback for builds where no pin was compiled in.
+            val effCert = BuildConfig.UPDATE_EXPECTED_CERT_SHA256.ifBlank {
+                certSha ?: persisted?.signerCertSha256 ?: ""
+            }
+            if (effUrl == null || effDest == null) {
+                inFlight.remove(id)
+                return@launch
+            }
+
             val record = DownloadRecord(
-                downloadId = id, url = url, destPath = destPath,
-                bytesWritten = 0, totalBytes = 0, etag = null,
-                signerCertSha256 = certSha,
-                stage = DownloadRecord.DownloadStage.Downloading,
-                versionName = versionName, startedAtEpochMs = System.currentTimeMillis(),
+                downloadId = id, url = effUrl, destPath = effDest,
+                bytesWritten = persisted?.bytesWritten ?: 0,
+                totalBytes = persisted?.totalBytes ?: 0,
+                etag = persisted?.etag,
+                signerCertSha256 = effCert,
+                stage = persisted?.stage ?: DownloadRecord.DownloadStage.Downloading,
+                versionName = versionName.ifEmpty { persisted?.versionName ?: "" },
+                startedAtEpochMs = persisted?.startedAtEpochMs ?: System.currentTimeMillis(),
             )
-            val existing = stateStore.get(id)
-            val effective = if (existing != null) existing else record.also { stateStore.upsert(it) }
+            val effective = persisted ?: record.also { stateStore.upsert(it) }
 
             // startForeground must be called within 5 seconds
             val initialNotif = notifier.buildProgressNotification(effective, written = effective.bytesWritten)
@@ -187,7 +218,7 @@ class UpdateDownloadService : Service() {
             is VerifierResult.Mismatch -> {
                 File(record.destPath).delete()
                 stateStore.delete(record.downloadId)
-                UpdateRepository.onDownloadVerified(record, verifierResult, File(record.destPath))
+                UpdateRepository.onDownloadVerified(record, verifierResult)
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 inFlight.remove(record.downloadId)
@@ -206,9 +237,9 @@ class UpdateDownloadService : Service() {
         }
     }
 
-    private fun cleanup(record: DownloadRecord) {
+    private suspend fun cleanup(record: DownloadRecord) {
         runCatching { File(record.destPath).delete() }
-        runCatching { runBlocking { stateStore.delete(record.downloadId) } }
+        try { stateStore.delete(record.downloadId) } catch (_: Exception) {}
         inFlight.remove(record.downloadId)
     }
 
