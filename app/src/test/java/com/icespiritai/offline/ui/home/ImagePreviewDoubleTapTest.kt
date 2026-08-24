@@ -152,8 +152,8 @@ class ImagePreviewDoubleTapTest {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     ImagePreview(
                         imageUri = Uri.parse("file:///tmp/sample.jpg"),
-                        // After the fix, HomeScreen will pass this exact list when
-                        // state = Complete and report.lineBoxes is non-empty.
+                        // non-empty list is the precondition ImagePreview's pointerInput
+                        // gate requires; HomeScreen's state→lineBoxes derivation is not modeled here
                         lineBoxes = sampleLines,
                         hits = sampleHits,
                         onDoubleTap = { dblClicks++ },
