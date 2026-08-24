@@ -127,21 +127,25 @@ class ImagePreviewDoubleTapTest {
     }
 
     /**
-     * Regression test for the v0.1.x double-tap bug. Before the fix at
-     * `HomeScreen.kt:145`, the `lineBoxes` derivation only consulted
-     * `AnalysisState.OcrDone`. Once state advanced to `AnalysisState.Complete`,
-     * `ocrResult` was null and `lineBoxes` collapsed to `emptyList()`, which
-     * gated out the `pointerInput` block inside `ImagePreview`. The callback
-     * was wired (`onOpenViewer = nav.navigate(Routes.VIEWER)`) but never
-     * invoked, so double-tap on the Home preview silently did nothing.
+     * ImagePreview-side precondition pin for the v0.1.x double-tap bug fix
+     * at `HomeScreen.kt:145`.
      *
-     * The fix makes HomeScreen pull `lineBoxes` from
-     * `completeReport?.lineBoxes` as a second fallback. This test simulates
-     * that post-fix derivation by passing a non-empty `lineBoxes` straight to
-     * `ImagePreview` — the same value the fixed HomeScreen would now forward.
+     * `ImagePreview` installs its `pointerInput` block only when
+     * `lineBoxes.isNotEmpty()`. HomeScreen's post-fix derivation must satisfy
+     * that gate when state is `Complete`, by falling back to
+     * `completeReport?.lineBoxes` instead of the (null) `ocrResult`. This
+     * test pins the ImagePreview-side gate itself — given a non-empty
+     * `lineBoxes`, double-tap invokes the callback exactly once.
+     *
+     * What this test does NOT cover: the actual HomeScreen derivation that
+     * feeds `ImagePreview`. Driving state to `Complete` from a test requires
+     * a fake `IceSpiritVisionViewModel`; that refactor is out of scope for
+     * this fix (see the Idle-path comment in `HomeScreenTest.kt:56-72` for
+     * the existing constraint). A future revert of `HomeScreen.kt:145`
+     * would not break this test — by design, it lives one layer down.
      */
     @Test
-    fun `double-tap with non-empty lineBoxes from Complete-state derivation invokes callback`() {
+    fun `double-tap with non-empty lineBoxes triggers callback (ImagePreview-side precondition pin)`() {
         var dblClicks = 0
         composeTestRule.setContent {
             MaterialTheme {
