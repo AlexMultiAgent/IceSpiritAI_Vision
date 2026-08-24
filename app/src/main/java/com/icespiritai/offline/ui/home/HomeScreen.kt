@@ -142,7 +142,7 @@ fun HomeScreen(
     // Derive display state from AnalysisState
     val completeReport = (state as? AnalysisState.Complete)?.report
     val ocrResult = (state as? AnalysisState.OcrDone)
-    val lineBoxes = ocrResult?.lineBoxes ?: emptyList()
+    val lineBoxes = ocrResult?.lineBoxes ?: completeReport?.lineBoxes ?: emptyList()
     val hits = completeReport?.hits ?: emptyList()
     val showLineBoxes = (state is AnalysisState.OcrDone) || completeReport != null
 

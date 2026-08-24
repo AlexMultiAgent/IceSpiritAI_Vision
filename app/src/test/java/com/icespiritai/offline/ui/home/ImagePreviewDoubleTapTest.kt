@@ -125,4 +125,41 @@ class ImagePreviewDoubleTapTest {
             .performTouchInput { doubleClick(center) }
         assertEquals(0, dblClicks)
     }
+
+    /**
+     * Regression test for the v0.1.x double-tap bug. Before the fix at
+     * `HomeScreen.kt:145`, the `lineBoxes` derivation only consulted
+     * `AnalysisState.OcrDone`. Once state advanced to `AnalysisState.Complete`,
+     * `ocrResult` was null and `lineBoxes` collapsed to `emptyList()`, which
+     * gated out the `pointerInput` block inside `ImagePreview`. The callback
+     * was wired (`onOpenViewer = nav.navigate(Routes.VIEWER)`) but never
+     * invoked, so double-tap on the Home preview silently did nothing.
+     *
+     * The fix makes HomeScreen pull `lineBoxes` from
+     * `completeReport?.lineBoxes` as a second fallback. This test simulates
+     * that post-fix derivation by passing a non-empty `lineBoxes` straight to
+     * `ImagePreview` — the same value the fixed HomeScreen would now forward.
+     */
+    @Test
+    fun `double-tap with non-empty lineBoxes from Complete-state derivation invokes callback`() {
+        var dblClicks = 0
+        composeTestRule.setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    ImagePreview(
+                        imageUri = Uri.parse("file:///tmp/sample.jpg"),
+                        // After the fix, HomeScreen will pass this exact list when
+                        // state = Complete and report.lineBoxes is non-empty.
+                        lineBoxes = sampleLines,
+                        hits = sampleHits,
+                        onDoubleTap = { dblClicks++ },
+                    )
+                }
+            }
+        }
+
+        composeTestRule.onNodeWithTag("image_preview")
+            .performTouchInput { doubleClick(center) }
+        assertEquals(1, dblClicks)
+    }
 }
