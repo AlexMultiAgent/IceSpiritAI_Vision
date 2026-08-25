@@ -16,11 +16,15 @@ import com.icespiritai.offline.R
 import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.ui.theme.DarkIceChatError
 import com.icespiritai.offline.ui.theme.DarkIceChatOnError
+import com.icespiritai.offline.ui.theme.DarkIceChatOnPositive
 import com.icespiritai.offline.ui.theme.DarkIceChatOnWarning
+import com.icespiritai.offline.ui.theme.DarkIceChatPositive
 import com.icespiritai.offline.ui.theme.DarkIceChatWarning
 import com.icespiritai.offline.ui.theme.LightIceChatError
 import com.icespiritai.offline.ui.theme.LightIceChatOnError
+import com.icespiritai.offline.ui.theme.LightIceChatOnPositive
 import com.icespiritai.offline.ui.theme.LightIceChatOnWarning
+import com.icespiritai.offline.ui.theme.LightIceChatPositive
 import com.icespiritai.offline.ui.theme.LightIceChatWarning
 
 @Composable
@@ -29,11 +33,13 @@ fun SeverityBadge(severity: Severity, modifier: Modifier = Modifier) {
         Severity.Info -> resolveSeverityColors(DarkIceChatWarning, DarkIceChatOnWarning, LightIceChatWarning, LightIceChatOnWarning)
         Severity.Warning -> resolveSeverityColors(DarkIceChatWarning, DarkIceChatOnWarning, LightIceChatWarning, LightIceChatOnWarning)
         Severity.Violation -> resolveSeverityColors(DarkIceChatError, DarkIceChatOnError, LightIceChatError, LightIceChatOnError)
+        Severity.Positive -> resolveSeverityColors(DarkIceChatPositive, DarkIceChatOnPositive, LightIceChatPositive, LightIceChatOnPositive)
     }
     val label = when (severity) {
         Severity.Info -> stringResource(R.string.hit_severity_info)
         Severity.Warning -> stringResource(R.string.hit_severity_warning)
         Severity.Violation -> stringResource(R.string.hit_severity_violation)
+        Severity.Positive -> stringResource(R.string.hit_severity_positive)
     }
     Text(
         text = label,

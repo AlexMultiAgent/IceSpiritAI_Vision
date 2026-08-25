@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 
 private val DarkScheme = darkColorScheme(
     primary = DarkIceChatAccent,
@@ -55,10 +56,14 @@ fun IceSpiritVisionTheme(
     themeMode: ThemeMode,
     content: @Composable () -> Unit,
 ) {
-    MaterialTheme(
-        colorScheme = if (themeMode.toDarkTheme()) DarkScheme else LightScheme,
-        shapes = IceSpiritShapes,
-        typography = IceSpiritTypography,
-        content = content,
-    )
+    val darkTheme = themeMode.toDarkTheme()
+    val severityColors = SeverityColors(isDark = darkTheme)
+    CompositionLocalProvider(LocalSeverityColors provides severityColors) {
+        MaterialTheme(
+            colorScheme = if (darkTheme) DarkScheme else LightScheme,
+            shapes = IceSpiritShapes,
+            typography = IceSpiritTypography,
+            content = content,
+        )
+    }
 }

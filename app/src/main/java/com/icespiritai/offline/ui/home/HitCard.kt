@@ -33,6 +33,7 @@ fun HitCard(hit: RuleHit, modifier: Modifier = Modifier) {
             Severity.Violation -> R.string.hit_severity_violation
             Severity.Warning -> R.string.hit_severity_warning
             Severity.Info -> R.string.hit_severity_info
+            Severity.Positive -> R.string.hit_severity_positive
         }
     )
     val categoryLabel = CategoryDisplay.displayName(hit.domain, hit.category)

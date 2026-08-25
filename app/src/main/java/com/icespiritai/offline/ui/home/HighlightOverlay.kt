@@ -13,8 +13,10 @@ import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.domain.TextLine
 import com.icespiritai.offline.domain.TextNormalizer
 import com.icespiritai.offline.ui.theme.DarkIceChatError
+import com.icespiritai.offline.ui.theme.DarkIceChatPositive
 import com.icespiritai.offline.ui.theme.DarkIceChatWarning
 import com.icespiritai.offline.ui.theme.LightIceChatError
+import com.icespiritai.offline.ui.theme.LightIceChatPositive
 import com.icespiritai.offline.ui.theme.LightIceChatWarning
 
 @Composable
@@ -44,6 +46,7 @@ fun HighlightOverlay(
                 Severity.Violation -> if (isDark) DarkIceChatError else LightIceChatError
                 Severity.Warning -> if (isDark) DarkIceChatWarning else LightIceChatWarning
                 Severity.Info -> return@forEach
+                Severity.Positive -> if (isDark) DarkIceChatPositive else LightIceChatPositive
             }
             drawRoundRect(
                 color = color,

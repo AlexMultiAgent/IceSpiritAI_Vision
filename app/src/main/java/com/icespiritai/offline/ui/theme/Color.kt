@@ -48,6 +48,7 @@ val DarkIceChatOnWarningContainer = Color(0xFFFDE68A)
 // Positive (Success) container
 val DarkIceChatPositiveContainer = Color(0xFF14532D)
 val DarkIceChatOnPositiveContainer = Color(0xFFBBF7D0)
+val DarkIceChatOnPositive = Color(0xFF08131B)
 
 // Info — 4-token full role (didn't exist before Phase 3.1)
 val DarkIceChatInfo = Color(0xFF60A5FA)
@@ -86,6 +87,7 @@ val LightIceChatOnWarningContainer = Color(0xFF78350F)
 // Positive (Success) container
 val LightIceChatPositiveContainer = Color(0xFFDCFCE7)
 val LightIceChatOnPositiveContainer = Color(0xFF14532D)
+val LightIceChatOnPositive = Color(0xFFFFFFFF)
 
 // Info — 4-token full role (didn't exist before Phase 3.1)
 val LightIceChatInfo = Color(0xFF2563EB)

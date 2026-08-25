@@ -240,6 +240,7 @@ private fun StatusBannerFor(state: AnalysisState) {
                     Severity.Violation -> StatusBannerKind.Violation
                     Severity.Warning -> StatusBannerKind.Warning
                     Severity.Info -> StatusBannerKind.Warning
+                    Severity.Positive -> StatusBannerKind.Warning
                     null -> StatusBannerKind.Success
                 }
                 val text = when (kind) {

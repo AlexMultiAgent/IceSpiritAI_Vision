@@ -47,6 +47,7 @@
     <string name="hit_severity_info">信息</string>
     <string name="hit_severity_warning">警告</string>
     <string name="hit_severity_violation">违规</string>
+    <string name="hit_severity_positive">合规</string>
 
     <string name="image_preview_desc">待分析图片</string>
     <string name="capture_button_desc">拍照</string>

@@ -74,7 +74,7 @@ data class RuleHit(
     val lawText: String = "",
 )
 
-enum class Severity { Info, Warning, Violation }
+enum class Severity { Info, Warning, Violation, Positive }
 
 data class ViolationReport(
     val imageUri: Uri,
