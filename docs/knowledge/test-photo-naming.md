@@ -49,17 +49,19 @@ inbox_wechat_20260819_03.jpg
 | `category_<seq>.jpg` 不带 scene 字段 | 同 bucket 多场景时无法区分(如 medical 桶药店 vs 诊所) |
 | 升档后保留 inbox 原文件 + 新 fixture 图 | 升档是「迁移」语义,不是「复制」 |
 
-## 当前 `违规案例/` 状态(2026-08-25 改名后)
+## 当前 `违规案例/` 状态(2026-08-25 内容查清后改名)
 
-| 文件 | 档 | 状态 |
+| 文件 | 档 | 状态 / 内容 |
 |---|---|---|
-| `medical_store_01.jpg` | Fixture | 入 git;sidecar `medical_store_01.md` 引用 |
-| `inbox_wechat_20260819_01.jpg` | Inbox | 不入 git;待 OCR + 分类升档 |
-| `inbox_wechat_20260819_02.jpg` | Inbox | 不入 git |
-| `inbox_wechat_20260819_03.jpg` | Inbox | 不入 git |
-| `inbox_wechat_20260819_04.jpg` | Inbox | 不入 git |
+| `medical_store_01.jpg` | Fixture | 入 git;sidecar `medical_store_01.md` 引用;medical 桶(药店糖尿病根治) |
+| `inbox_wechat_20260819_dongjiao_daojia_recruit.jpg` | Inbox | 不入 git;东郊到家按摩 APP 招揽海报(全国技师 9 万 + 协会背书) |
+| `inbox_wechat_20260819_xieduhui_xcx_quanguo_first.jpg` | Inbox ⭐ | 不入 git;蟹都汇小程序 VIP 页(大闸蟹**领导品牌** / **门店数量全国第一** / **累计销量全国第一**)— **正是 `docs/knowledge/ppocrv6_vs_v5_a_b_test.md` 里 v6 vs v5 A/B 经典案例**,升档价值最高 |
+| `inbox_wechat_20260819_durex_bus_shouge_gongyi.jpg` | Inbox | 不入 git;杜蕾斯公交车身广告(**杜蕾斯首个公益装**)— outdoor + absolute 跨桶 |
+| `inbox_wechat_20260819_xiaoyuan_yuliang_zytmhqs_douyin.jpg` | Inbox | 不入 git;小园玉粱紫玉米花青素抖音短视频(**控糖稳血糖** / **糖尿病患者的安心选择**)— food + internet_ad 跨桶 |
 
-inbox 文件是 2026-08-19 暂停的 Task B(微信图采集)残留;若后续判定内容不构成 fixture 案例,直接 `rm` 即可(本就 untracked,无副作用)。
+⭐ = 推荐优先升档(内容明确 + 项目曾用其做 OCR 评测基准 + 命中 13 桶 + 跨桶价值高)。
+
+inbox 文件是 2026-08-19 暂停的 Task B(微信图采集)残留,2026-08-25 由 Claude Read tool 直接读图查清内容。**改名规范**:`inbox_<source>_<yyyymmdd>_<content_slug>.<ext>`,`<content_slug>` 用拼音 + 关键词短串(如 `durex_bus_shouge_gongyi` = 杜蕾斯 + 公交 + 首个 + 公益装)。若后续判定不构成 fixture 案例,直接 `rm` 即可(本就 untracked)。
 
 ## 与 text fixture 的对偶
 
