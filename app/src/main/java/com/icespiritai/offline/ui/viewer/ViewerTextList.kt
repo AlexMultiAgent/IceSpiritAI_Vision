@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -84,7 +84,14 @@ fun ViewerTextList(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(items = lineBoxes, key = { it.text }) { line ->
+                // Index-based key: OCR commonly emits the same word in
+                // multiple boxes (e.g. "门店" twice on a sign), so a
+                // `key = { it.text }` would crash LazyColumn with
+                // "Key X was already used" the moment the list scrolls.
+                itemsIndexed(
+                    items = lineBoxes,
+                    key = { index, _ -> index },
+                ) { _, line ->
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp),

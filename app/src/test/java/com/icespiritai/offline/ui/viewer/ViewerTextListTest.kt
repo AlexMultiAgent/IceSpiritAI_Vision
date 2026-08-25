@@ -101,4 +101,39 @@ class ViewerTextListTest {
             composeTestRule.onAllNodesWithText(line.text).assertCountEquals(1)
         }
     }
+
+    /**
+     * Regression pin for the v0.1.26 Viewer crash: a [LazyColumn] keyed by
+     * `it.text` blows up with `IllegalArgumentException: Key X was already
+     * used` when two TextLines share identical text — a common case in OCR
+     * output (e.g. "门店" detected in multiple bounding boxes on the same
+     * sign). The previous `key = { it.text }` formulation crashed the
+     * Viewer the moment the user scrolled; the fix is index-based keys.
+     * If anyone reverts to a content-based key, this test fails at
+     * setContent() with the underlying IllegalArgumentException.
+     */
+    @Test
+    fun `ViewerTextList does not crash when TextLines share identical text`() {
+        val lines = listOf(
+            TextLine(text = "门店", box = Rect(0, 0, 100, 20), confidence = 0.95f),
+            TextLine(text = "门店", box = Rect(0, 25, 100, 45), confidence = 0.88f),
+            TextLine(text = "门店", box = Rect(0, 50, 100, 70), confidence = 0.80f),
+        )
+        composeTestRule.setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    ViewerTextList(
+                        lineBoxes = lines,
+                        hitsCount = 0,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+        }
+        // setContent would throw the IllegalArgumentException above if the
+        // LazyColumn key wasn't unique. Surviving setContent + rendering the
+        // header at all is the assertion.
+        composeTestRule.onNodeWithText(ctx.getString(R.string.viewer_lines_count, 3))
+            .assertIsDisplayed()
+    }
 }

@@ -1,22 +1,21 @@
 package com.icespiritai.offline.ui.home
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -40,6 +39,19 @@ enum class RuleTab(val titleRes: Int) {
  */
 private val visibleTabs: List<RuleTab> = listOf(RuleTab.AdSignage)
 
+/**
+ * Pill-style segmented tab bar. Each tab is a [Surface] with a rounded
+ * 20dp shape, `secondaryContainer` fill when selected and `surfaceVariant`
+ * when unselected. The pill container provides a strong visual contrast
+ * against the flat `冰灵锐目` title above, fixing the previous "title and
+ * tab both look like flat text" issue. The 3dp underline indicator that
+ * came with [androidx.compose.material3.TabRow] is gone — the container
+ * itself now carries the selected state.
+ *
+ * Each pill exposes `Role.Tab` semantics via [Modifier.clickable] so
+ * [RuleTabBarTest] (which counts `Role.Tab` nodes) and screen readers
+ * both keep working.
+ */
 @Composable
 fun RuleTabBar(
     selected: RuleTab,
@@ -48,46 +60,62 @@ fun RuleTabBar(
     modifier: Modifier = Modifier,
 ) {
     val a11y = stringResource(R.string.tab_switch_desc)
-    val selectedIndex = visibleTabs.indexOf(selected).coerceAtLeast(0)
-    TabRow(
-        selectedTabIndex = selectedIndex,
-        modifier = modifier.fillMaxWidth().semantics { contentDescription = a11y },
-        containerColor = Color.Transparent,
-        indicator = { tabPositions ->
-            if (selectedIndex < tabPositions.size) {
-                // Compose BOM 2026.08.00 only exposes the single-arg
-                // Modifier.tabIndicatorOffset(position) helper — there is
-                // no (position, height) overload, so we render the 3dp
-                // indicator via Box to match the spec's intended height.
-                val pos = tabPositions[selectedIndex]
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .wrapContentSize(Alignment.BottomStart)
-                        .offset(x = pos.left)
-                        .width(pos.width)
-                        .height(3.dp)
-                        .background(MaterialTheme.colorScheme.primary),
-                )
-            }
-        },
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .semantics { contentDescription = a11y },
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         visibleTabs.forEach { tab ->
             val isSelected = (tab == selected)
-            Tab(
-                selected = isSelected,
+            PillTab(
+                tab = tab,
+                isSelected = isSelected,
                 onClick = { if (enabled) onSelect(tab) },
                 enabled = enabled || isSelected,
-                text = {
-                    Text(
-                        text = stringResource(tab.titleRes),
-                        style = if (isSelected)
-                            MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
-                        else
-                            MaterialTheme.typography.bodyLarge,
-                    )
-                },
             )
         }
+    }
+}
+
+@Composable
+private fun PillTab(
+    tab: RuleTab,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    enabled: Boolean,
+) {
+    val containerColor = if (isSelected) {
+        MaterialTheme.colorScheme.secondaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant
+    }
+    val contentColor = if (isSelected) {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Surface(
+        color = containerColor,
+        contentColor = contentColor,
+        shape = RoundedCornerShape(20.dp),
+        tonalElevation = if (isSelected) 2.dp else 0.dp,
+        modifier = Modifier.clickable(
+            enabled = enabled,
+            role = Role.Tab,
+            onClick = onClick,
+        ),
+    ) {
+        Text(
+            text = stringResource(tab.titleRes),
+            style = if (isSelected) {
+                MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+            } else {
+                MaterialTheme.typography.bodyLarge
+            },
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+        )
     }
 }
