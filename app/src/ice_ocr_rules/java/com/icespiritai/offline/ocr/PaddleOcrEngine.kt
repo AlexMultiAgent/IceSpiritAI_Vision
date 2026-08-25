@@ -133,13 +133,20 @@ class PaddleOcrEngine(
 
             val bytes = BitmapLoader.bytes(appContext, uri)
                 ?: throw OcrFailed("Failed to read image stream: $uri")
+            // BitmapFactory.decodeByteArray already applies EXIF orientation
+            // on API 24+ (minSdk=26 here), so the bitmap is in display
+            // orientation. Manually rotating again with
+            // [BitmapLoader.applyExifRotation] would double-rotate and put
+            // OCR boxes in a coordinate space that doesn't match Coil's
+            // painter.intrinsicSize — causing HighlightOverlay rects to land
+            // off-text on any non-EXIF-1 photo (verified on the 8-hit corn
+            // advertisement fixture, boxes drifted into the right margin
+            // and the OCR-text panel). The Phase 2 design doc said the
+            // opposite, but that was wrong for API 24+; the EXIF helpers in
+            // BitmapLoader are kept as utilities but no longer wired here.
             val loaded = BitmapLoader.downsampledBitmapWithScale(bytes)
                 ?: throw OcrFailed("Failed to decode image: $uri")
-            val raw = loaded.bitmap
-            val degrees = BitmapLoader.exifRotationDegrees(bytes)
-            val bitmap = BitmapLoader.applyExifRotation(raw, degrees)
-            // Rotation allocates a second bitmap; the unrotated one is dead.
-            if (bitmap !== raw) raw.recycle()
+            val bitmap = loaded.bitmap
 
             val runResult = try {
                 ocr.recognize(bitmap)

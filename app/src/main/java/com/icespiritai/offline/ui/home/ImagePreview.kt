@@ -36,10 +36,13 @@ private fun computeFitTransform(painter: Painter?, boxSize: IntSize): FitTransfo
     if (painter == null || boxSize == IntSize.Zero) return FitTransform(1f, 1f, 0f, 0f)
     val intrinsicW = painter.intrinsicSize.width
     val intrinsicH = painter.intrinsicSize.height
-    if (intrinsicW <= 0f || intrinsicH <= 0f) return FitTransform(1f, 1f, 0f, 0f)
+    if (!intrinsicW.isFinite() || !intrinsicH.isFinite() ||
+        intrinsicW <= 0f || intrinsicH <= 0f) return FitTransform(1f, 1f, 0f, 0f)
     val boxW = boxSize.width.toFloat()
     val boxH = boxSize.height.toFloat()
+    if (boxW <= 0f || boxH <= 0f) return FitTransform(1f, 1f, 0f, 0f)
     val scale = minOf(boxW / intrinsicW, boxH / intrinsicH)
+    if (!scale.isFinite() || scale <= 0f) return FitTransform(1f, 1f, 0f, 0f)
     return FitTransform(
         scaleX = scale,
         scaleY = scale,

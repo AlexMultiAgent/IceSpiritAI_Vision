@@ -1,5 +1,14 @@
 # 用户更新日志
 
+## v0.1.29 · 2026-08-26
+
+- **修复:首页「红框位置标错了」** — `HighlightOverlay` 矩形在 `ice_ocr_rules` profile 上落不到文字上(实测 8 命中 / 8 全错位:大框飘到图片右上角、小框散落到 OCR 文字面板与底部拍照按钮区)
+  - 根因:`PaddleOcrEngine` 在 `BitmapFactory.decodeByteArray` 之后又调了一次 `BitmapLoader.applyExifRotation`。Phase 2 设计文档假设 BitmapFactory 不应用 EXIF 旋转(API < 24 的行为),但 minSdk=26 已在 API 24+ 路径上,BitmapFactory JNI 内置 `applyOrientation()`,返回的就是 display-orientation bitmap。手动再转一次 = 双重旋转,OCR 返回的 bbox 在「被再转 90°/180° 的位图」坐标系里,而 Coil 画的是 BitmapFactory 的 display-orientation 坐标系,bbox 经 `computeFitTransform` 映射后整块错位
+  - 修复:`PaddleOcrEngine.recognize()` 移除 `applyExifRotation` 调用,直接喂 `BitmapLoader.downsampledBitmapWithScale(bytes).bitmap` 给 `PaddleOCR.recognize`。`BitmapLoader.applyExifRotation` / `exifRotationDegrees` 保留为 utility(`BitmapLoaderTest` 还要测),但不再走 OCR 路径
+  - 回归 pin:`BitmapLoaderExifRotationTest` 4 例 Robolectric(SDK 33)用 `test_rotated.jpg`(PIL 生成,带 EXIF Orientation tag 的 JPEG fixture)锁住 `BitmapLoader` 的旋转 utility:`exifRotationDegrees` 必须与 `ExifInterface` 直读一致(0/90/180/270);`applyExifRotation(0)` 必须 no-op(避免 EXIF=1 截图每次都多分配一张 bitmap);90° / 270° 必须交换 W↔H、180° 必须保尺寸。Robolectric 当前 SDK 33 的 `BitmapFactory.decodeByteArray` 不应用 EXIF(API < 24 表现),API 24+ 的双重旋转 bug 不能在 unit test 里复现 — 端到端真机回归留 `PaddleOcrExifTest` androidTest + 设备烟测把关,这套 unit test 仅防 helper 层退路。未来 Robolectric 升级若开始模拟 EXIF,`bitmapFactory_underRobolectric_decodesRawDimensions_evenWhenExifPresent` 会先 fail(标桩信号),届时 v0.1.29 的"别手动再转一次"假设就可以在 unit test 层闭环
+  - `computeFitTransform` 顺手补 `Float.isFinite()` / `> 0` 防御:之前 `intrinsicSize` 为 NaN/0/负时会返回 `scale = NaN` 让 Canvas 静默崩
+- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`,新增 BitmapLoaderExifRotationTest 4 例,总 556 / 0 failures)
+
 ## v0.1.28 · 2026-08-26
 
 - **修复:`latest` 上发布的安装包未携带 OCR 模型 + 规则引擎,违规识别全部失效**
