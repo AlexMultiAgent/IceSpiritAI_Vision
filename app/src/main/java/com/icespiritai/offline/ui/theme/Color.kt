@@ -37,6 +37,23 @@ val DarkIceChatOnWarning = Color(0xFF08131B)
 val DarkIceChatPositive = Color(0xFF5FC2A0)
 val DarkIceChatError = Color(0xFFFF6B6B)
 val DarkIceChatOnError = Color(0xFF08131B)
+// Error container (added Phase 3.1 Task 1) — Material You 4-token pattern
+val DarkIceChatErrorContainer = Color(0xFF7F1D1D)
+val DarkIceChatOnErrorContainer = Color(0xFFFECACA)
+
+// Warning container
+val DarkIceChatWarningContainer = Color(0xFF78350F)
+val DarkIceChatOnWarningContainer = Color(0xFFFDE68A)
+
+// Positive (Success) container
+val DarkIceChatPositiveContainer = Color(0xFF14532D)
+val DarkIceChatOnPositiveContainer = Color(0xFFBBF7D0)
+
+// Info — 4-token full role (didn't exist before Phase 3.1)
+val DarkIceChatInfo = Color(0xFF60A5FA)
+val DarkIceChatOnInfo = Color(0xFF08131B)
+val DarkIceChatInfoContainer = Color(0xFF1E3A8A)
+val DarkIceChatOnInfoContainer = Color(0xFFBFDBFE)
 
 // Light scheme (Day — soft white, archive / export)
 val LightIceChatBg = Color(0xFFF4F8FB)
@@ -58,3 +75,20 @@ val LightIceChatOnWarning = Color(0xFFFFFFFF)
 val LightIceChatPositive = Color(0xFF2C8A6B)
 val LightIceChatError = Color(0xFFD32F2F)
 val LightIceChatOnError = Color(0xFFFFFFFF)
+// Error container (added Phase 3.1 Task 1) — Material You 4-token pattern
+val LightIceChatErrorContainer = Color(0xFFFEE2E2)
+val LightIceChatOnErrorContainer = Color(0xFF7F1D1D)
+
+// Warning container
+val LightIceChatWarningContainer = Color(0xFFFEF3C7)
+val LightIceChatOnWarningContainer = Color(0xFF78350F)
+
+// Positive (Success) container
+val LightIceChatPositiveContainer = Color(0xFFDCFCE7)
+val LightIceChatOnPositiveContainer = Color(0xFF14532D)
+
+// Info — 4-token full role (didn't exist before Phase 3.1)
+val LightIceChatInfo = Color(0xFF2563EB)
+val LightIceChatOnInfo = Color(0xFFFFFFFF)
+val LightIceChatInfoContainer = Color(0xFFDBEAFE)
+val LightIceChatOnInfoContainer = Color(0xFF1E3A8A)
