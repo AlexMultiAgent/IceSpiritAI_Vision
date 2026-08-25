@@ -1,5 +1,12 @@
 # 用户更新日志
 
+## v0.1.19 · 2026-08-25
+
+- **UI 现代化底层** Phase 3.1:严重度色板扩展(Info 角色 / Container 角色)、Type 字号加 `displaySmall` / `headlineMedium` / `headlineSmall`、新增 `IceMotion` 数据类与 `Modifier.emphasizedEnter()`、通过 `LocalSeverityColors` 暴露统一严重度配色
+- **内部重构**:Hex 值未变更,只增加 token;`IceSpiritVisionTheme` 新增 `LocalSeverityColors` provider
+- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`,544 tests / 0 failures / 2 skipped)
+- `versionCode 18→19`,`versionName 0.1.18→0.1.19`
+
 ## v0.1.18 · 2026-08-22
 
 - **断点续传修复**:`UpdateResumeWorker` 触发的冷启动续传,`UpdateDownloadService` 现在会从 DataStore 记录重建下载 URL / 目标路径 / 签名证书。此前缺失这三种 extra 会直接 `return`,导致「上划杀进程 → 重新打开」后续传不生效(可能触发 `ForegroundServiceDidNotStartInTimeException`)
