@@ -1,5 +1,17 @@
 # 用户更新日志
 
+## v0.1.28 · 2026-08-26
+
+- **修复:`latest` 上发布的安装包未携带 OCR 模型 + 规则引擎,违规识别全部失效**
+  - 根因:v0.1.27 走的是 `shell` profile,产物 APK 内嵌 `FakeOcrEngine` + 空的 `ad_signage_rules.json`(`{"version":1,"rules":[]}`)。任何图片 OCR 出文字后规则表为空,UI 永远显示「未发现违规用语」。本草专治糖尿病、东郊到家等真实广告招牌验证均复现该症状
+  - 修复:本次发布切换到 `ice_ocr_rules` profile(59 MB,含 PP-OCRv6_small ONNX 模型 + `ad_signage_rules.json` 120 条 + `food_label_rules.json` 66 条 + ONNX Runtime + OpenCV),OCR 真跑 PaddleOCR,规则真跑 `AdSignageRuleMatcher` AC 匹配
+  - 真机端到端验证(华为 nova 6,SDK 35,arm64-v8a):
+    - 本草专治糖尿病 100%有效 → **8 违规**(医药 + 绝对化用语命中)
+    - 东郊到家(技师 9 万人 / 累计 1000 万次) → **1 警告**(《广告法》第十一条第二款,引证数据未标出处)
+- **流水线修复:`./gradlew.bat assembleRelease` 不再需要手动 export 5 个 `ICESPIRITAI_RELEASE_*` env var**
+  - 凭据写入 `~/.gradle/gradle.properties`(gitignored),`signingConfigs.release` 走 `providers.gradleProperty(...)` fallback 路径,CI / 本地都不再卡凭据缺失 GradleException
+- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`,551 tests / 0 failures)
+
 ## v0.1.27 · 2026-08-25
 
 - **首页标题居中 + ⚡ accent**
