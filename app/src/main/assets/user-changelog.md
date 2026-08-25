@@ -1,5 +1,14 @@
 # 用户更新日志
 
+## v0.1.26 · 2026-08-25
+
+- **首页 tab pill 化 + 标题间距收紧**
+  - `RuleTabBar` 重写为 pill 风格:每个 tab 是 `RoundedCornerShape(20.dp)` 的 `Surface`,选中态填充 `secondaryContainer` + `titleMedium` SemiBold,未选中态 `surfaceVariant` + `bodyLarge`。原本 tab 与「冰灵锐目」标题都是平面文字,字体区别度不够;现在 pill 容器与平铺标题形成强对比,后续启用「食品标识」tab 时风格一致
+  - `HomeTopBar` 移除 `TopAppBar`,改为单个 `Surface` 内的 `Column` 直接堆叠标题行 + tab 行。标题与 tab 间距由 ~16dp 收到 12dp,标题更靠近 tab
+- **Viewer 滚动崩溃修复**:`ViewerTextList` LazyColumn 之前用 `key = { it.text }`,当 OCR 识别出两条相同文字的 TextLine(广告招牌常见,例如「门店」出现两处)时,合成可见 item 触发 `IllegalArgumentException: Key X was already used` 闪退。改用 `itemsIndexed` + `key = { index, _ -> index }` 走 index-based identity(OCR 每次重扫都整列表替换,position-based 稳定)
+- **回归 pin**:`ViewerTextListTest.ViewerTextList does not crash when TextLines share identical text` — 三条相同「门店」TextLine 入参,断言 `setContent` 不抛异常 + 行数标题「共 3 行文字」正确显示
+- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`,551 tests / 0 failures)
+
 ## v0.1.25 · 2026-08-25
 
 - **ad_signage `signage` 分类显示名修订**:HitCard 「分类」行原显示「门店招牌」,对短视频 / 互联网广告截图误导。改为「广告文案」,媒介中性。`category` JSON 字段值不变(仍为 `"signage"`),只改 `CategoryDisplay.kt` 映射 + 测试
