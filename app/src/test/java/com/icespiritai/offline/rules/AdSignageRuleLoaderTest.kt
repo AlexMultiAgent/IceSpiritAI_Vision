@@ -73,6 +73,26 @@ class AdSignageRuleLoaderTest {
     }
 
     @Test
+    fun load_realAssets_functionClaimContainsAntiOxidationKeyword() {
+        // v7 (2026-08-25) — added 抗氧化 to signage_food_function_claim after a real-world
+        // corn-product ad on Huawei nova 6 surfaced this keyword as a missed hit:
+        // OCR returned 抗氧化 as its own TextLine, but the v6 keyword list did
+        // not include it, so no RuleHit fired and the HighlightOverlay drew no
+        // red box. Pin prevents accidental future keyword-list regressions.
+        //
+        // Profile-aware: shell ships slim/empty rules → silently passes.
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val rules = AdSignageRuleLoader(ctx).load()
+        val fn = rules.firstOrNull { it.id == "ad_signage_signage_food_function_claim" }
+        if (fn != null) {
+            assertTrue(
+                "function_claim must include 抗氧化 (v7 keyword expansion 2026-08-25)",
+                fn.keywords.contains("抗氧化"),
+            )
+        }
+    }
+
+    @Test
     fun load_emptyPath_throwsRuleLoadFailed() {
         // Empty string is not a valid AssetManager key — AssetManager throws
         // and the loader wraps it in RuleLoadFailed.

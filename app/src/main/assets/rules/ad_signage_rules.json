@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 7,
   "rules": [
     {
       "id": "ad_signage_art16_med_abs",
@@ -1190,7 +1190,8 @@
         "降糖稳糖",
         "降三高",
         "调节三高",
-        "增强免疫"
+        "增强免疫",
+        "抗氧化"
       ],
       "severity": "Violation"
     },
