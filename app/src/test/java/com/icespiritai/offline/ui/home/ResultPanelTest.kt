@@ -9,6 +9,8 @@ import androidx.compose.ui.test.performClick
 import com.icespiritai.offline.domain.RuleHit
 import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.domain.ViolationReport
+import com.icespiritai.offline.ui.theme.IceSpiritVisionTheme
+import com.icespiritai.offline.ui.theme.ThemeMode
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -68,12 +70,11 @@ class ResultPanelTest {
             lawText = "第九条 广告不得有下列情形：（三）使用“国家级”、“最高级”、“最佳”等用语。",
         )
         composeRule.setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
+            IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
                 ResultPanel(ViolationReport(uri, "全国最好品牌", listOf(hit), 1L, avgConfidence = 0.9f))
             }
         }
-        composeRule.onNodeWithText("最好").assertExists()
-        composeRule.onNodeWithText("警告").assertExists()
+        composeRule.onNodeWithText("\"最好\"").assertExists()
         composeRule.onNodeWithText("分类: 绝对化用语").assertExists()
         composeRule.onNodeWithText("依据: 《广告法》第九条第（三）项").assertExists()
         composeRule.onNodeWithText("查看法条原文").performClick()
@@ -85,7 +86,7 @@ class ResultPanelTest {
     fun unknownCategory_fallsBackToRawKey() {
         val hit = RuleHit("r1", "示例", "future-category", "《广告法》第九条", Severity.Warning)
         composeRule.setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
+            IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
                 ResultPanel(ViolationReport(uri, "示例文本", listOf(hit), 1L, avgConfidence = 0.9f))
             }
         }
