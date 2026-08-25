@@ -1,5 +1,19 @@
 # 用户更新日志
 
+## v0.1.27 · 2026-08-25
+
+- **首页标题居中 + ⚡ accent**
+  - 「冰灵锐目」从左对齐移到屏幕正中。布局:单个 `Surface` 内的 `Box`,中央放「冰灵⚡锐目」`Row`,右上放设置 `IconButton`。`Box` 而非 `Row + weighted spacer` 是为了不让 settings 按钮的宽度影响居中精度
+  - ⚡ 单独一个 `Text` 渲染,颜色用 `colorScheme.tertiary`,跟两侧的「冰灵」「锐目」视觉区分开。三个 `Text` 用 `mergeDescendants = true` 合到同一个 a11y 节点,`contentDescription = app_name("冰灵锐目")`,TalkBack 仍按一个品牌名播报,不会拆成「冰灵」「闪电」「锐目」三段
+  - 启动器 label(`AndroidManifest.applicationLabel`)继续是「冰灵锐目」无 ⚡,`app_name` 字符串不动,只新增 `app_name_prefix` / `app_name_bolt` / `app_name_suffix` 三个拼接用的资源
+- **shell profile 上传图片崩溃修复**:v0.1.26 用户实测反馈「上传图片后报错!」
+  - 根因:`AdSignageRuleMatcher` 初始化时若 keywords 为空(shell profile 发的 `{"version":1,"rules":[]}`),`AhoCorasickDoubleArrayTrie` 不调 `build()`;之后 `scan()` 无条件 `keywordTrie.parseText(...)` 触发 HankCS 库内部 `Cannot load from int array because "this.base" is null` NPE,被 `ImageAnalyzerRepository` 的 catch-all 块捕获为 `ErrorCode.UNKNOWN`,UI 展示「未知错误,请重试」
+  - 修复:init 时把 `hasKeywordTrie` / `hasSourceMarkerTrie` 两个布尔记下来,scan 时按这两个 flag 守 `parseText`。empty rules 不再触发 NPE
+  - `ice_ocr_rules` profile 行为不变(规则 JSON 118 条非空,`hasKeywordTrie = true` 走原来分支),0 条规则只在 shell profile 出现
+- **回归 pin**:`ShellProfileRegressionTest` — `FakeOcrEngine + AdSignageRuleMatcher(emptyList())` 跑完整 analyze flow,断言无 `AnalysisState.Error` 发射 + 终态 `Complete.ocrText = "本店专治糖尿病,100% 有效"` + `hits = emptyList()`。这条测试在 v0.1.26 跑会失败(reproduced the bug),v0.1.27 跑过
+- `HomeTopBarTest` 重写:旧版断言 `onNodeWithText("冰灵锐目")` 还能命中单个 Text;新结构是三个 Text,改成断言三段各自存在 + `onAllNodesWithContentDescription(R.string.app_name)` 计数为 1(merged semantics 生效)
+- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`)
+
 ## v0.1.26 · 2026-08-25
 
 - **首页 tab pill 化 + 标题间距收紧**
