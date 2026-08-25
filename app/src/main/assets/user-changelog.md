@@ -1,5 +1,11 @@
 # 用户更新日志
 
+## v0.1.23 · 2026-08-25
+
+- **规则库 v7 — 食品功能宣称补漏**:实地拍摄小园玉米紫玉米花青素广告时,OCR 把「抗氧化」识别为独立 TextLine,但 `ad_signage_signage_food_function_claim` v6 keywords 没收,HighlightOverlay 没有红框。v7 把 `抗氧化` 加入 keywords 列表(38 → 39 条),填补真实场景漏报
+- **影响**:包含「抗氧化 / 抗衰老 / 延缓衰老」等保健功效的小广告现在会正确触发 §17 食品功能宣称违规
+- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`)
+
 ## v0.1.22 · 2026-08-25
 
 - **UI 现代化 Phase 3.4-3.5**:CaptureButton → ExtendedFloatingActionButton;CaptureBar 改 BottomAppBar + 大拍照 FAB + 小选图 FAB;LoadingOverlay 重写为 shimmer 骨架屏;SettingsScreen 改 Card + ListItem;AppearanceSection 改 SegmentedButton;ViewerScreen 命中行加 token Surface + animateContentSize;IceSpiritVisionActivity 已开启 `enableEdgeToEdge()`(Phase 3.5 之前已合入)
