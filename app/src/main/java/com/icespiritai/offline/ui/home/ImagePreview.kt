@@ -3,7 +3,10 @@ package com.icespiritai.offline.ui.home
 import android.net.Uri
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -90,10 +93,17 @@ fun ImagePreview(
         contentAlignment = Alignment.Center,
     ) {
         if (imageUri == null) {
-            Text(
-                text = stringResource(R.string.status_image_hint),
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.systemBars),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = stringResource(R.string.status_image_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         } else {
             AsyncImage(
                 model = imageUri,

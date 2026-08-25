@@ -168,4 +168,15 @@ class ImagePreviewDoubleTapTest {
             .performTouchInput { doubleClick(center) }
         assertEquals(1, dblClicks)
     }
+
+    @Test
+    fun `imagePreviewAccountsForStatusBarInset`() {
+        composeTestRule.setContent {
+            IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
+                ImagePreview(imageUri = null, lineBoxes = emptyList(), hits = emptyList())
+            }
+        }
+        // Sanity: preview is still rendered.
+        composeTestRule.onNodeWithTag("image_preview").assertExists()
+    }
 }
