@@ -10,6 +10,8 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.icespiritai.offline.R
+import com.icespiritai.offline.ui.theme.IceSpiritVisionTheme
+import com.icespiritai.offline.ui.theme.ThemeMode
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -88,5 +90,19 @@ class RuleTabBarTest {
     @Composable
     private fun ReferenceTab() {
         Tab(selected = true, onClick = {}, text = {})
+    }
+
+    @Test
+    fun tabBarHasCustomIndicator() {
+        composeRule.setContent {
+            IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
+                RuleTabBar(
+                    selected = RuleTab.AdSignage,
+                    onSelect = {},
+                    enabled = true,
+                )
+            }
+        }
+        composeRule.onNodeWithText("广告招牌").assertExists()
     }
 }

@@ -1,13 +1,25 @@
 package com.icespiritai.offline.ui.home
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import com.icespiritai.offline.R
 
 enum class RuleTab(val titleRes: Int) {
@@ -36,16 +48,45 @@ fun RuleTabBar(
     modifier: Modifier = Modifier,
 ) {
     val a11y = stringResource(R.string.tab_switch_desc)
+    val selectedIndex = visibleTabs.indexOf(selected).coerceAtLeast(0)
     TabRow(
-        selectedTabIndex = visibleTabs.indexOf(selected).coerceAtLeast(0),
-        modifier = modifier.semantics { contentDescription = a11y },
+        selectedTabIndex = selectedIndex,
+        modifier = modifier.fillMaxWidth().semantics { contentDescription = a11y },
+        containerColor = Color.Transparent,
+        indicator = { tabPositions ->
+            if (selectedIndex < tabPositions.size) {
+                // Compose BOM 2026.08.00 only exposes the single-arg
+                // Modifier.tabIndicatorOffset(position) helper — there is
+                // no (position, height) overload, so we render the 3dp
+                // indicator via Box to match the spec's intended height.
+                val pos = tabPositions[selectedIndex]
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .wrapContentSize(Alignment.BottomStart)
+                        .offset(x = pos.left)
+                        .width(pos.width)
+                        .height(3.dp)
+                        .background(MaterialTheme.colorScheme.primary),
+                )
+            }
+        },
     ) {
         visibleTabs.forEach { tab ->
+            val isSelected = (tab == selected)
             Tab(
-                selected = (tab == selected),
+                selected = isSelected,
                 onClick = { if (enabled) onSelect(tab) },
-                enabled = enabled || tab == selected,
-                text = { Text(stringResource(tab.titleRes)) },
+                enabled = enabled || isSelected,
+                text = {
+                    Text(
+                        text = stringResource(tab.titleRes),
+                        style = if (isSelected)
+                            MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+                        else
+                            MaterialTheme.typography.bodyLarge,
+                    )
+                },
             )
         }
     }
