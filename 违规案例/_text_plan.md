@@ -65,3 +65,27 @@
 
 - `URL-OK / content-snippet` — URL 已验证 gov.cn,正文来自 WebSearch snippet,未做 WebFetch 直读(本批 medical 桶)
 - `URL-OK / content-fetched` — URL + 正文均经 WebFetch 直读验证(目标态)
+
+---
+
+## education 桶（3 条，Task 5 完成）
+
+- [x] text_education_baoguo_01 — https://www.samr.gov.cn/zt/ndzt/2025n/ggf/alzs/art/2025/art_f3a8f480edae49708009495c6f9ae8a0.html / URL-OK / content-snippet / 2026-08-25 采集（北京市市场监督管理局 2025 年第二批 5 起教育培训违法广告典型案例 2025-07 通报，案例 1「东方艺源(北京)文化传播有限公司」北京市怀柔区市场监督管理局 2024-12-03 处罚）
+- [x] text_education_tuijian_01 — https://www.samr.gov.cn/zt/ndzt/2025n/ggf/alzs/art/2025/art_f3a8f480edae49708009495c6f9ae8a0.html / URL-OK / content-snippet / 2026-08-25 采集（北京市市场监督管理局 2025 年第二批 5 起教育培训违法广告典型案例 2025-07 通报，案例 2「北京大斌教育科技有限公司」北京市海淀区市场监督管理局 2025-04-24 处罚）
+- [x] text_education_zyzs_01 — https://scjgj.jiangsu.gov.cn/art/2025/6/26/art_70154_11589618.html / URL-OK / content-snippet / 2026-08-25 采集（江苏省市场监督管理局「报考咨询和教育培训广告行政指导会」负面清单 2025-06-26 通报；案例「南京某教育科技有限公司」南京市高淳区市场监督管理局 2024-03 处罚决定）
+
+### education 桶测试结果
+
+- `every text fixture has matching rule hits (exact set)` → **PASS**（3 条全部精确 set 命中：art24_edu_guar x1 + edu_art24_recommendation x1 + edu_art24_test_authority x1）
+- `minimum 30 text fixtures collected` → FAIL（仅 12/30，后续任务继续补 18 条）
+- `all 13 buckets represented across fixtures` → FAIL（仅 medical + absolute + education = 3/13，后续任务继续补 10 桶）
+
+### education 桶注意事项
+
+1. **`保过` / `包过` / `不过退款` / `100% 通过` 在 `ad_signage_art24_edu_guar` 是独占 keyword**：text_education_baoguo_01 用「签约保过协议」「不过退款」代表原文「保过、签订保过协议」(「联考过关率百分百」含「百分百」会同时命中 art9_abs_pct,fixture 设计回避)。同类常见变体「签约保过」「包过协议」「100% 通过」均命中同一规则。
+2. **`受益者推荐` 在 `ad_signage_edu_art24_recommendation` 是独占 keyword**：`研究院推荐` / `学会推荐` 同时被 `ad_signage_veterinary_art4_endorsement` 共享(双规则命中),`专家推荐` 同时被 5 条规则共享(outdoor + medical + pesticide + veterinary + edu)。本 fixture 选用独占 keyword `受益者推荐` 以保精确 set 命中。原案大斌教育原文为「学员分享成功的喜悦」(受益者形象类变体),在规则层落点 art24_edu_recommendation。
+3. **`考试命题人` / `阅卷老师` / `考官亲自授课` / `教育部推荐` 在 `ad_signage_edu_art24_test_authority` 是独占 keyword**：本 fixture 用「考试命题人授课」+「阅卷老师亲授」两个独占 keyword,落点单条规则(set 只有 1 个 rule id)。原案「地方公务员事业编命题考官、阅卷考官」是 art24 第(二)项最常见真实世界表述。
+4. **避免 `100%` 字符**:任何含 `100%` 的教育 fixture 会同时触发 `ad_signage_art11_data_citation`(`%` 字符 keyword)+ `ad_signage_art9_abs_pct`(`100%` 作为 keyword),污染 set 命中。本批 3 条 fixture 全部使用纯中文「百分百」「保过」「包过」「签约」「不过退款」「命题人」,回避 `%` 字符。
+5. **避免 `第一` / `最好` / `最强师资`**:这些 keyword 在 `ad_signage_art9_edu_abs` 与 `ad_signage_art9_abs_top` / `cosmetic_art9_abs_extended` 之间共享,触发多规则。本批 education fixture 未涉及 `art9_edu_abs`,未来若补「text_education_abs_01」,需选用 art9_edu_abs 独占 keyword `最强师资`(目前唯一独占 keyword),或扩展 ad_signage_rules.json 增加独占 keyword。
+6. **独占 keyword 选择方法**:先用 Python 脚本对所有规则的 keyword 做「string in text」测试,记录同时命中 ≥2 条规则的 keyword 候选名单,避开名单中的 keyword。text_education_baoguo_01 与 text_education_zyzs_01 各 2 个命中 keyword 但同源 1 条规则(hits dedup by `(ruleId, matchedText)`,set 只有 1 个 rule id),fixture pass;text_education_tuijian_01 单 keyword 命中单规则,set pin 稳定。
+7. **`学会推荐` / `研究院推荐` 的跨域污染给 education_art24_recommendation 的 fixture 设计带来限制**:这两个 keyword 被 education + veterinary 共享,任何使用它们的 fixture 都会双规则命中、set 失败;且这是教育场景的常用表述。本批 fixture 只能走 `受益者推荐`(独占)或 `协会推荐`(独占)规避,其他表述不能 pin。**未来若补 art24_recommendation 类 fixture,只能再补 `协会推荐` 变体**(剩余 1 条空间),或修改 rules JSON 给 education_art24_recommendation 增加独占 keyword。
