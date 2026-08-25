@@ -14,6 +14,8 @@ import androidx.compose.ui.test.performTouchInput
 import com.icespiritai.offline.domain.RuleHit
 import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.domain.TextLine
+import com.icespiritai.offline.ui.theme.IceSpiritVisionTheme
+import com.icespiritai.offline.ui.theme.ThemeMode
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -67,7 +69,7 @@ class ImagePreviewDoubleTapTest {
     fun `double-tap on the preview invokes onDoubleTap callback`() {
         var dblClicks = 0
         composeTestRule.setContent {
-            MaterialTheme {
+            IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     ImagePreview(
                         imageUri = Uri.parse("file:///tmp/sample.jpg"),
@@ -88,7 +90,7 @@ class ImagePreviewDoubleTapTest {
     fun `single tap does NOT invoke onDoubleTap`() {
         var dblClicks = 0
         composeTestRule.setContent {
-            MaterialTheme {
+            IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     ImagePreview(
                         imageUri = Uri.parse("file:///tmp/sample.jpg"),
@@ -148,7 +150,7 @@ class ImagePreviewDoubleTapTest {
     fun `double-tap with non-empty lineBoxes triggers callback (ImagePreview-side precondition pin)`() {
         var dblClicks = 0
         composeTestRule.setContent {
-            MaterialTheme {
+            IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     ImagePreview(
                         imageUri = Uri.parse("file:///tmp/sample.jpg"),
