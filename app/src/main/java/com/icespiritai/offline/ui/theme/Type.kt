@@ -6,6 +6,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 val IceSpiritTypography = Typography(
+    displaySmall = TextStyle(fontSize = 40.sp, fontWeight = FontWeight.SemiBold),
+    headlineMedium = TextStyle(fontSize = 30.sp, fontWeight = FontWeight.SemiBold),
+    headlineSmall = TextStyle(fontSize = 26.sp, fontWeight = FontWeight.SemiBold),
     titleLarge = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.SemiBold),
     titleMedium = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium),
     titleSmall = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium),
