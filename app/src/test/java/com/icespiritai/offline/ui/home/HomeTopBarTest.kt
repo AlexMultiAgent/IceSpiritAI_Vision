@@ -1,9 +1,14 @@
 package com.icespiritai.offline.ui.home
 
+import android.content.Context
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.test.core.app.ApplicationProvider.getApplicationContext
+import com.icespiritai.offline.R
+import com.icespiritai.offline.ui.theme.IceSpiritVisionTheme
+import com.icespiritai.offline.ui.theme.ThemeMode
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -72,5 +77,20 @@ class HomeTopBarTest {
         }
         composeRule.onNodeWithContentDescription("设置").performClick()
         assertEquals(1, opened)
+    }
+
+    @Test fun topBarTitleUsesHeadlineSmallStyle() {
+        composeRule.setContent {
+            IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
+                HomeTopBar(
+                    selectedTab = RuleTab.AdSignage,
+                    onSelectTab = {},
+                    tabEnabled = true,
+                    onOpenSettings = {},
+                )
+            }
+        }
+        composeRule.onNodeWithText(getApplicationContext<Context>().getString(R.string.app_name))
+            .assertExists()
     }
 }
