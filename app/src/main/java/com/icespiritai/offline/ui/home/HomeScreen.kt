@@ -235,11 +235,15 @@ private fun StatusBannerFor(state: AnalysisState) {
                     text = stringResource(R.string.status_no_text_banner),
                 )
             } else {
+                // FIXME Task 11: Severity enum is currently [Info, Warning, Violation, Positive];
+                // maxOfOrNull uses Comparable (ordinal-based), so Positive wins over Violation.
+                // Reorder enum to [Violation, Warning, Info, Positive] before Positive hits get emitted.
                 val maxSev = hits.maxOfOrNull { it.severity }
                 val kind = when (maxSev) {
                     Severity.Violation -> StatusBannerKind.Violation
                     Severity.Warning -> StatusBannerKind.Warning
                     Severity.Info -> StatusBannerKind.Warning
+                    // TODO Phase 3.3: route to StatusBannerKind.Success once Positive container is added.
                     Severity.Positive -> StatusBannerKind.Warning
                     null -> StatusBannerKind.Success
                 }

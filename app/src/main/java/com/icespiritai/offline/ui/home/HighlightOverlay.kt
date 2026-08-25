@@ -38,6 +38,9 @@ fun HighlightOverlay(
     Canvas(modifier = modifier) {
         lines.forEach { line ->
             val normalizedLine = TextNormalizer.forMatching(line.text)
+            // FIXME Task 11: Severity enum is currently [Info, Warning, Violation, Positive];
+            // maxOfOrNull uses Comparable (ordinal-based), so Positive wins over Violation.
+            // Reorder enum to [Violation, Warning, Info, Positive] before Positive hits get emitted.
             val lineSeverity = normalizedHits
                 .filter { normalizedLine.contains(it.first) }
                 .maxOfOrNull { it.second }
