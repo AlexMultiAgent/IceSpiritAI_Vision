@@ -1,5 +1,10 @@
 # 用户更新日志
 
+## v0.1.25 · 2026-08-25
+
+- **ad_signage `signage` 分类显示名修订**:HitCard 「分类」行原显示「门店招牌」,对短视频 / 互联网广告截图误导。改为「广告文案」,媒介中性。`category` JSON 字段值不变(仍为 `"signage"`),只改 `CategoryDisplay.kt` 映射 + 测试
+- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`)
+
 ## v0.1.24 · 2026-08-25
 
 - **规则库 v8 — ad_signage regulation 字段清理**:4 条 ad_signage 规则之前串了食品标识 / 婴幼儿配方注册 / GB 7718 等非广告法规。修正为只引《广告法》对应条款,HitCard 「依据」行不再出现食品标识相关法规
