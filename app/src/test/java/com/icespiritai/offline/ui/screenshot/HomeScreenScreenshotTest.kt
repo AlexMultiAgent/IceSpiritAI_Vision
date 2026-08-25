@@ -1,6 +1,7 @@
 package com.icespiritai.offline.ui.screenshot
 
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import com.icespiritai.offline.ui.home.HomeScreenBare
 import com.icespiritai.offline.ui.theme.IceSpiritVisionTheme
@@ -50,7 +51,7 @@ class HomeScreenScreenshotTest {
         // merged tree suppresses the inner Text node — see
         // CaptureButtonTest header.
         composeRule.onNodeWithText("拍照", useUnmergedTree = true).assertExists()
-        composeRule.onNodeWithText("选图", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithContentDescription("从相册选图").assertExists()
     }
 
     @Test
@@ -61,6 +62,6 @@ class HomeScreenScreenshotTest {
             }
         }
         composeRule.onNodeWithText("拍照", useUnmergedTree = true).assertExists()
-        composeRule.onNodeWithText("选图", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithContentDescription("从相册选图").assertExists()
     }
 }

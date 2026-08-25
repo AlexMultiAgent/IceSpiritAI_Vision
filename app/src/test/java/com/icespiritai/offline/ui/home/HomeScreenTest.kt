@@ -41,7 +41,10 @@ class HomeScreenTest {
         // merged tree suppresses the inner Text node (TalkBack-style).
         // See CaptureButtonTest / CaptureBarTest header notes.
         composeRule.onNodeWithText("拍照", useUnmergedTree = true).assertExists()
-        composeRule.onNodeWithText("选图", useUnmergedTree = true).assertExists()
+        // The new pick FAB no longer carries the visible "选图" label —
+        // it now exposes only a PhotoLibrary icon + the a11y description.
+        // Assert against the contentDescription instead.
+        composeRule.onNodeWithContentDescription("从相册选图").assertExists()
         composeRule.onNodeWithContentDescription("拍照").performClick()
         composeRule.onNodeWithContentDescription("从相册选图").performClick()
         assert(captured == 1)
