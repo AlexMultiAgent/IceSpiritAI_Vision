@@ -43,7 +43,7 @@ object AdSignageCategory {
         "restricted" -> "烟酒类"
         "minor" -> "未成年人"
         "outdoor" -> "户外广告"
-        "signage" -> "门店招牌"
+        "signage" -> "广告文案"
         "pesticide" -> "农药类广告"
         "veterinary" -> "兽药类广告"
         "cosmetic" -> "化妆品广告"

@@ -16,7 +16,7 @@ class CategoryDisplayTest {
             "restricted" to "烟酒类",
             "minor" to "未成年人",
             "outdoor" to "户外广告",
-            "signage" to "门店招牌",
+            "signage" to "广告文案",
         )
         for ((key, label) in expected) {
             assertEquals(label, CategoryDisplay.displayName(CategoryDisplay.DOMAIN_AD, key))
