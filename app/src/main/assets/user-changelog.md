@@ -1,5 +1,11 @@
 # 用户更新日志
 
+## v0.1.22 · 2026-08-25
+
+- **UI 现代化 Phase 3.4-3.5**:CaptureButton → ExtendedFloatingActionButton;CaptureBar 改 BottomAppBar + 大拍照 FAB + 小选图 FAB;LoadingOverlay 重写为 shimmer 骨架屏;SettingsScreen 改 Card + ListItem;AppearanceSection 改 SegmentedButton;ViewerScreen 命中行加 token Surface + animateContentSize;IceSpiritVisionActivity 已开启 `enableEdgeToEdge()`(Phase 3.5 之前已合入)
+- **影响**:主操作更突出,加载进度可见,设置页更易扫读,Viewer 命中行质感更立体
+- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`)
+
 ## v0.1.21 · 2026-08-25
 
 - **UI 现代化 Phase 3.3**:HitCard 重写为左侧 6dp 严重度色条 + 纵向渐变背景 + 双引号包裹命中文字 + FilledTonalButton 法规展开;HighlightOverlay 升级 — Info 严重度也显示描边、6dp 描边宽度、动画渐变 alpha;ImagePreview 适配 edge-to-edge 系统栏 inset(idle 提示不再被状态栏遮挡,预览图保持 edge-to-edge)
