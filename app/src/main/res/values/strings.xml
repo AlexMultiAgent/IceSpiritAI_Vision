@@ -104,4 +104,15 @@
     <string name="update_failed_network_unreachable">网络不可达,请重试</string>
     <string name="update_failed_cert_mismatch">签名校验失败,请联系开发者</string>
     <string name="update_notification_rationale">允许通知可在锁屏时查看下载进度</string>
+
+    <!-- Phase 3.2 KPI labels (StatusBanner / CaptureBar / LoadingOverlay rewrites) -->
+    <string name="kpi_violation_label">违规</string>
+    <string name="kpi_warning_label">警告</string>
+    <string name="kpi_info_label">信息</string>
+    <string name="kpi_positive_label">合规</string>
+    <string name="empty_idle_hint">请对正图片后点击拍照</string>
+    <string name="extended_fab_label">拍照</string>
+    <string name="pick_image_fab_desc">从相册选图</string>
+    <string name="loading_ocr_skeleton">OCR 识别中…</string>
+    <string name="loading_rule_skeleton">规则扫描中…</string>
 </resources>
