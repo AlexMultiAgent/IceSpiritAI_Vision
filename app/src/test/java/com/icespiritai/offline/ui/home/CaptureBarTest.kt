@@ -39,8 +39,13 @@ class CaptureBarTest {
         composeRule.setContent {
             CaptureBar(onCapture = {}, onPick = {})
         }
-        composeRule.onNodeWithText("拍照").assertExists()
-        composeRule.onNodeWithText("选图").assertExists()
+        // CaptureButton (ExtendedFloatingActionButton) and OutlinedButton
+        // both have their contentDescription set on the outer modifier,
+        // which causes Compose UI test's merged tree to suppress the inner
+        // Text node — see CaptureButtonTest header note. `useUnmergedTree`
+        // bypasses that to find the raw Text for this label-render pin.
+        composeRule.onNodeWithText("拍照", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText("选图", useUnmergedTree = true).assertExists()
     }
 
     @Test
@@ -84,7 +89,7 @@ class CaptureBarTest {
         composeRule.setContent {
             CaptureBar(onCapture = {}, onPick = {}, enabled = false)
         }
-        composeRule.onNodeWithText("拍照").assertExists()
-        composeRule.onNodeWithText("选图").assertExists()
+        composeRule.onNodeWithText("拍照", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText("选图", useUnmergedTree = true).assertExists()
     }
 }

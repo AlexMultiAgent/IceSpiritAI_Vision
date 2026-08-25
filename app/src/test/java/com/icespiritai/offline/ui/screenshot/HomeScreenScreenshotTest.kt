@@ -45,8 +45,12 @@ class HomeScreenScreenshotTest {
                 HomeScreenBare(onCapture = {}, onPick = {})
             }
         }
-        composeRule.onNodeWithText("拍照").assertExists()
-        composeRule.onNodeWithText("选图").assertExists()
+        // ExtendedFloatingActionButton / OutlinedButton carry their
+        // contentDescription on the outer modifier; Compose UI test's
+        // merged tree suppresses the inner Text node — see
+        // CaptureButtonTest header.
+        composeRule.onNodeWithText("拍照", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText("选图", useUnmergedTree = true).assertExists()
     }
 
     @Test
@@ -56,7 +60,7 @@ class HomeScreenScreenshotTest {
                 HomeScreenBare(onCapture = {}, onPick = {})
             }
         }
-        composeRule.onNodeWithText("拍照").assertExists()
-        composeRule.onNodeWithText("选图").assertExists()
+        composeRule.onNodeWithText("拍照", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText("选图", useUnmergedTree = true).assertExists()
     }
 }

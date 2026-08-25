@@ -4,6 +4,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -35,10 +36,14 @@ class HomeScreenTest {
                 )
             }
         }
-        composeRule.onNodeWithText("拍照").assertExists()
-        composeRule.onNodeWithText("选图").assertExists()
-        composeRule.onNodeWithText("拍照").performClick()
-        composeRule.onNodeWithText("选图").performClick()
+        // ExtendedFloatingActionButton / OutlinedButton carry their
+        // contentDescription on the outer modifier; Compose UI test's
+        // merged tree suppresses the inner Text node (TalkBack-style).
+        // See CaptureButtonTest / CaptureBarTest header notes.
+        composeRule.onNodeWithText("拍照", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText("选图", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithContentDescription("拍照").performClick()
+        composeRule.onNodeWithContentDescription("从相册选图").performClick()
         assert(captured == 1)
         assert(picked == 1)
     }
