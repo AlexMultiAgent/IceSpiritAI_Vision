@@ -11,6 +11,8 @@ class AdSignageRuleMatcher(rules: List<AdSignageRule>) : RuleMatcher {
     private val ruleById: Map<String, AdSignageRule> = rules.associateBy { it.id }
     private val keywordTrie = AhoCorasickDoubleArrayTrie<List<String>>()
     private val sourceMarkerTrie = AhoCorasickDoubleArrayTrie<List<String>>()
+    private val hasKeywordTrie: Boolean
+    private val hasSourceMarkerTrie: Boolean
     private val hasAnyAbsenceRule: Boolean
 
     init {
@@ -36,8 +38,10 @@ class AdSignageRuleMatcher(rules: List<AdSignageRule>) : RuleMatcher {
                 }
             }
         }
-        if (keywordToRuleIds.isNotEmpty()) keywordTrie.build(keywordToRuleIds)
-        if (sourceMarkerToRuleIds.isNotEmpty()) sourceMarkerTrie.build(sourceMarkerToRuleIds)
+        hasKeywordTrie = keywordToRuleIds.isNotEmpty()
+        hasSourceMarkerTrie = sourceMarkerToRuleIds.isNotEmpty()
+        if (hasKeywordTrie) keywordTrie.build(keywordToRuleIds)
+        if (hasSourceMarkerTrie) sourceMarkerTrie.build(sourceMarkerToRuleIds)
         // Absence composite logic only runs when at least one rule declared
         // sourceMarkers. 117 existing rules all default to sourceMarkers =
         // emptyList(), so the legacy single-pass code path stays byte-equivalent.
@@ -91,8 +95,19 @@ class AdSignageRuleMatcher(rules: List<AdSignageRule>) : RuleMatcher {
             for (ruleId in ruleIds) sourceMarkerHitRules += ruleId
         }
 
-        keywordTrie.parseText(normalized, keywordHandler)
-        if (hasAnyAbsenceRule) {
+        // `parseText` on a HankCS trie that was never `build()`-ed throws
+        // `Cannot load from int array because "this.base" is null` (the
+        // internal base array is uninitialized). The shell profile ships an
+        // empty rules JSON (`{"version":1,"rules":[]}` — see
+        // prepare-ocr-rules.gradle.kts), which leaves both tries unbuilt.
+        // Calling parseText unconditionally on every scan blew up the
+        // analyze flow with an NPE, surfaced to the user as
+        // `ErrorCode.UNKNOWN` → "未知错误,请重试". Gate parseText on the
+        // built-state flags captured at init.
+        if (hasKeywordTrie) {
+            keywordTrie.parseText(normalized, keywordHandler)
+        }
+        if (hasAnyAbsenceRule && hasSourceMarkerTrie) {
             sourceMarkerTrie.parseText(normalized, sourceMarkerHandler)
         }
 
