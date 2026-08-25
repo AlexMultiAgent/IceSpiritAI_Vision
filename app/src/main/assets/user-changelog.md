@@ -1,5 +1,12 @@
 # 用户更新日志
 
+## v0.1.21 · 2026-08-25
+
+- **UI 现代化 Phase 3.3**:HitCard 重写为左侧 6dp 严重度色条 + 纵向渐变背景 + 双引号包裹命中文字 + FilledTonalButton 法规展开;HighlightOverlay 升级 — Info 严重度也显示描边、6dp 描边宽度、动画渐变 alpha;ImagePreview 适配 edge-to-edge 系统栏 inset(idle 提示不再被状态栏遮挡,预览图保持 edge-to-edge)
+- **影响**:命中卡更易扫读(色条优先于文字)、违规框视觉权重提升、空状态文字不再被状态栏遮挡
+- **回归**:4 张广告招牌 fixture OCR / 命中 / 严重度分布与 v0.1.14 字节级一致
+- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`,545 tests / 0 failures / 2 skipped)
+
 ## v0.1.20 · 2026-08-25
 
 - **UI 现代化 Phase 3.2**:StatusBanner 重写为 KPI 横条(违规 / 警告 / 信息 三段,AnimatedContent 数值滑入);HomeTopBar 透明背景 + headlineSmall 标题 + Outlined 齿轮图标;RuleTabBar 升级 Material 3 SecondaryTab(3dp 指示器 + titleMedium 选中态)
