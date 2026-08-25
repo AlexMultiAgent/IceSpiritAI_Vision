@@ -1,7 +1,9 @@
 package com.icespiritai.offline.ui.home
 
 import android.content.Context
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -17,15 +19,18 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * Compose UI test for [HomeTopBar] — the app-name TopAppBar + the
- * single-tab RuleTabBar stacked underneath, plus a settings IconButton.
+ * Compose UI test for [HomeTopBar] — the centered "冰灵⚡锐目" title +
+ * the single-tab RuleTabBar underneath, plus a settings IconButton
+ * pinned to the right.
  *
  * Pins:
- *  - app name "冰灵锐目" renders as the title
- *  - the single visible tab ("广告招牌") is rendered (delegated to
- *    RuleTabBarTest but verified here too as integration smoke)
- *  - clicking the settings IconButton invokes onOpenSettings (the
- *    contentDescription "设置" is what TalkBack sees)
+ *  - The title is rendered as three Compose Text composables
+ *    (prefix "冰灵" + bolt "⚡" + suffix "锐目") with `mergeDescendants`
+ *    so TalkBack hears a single "冰灵锐目" contentDescription. This
+ *    test asserts both the merged a11y node and the visible parts.
+ *  - The single visible tab ("广告招牌") renders, "食品标识" is hidden.
+ *  - Clicking the settings IconButton (TalkBack contentDescription
+ *    "设置") invokes onOpenSettings.
  *
  * RobolectricTestRunner + sdk=33 because targetSdk=37 > Robolectric 4.13's
  * maxSdk=34.
@@ -38,7 +43,7 @@ class HomeTopBarTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun `renders the app name as title`() {
+    fun `renders the centered title parts with merged a11y`() {
         composeRule.setContent {
             HomeTopBar(
                 selectedTab = RuleTab.AdSignage,
@@ -47,7 +52,21 @@ class HomeTopBarTest {
                 onOpenSettings = {},
             )
         }
-        composeRule.onNodeWithText("冰灵锐目").assertExists()
+        // Each part is a visible Compose Text.
+        composeRule.onNodeWithText("冰灵").assertIsDisplayed()
+        composeRule.onNodeWithText("⚡").assertIsDisplayed()
+        composeRule.onNodeWithText("锐目").assertIsDisplayed()
+        // The mergeDescendants semantics expose "冰灵锐目" as a single
+        // TalkBack node. onNodeWithText would also match individual
+        // texts, so we use the explicit contentDescription matcher.
+        val ctx = getApplicationContext<Context>()
+        val title = ctx.getString(R.string.app_name)
+        val nodes = composeRule.onAllNodesWithContentDescription(title)
+        assertEquals(
+            "merged title accessibility node must exist exactly once",
+            1,
+            nodes.fetchSemanticsNodes().size,
+        )
     }
 
     @Test
@@ -60,7 +79,7 @@ class HomeTopBarTest {
                 onOpenSettings = {},
             )
         }
-        composeRule.onNodeWithText("广告招牌").assertExists()
+        composeRule.onNodeWithText("广告招牌").assertIsDisplayed()
         composeRule.onNodeWithText("食品标识").assertDoesNotExist()
     }
 
@@ -79,7 +98,8 @@ class HomeTopBarTest {
         assertEquals(1, opened)
     }
 
-    @Test fun topBarTitleUsesHeadlineSmallStyle() {
+    @Test
+    fun `bolt composable is present inside the themed top bar`() {
         composeRule.setContent {
             IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
                 HomeTopBar(
@@ -90,7 +110,10 @@ class HomeTopBarTest {
                 )
             }
         }
-        composeRule.onNodeWithText(getApplicationContext<Context>().getString(R.string.app_name))
-            .assertExists()
+        // The bolt is its own Text composable; verifying its presence
+        // (and that it's distinct from the prefix/suffix) is enough of
+        // a pin for this test layer. Visual color verification lives in
+        // the screenshot test pipeline, not here.
+        composeRule.onNodeWithText("⚡").assertIsDisplayed()
     }
 }

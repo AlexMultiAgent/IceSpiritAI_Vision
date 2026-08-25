@@ -1,5 +1,6 @@
 package com.icespiritai.offline.ui.home
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -27,14 +28,22 @@ import com.icespiritai.offline.R
  * Compact home header: a tight Column of { title row + tab row } on a
  * single transparent [Surface], no Material 3 [TopAppBar] involved.
  *
- * Rationale (replaces the previous TopAppBar + TabRow stack):
- *  - TopAppBar + TabRow stacks a fixed 64dp title slot above a 48dp tab
- *    slot, with ~16dp of internal padding between them — too far apart
- *    once the title is left-aligned (default). Merging into one Column
- *    with `padding(top=8, bottom=4)` between the two rows cuts the gap
- *    to 12dp while still giving the title breathing room.
- *  - The pill-style [RuleTabBar] provides the visual contrast against
- *    the flat title; no separate container background is needed.
+ * Layout notes:
+ *  - The title is centered via a [Box] with two children: the
+ *    "冰灵⚡锐目" Row pinned at [Alignment.Center], and the settings
+ *    IconButton at [Alignment.CenterEnd]. Putting both in a Box (instead
+ *    of a Row with weighted spacers) keeps the centered text truly
+ *    centered regardless of how wide the settings button is or how the
+ *    box parent constrains its width.
+ *  - The title Row is three Compose [Text]s (`prefix + ⚡ + suffix`)
+ *    rather than a single Text. This lets the bolt be tinted with
+ *    `colorScheme.tertiary` so it reads as an accent glyph instead of
+ *    blending into the headline. `mergeDescendants = true` collapses
+ *    the three Text semantics into a single node whose
+ *    [contentDescription] is `app_name` ("冰灵锐目"), so TalkBack
+ *    announces the brand as one word instead of three.
+ *  - Merging TopAppBar + TabRow into one Column cuts the title→tab gap
+ *    to 8dp; the previous M3 default was ~16dp.
  *
  * Status-bar inset is applied via [windowInsetsPadding] on the inner
  * Column (since TopAppBar's default `windowInsets` handling is gone
@@ -57,21 +66,40 @@ fun HomeTopBar(
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.statusBars),
         ) {
-            Row(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .padding(top = 8.dp, bottom = 4.dp, start = 4.dp, end = 4.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = stringResource(R.string.app_name),
-                    style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.weight(1f),
-                )
-                val a11y = stringResource(R.string.settings_button_desc)
+                val a11yTitle = stringResource(R.string.app_name)
+                Row(
+                    modifier = Modifier.semantics(mergeDescendants = true) {
+                        contentDescription = a11yTitle
+                    },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.app_name_prefix),
+                        style = MaterialTheme.typography.headlineSmall,
+                    )
+                    Text(
+                        text = stringResource(R.string.app_name_bolt),
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.app_name_suffix),
+                        style = MaterialTheme.typography.headlineSmall,
+                    )
+                }
+                val a11ySettings = stringResource(R.string.settings_button_desc)
                 IconButton(
                     onClick = onOpenSettings,
-                    modifier = Modifier.semantics { contentDescription = a11y },
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .semantics { contentDescription = a11ySettings },
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Settings,
