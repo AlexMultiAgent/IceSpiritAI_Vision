@@ -1,5 +1,10 @@
 # 用户更新日志
 
+## v0.1.20 · 2026-08-25
+
+- **UI 现代化 Phase 3.2**:StatusBanner 重写为 KPI 横条(违规 / 警告 / 信息 三段,AnimatedContent 数值滑入);HomeTopBar 透明背景 + headlineSmall 标题 + Outlined 齿轮图标;RuleTabBar 升级 Material 3 SecondaryTab(3dp 指示器 + titleMedium 选中态)
+- **影响**:屏幕顶部信息密度提升,违规数字一眼可见;tab 风格更接近 Material You
+
 ## v0.1.19 · 2026-08-25
 
 - **UI 现代化底层** Phase 3.1:严重度色板扩展(Info 角色 / Container 角色)、Type 字号加 `displaySmall` / `headlineMedium` / `headlineSmall`、新增 `IceMotion` 数据类与 `Modifier.emphasizedEnter()`、通过 `LocalSeverityColors` 暴露统一严重度配色
