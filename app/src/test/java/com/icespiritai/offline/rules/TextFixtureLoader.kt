@@ -41,7 +41,15 @@ object TextFixtureLoader {
         check(slugSegs.size >= 4 && slugSegs[0] == "text") {
             "${file.name}: slug 不符合 text_<category>_<scene>_<NN> 模式"
         }
-        val category = slugSegs[1]
+        // 合桶 category 名(如 internet_ad 是 2 段)需要拼接 slugSegs[1..2]。
+        // 其他单段 category 直接取 slugSegs[1]。
+        val category = if (slugSegs.size >= 5 &&
+            slugSegs[1] == "internet" && slugSegs[2] == "ad"
+        ) {
+            "internet_ad"
+        } else {
+            slugSegs[1]
+        }
 
         return TextFixture(
             slug = slug,
