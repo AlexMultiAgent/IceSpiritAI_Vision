@@ -224,51 +224,41 @@ fun HomeScreen(
 @Composable
 private fun StatusBannerFor(state: AnalysisState) {
     when (state) {
-        AnalysisState.Idle -> StatusBanner(StatusBannerKind.Idle, text = "")
-        is AnalysisState.Loading -> StatusBanner(StatusBannerKind.Loading, text = "")
+        AnalysisState.Idle -> StatusBanner(StatusBannerKind.Idle)
+        is AnalysisState.Loading -> StatusBanner(
+            kind = StatusBannerKind.Loading,
+            stage = when (state.stage) {
+                AnalysisState.Loading.Stage.OcrRunning -> StatusBannerStage.LoadingOcr
+                AnalysisState.Loading.Stage.RuleScanning -> StatusBannerStage.LoadingRuleScanning
+            },
+        )
         is AnalysisState.Complete -> {
             val report = state.report
-            val hits = report.hits
             if (!report.hasText) {
-                StatusBanner(
-                    StatusBannerKind.Warning,
-                    text = stringResource(R.string.status_no_text_banner),
-                )
+                StatusBanner(StatusBannerKind.Warning)
             } else {
                 // FIXME Task 11: Severity enum is currently [Info, Warning, Violation, Positive];
                 // maxOfOrNull uses Comparable (ordinal-based), so Positive wins over Violation.
                 // Reorder enum to [Violation, Warning, Info, Positive] before Positive hits get emitted.
-                val maxSev = hits.maxOfOrNull { it.severity }
+                val maxSev = report.hits.maxOfOrNull { it.severity }
                 val kind = when (maxSev) {
                     Severity.Violation -> StatusBannerKind.Violation
                     Severity.Warning -> StatusBannerKind.Warning
-                    Severity.Info -> StatusBannerKind.Warning
-                    // TODO Phase 3.3: route to StatusBannerKind.Success once Positive container is added.
-                    Severity.Positive -> StatusBannerKind.Warning
+                    Severity.Info -> StatusBannerKind.Success  // info-only → still "compliant"
+                    // TODO Phase 3.3: split Positive into its own KPI bucket once container is added.
+                    Severity.Positive -> StatusBannerKind.Success
                     null -> StatusBannerKind.Success
                 }
-                val text = when (kind) {
-                    StatusBannerKind.Success -> stringResource(R.string.status_no_violation_card)
-                    else -> {
-                        val violations = hits.count { it.severity == Severity.Violation }
-                        val warnings = hits.count { it.severity == Severity.Warning }
-                        when {
-                            violations > 0 ->
-                                stringResource(R.string.status_violation_count, violations)
-                            warnings > 0 ->
-                                stringResource(R.string.status_warning_count, warnings)
-                            else -> stringResource(R.string.status_info_count, hits.size)
-                        }
-                    }
-                }
-                StatusBanner(kind = kind, text = text)
+                StatusBanner(
+                    kind = kind,
+                    violationCount = report.hits.count { it.severity == Severity.Violation },
+                    warningCount = report.hits.count { it.severity == Severity.Warning },
+                    infoCount = report.hits.count { it.severity == Severity.Info },
+                )
             }
         }
-        is AnalysisState.Error -> StatusBanner(
-            StatusBannerKind.Violation,
-            text = stringResource(R.string.status_error_banner),
-        )
-        else -> StatusBanner(StatusBannerKind.Idle, text = "")
+        is AnalysisState.Error -> StatusBanner(StatusBannerKind.Violation)
+        else -> StatusBanner(StatusBannerKind.Idle)
     }
 }
 

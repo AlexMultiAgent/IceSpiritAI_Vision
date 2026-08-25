@@ -1,9 +1,11 @@
 package com.icespiritai.offline.ui.home
 
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import com.icespiritai.offline.ui.theme.IceSpiritVisionTheme
+import com.icespiritai.offline.ui.theme.ThemeMode
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -11,14 +13,13 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * Compose UI test for [StatusBanner] — the colored status strip above the
- * result panel. Color is branch-by-kind + branch-by-isDark, but Compose
- * UI tests can't read pixel data, so we exercise:
+ * Compose UI test for [StatusBanner] — Phase 3.2 4-segment KPI horizontal bar.
  *
- *  - the supplied `text` is rendered
- *  - all five [StatusBannerKind] branches render without crashing
- *  - dark + light theme paths exercise the `isDark` discriminator without
- *    throwing
+ * Pins:
+ *  - Idle branch renders the empty hint (camera icon + "请对正图片后点击拍照")
+ *  - Violation branch shows KPI numbers and severity labels ("违规", "警告", "信息")
+ *  - Zero counts render correctly under the Success (light) theme
+ *  - Loading branch shows the OCR/Rule phase text
  *
  * RobolectricTestRunner + sdk=33 because targetSdk=37 > Robolectric 4.13's
  * maxSdk=34.
@@ -31,79 +32,55 @@ class StatusBannerTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun `renders the supplied text`() {
+    fun idleKpiRendersEmptyHint() {
         composeRule.setContent {
-            StatusBanner(kind = StatusBannerKind.Idle, text = "等待扫描…")
-        }
-        composeRule.onNodeWithText("等待扫描…").assertExists()
-    }
-
-    @Test
-    fun `Idle StatusBannerKind renders without crashing`() {
-        composeRule.setContent {
-            StatusBanner(kind = StatusBannerKind.Idle, text = "kind=Idle")
-        }
-        composeRule.onNodeWithText("kind=Idle").assertExists()
-    }
-
-    @Test
-    fun `Loading StatusBannerKind renders without crashing`() {
-        composeRule.setContent {
-            StatusBanner(kind = StatusBannerKind.Loading, text = "kind=Loading")
-        }
-        composeRule.onNodeWithText("kind=Loading").assertExists()
-    }
-
-    @Test
-    fun `Success StatusBannerKind renders without crashing`() {
-        composeRule.setContent {
-            StatusBanner(kind = StatusBannerKind.Success, text = "kind=Success")
-        }
-        composeRule.onNodeWithText("kind=Success").assertExists()
-    }
-
-    @Test
-    fun `Warning StatusBannerKind renders without crashing`() {
-        composeRule.setContent {
-            StatusBanner(kind = StatusBannerKind.Warning, text = "kind=Warning")
-        }
-        composeRule.onNodeWithText("kind=Warning").assertExists()
-    }
-
-    @Test
-    fun `Violation StatusBannerKind renders without crashing`() {
-        composeRule.setContent {
-            StatusBanner(kind = StatusBannerKind.Violation, text = "kind=Violation")
-        }
-        composeRule.onNodeWithText("kind=Violation").assertExists()
-    }
-
-    @Test
-    fun `renders cleanly under dark color scheme`() {
-        // Exercises the isDark branch — production reads
-        // MaterialTheme.colorScheme.background to pick dark vs light
-        // token bundles. Without a wrapped MaterialTheme the default
-        // light scheme still works, but we want to lock that the dark
-        // path doesn't throw on the color-copy operations.
-        composeRule.setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
-                StatusBanner(kind = StatusBannerKind.Violation, text = "违规")
+            IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
+                StatusBanner(kind = StatusBannerKind.Idle)
             }
         }
-        composeRule.onNodeWithText("违规").assertExists()
+        composeRule.onNodeWithText("请对正图片后点击拍照").assertExists()
     }
 
     @Test
-    fun `renders with long text without crashing`() {
-        // Sanity: a single-line banner with a long string should not
-        // overflow the layout (Compose wraps in Box.fillMaxWidth, but
-        // the production code passes `text = ...` directly to a Text
-        // without a maxLines). We don't assert overflow behavior —
-        // just that the composable doesn't throw.
-        val long = "X".repeat(500)
+    fun violationKpiRendersViolationCount() {
         composeRule.setContent {
-            StatusBanner(kind = StatusBannerKind.Warning, text = long)
+            IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
+                StatusBanner(
+                    kind = StatusBannerKind.Violation,
+                    violationCount = 3,
+                    warningCount = 1,
+                    infoCount = 0,
+                )
+            }
         }
-        composeRule.onNodeWithText(long).assertExists()
+        composeRule.onNodeWithText("3").assertExists()
+        composeRule.onNodeWithText("1").assertExists()
+        composeRule.onNodeWithText("违规").assertExists()
+        composeRule.onNodeWithText("警告").assertExists()
+    }
+
+    @Test
+    fun emptyCountsKpiRendersZeroForEach() {
+        composeRule.setContent {
+            IceSpiritVisionTheme(themeMode = ThemeMode.LIGHT) {
+                StatusBanner(
+                    kind = StatusBannerKind.Success,
+                    violationCount = 0,
+                    warningCount = 0,
+                    infoCount = 0,
+                )
+            }
+        }
+        composeRule.onAllNodesWithText("0").assertCountEquals(3)  // one zero per KPI cell (违规/警告/信息)
+    }
+
+    @Test
+    fun loadingKpiRendersLoadingHint() {
+        composeRule.setContent {
+            IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
+                StatusBanner(kind = StatusBannerKind.Loading, stage = StatusBannerStage.LoadingOcr)
+            }
+        }
+        composeRule.onNodeWithText("OCR 识别中…").assertExists()
     }
 }
