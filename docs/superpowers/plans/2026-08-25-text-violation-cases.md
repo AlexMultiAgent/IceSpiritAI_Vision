@@ -520,6 +520,12 @@ cd d:/GitHub/IceSpiritAI_Vision && \
 - 含具体罚款金额 + 责令停止
 - 案例时间 2023-01-01 之后(规则库 v6 关键词表建立后的违规)
 
+- [ ] **Step 1.5: WebFetch 验证(若不可用 → 走 snippet 重建路径)**
+
+  每个 URL 都尝试 WebFetch(`https://<gov-host>/<path>`):
+  - 成功:从页面提取「违法广告语原文 / 处罚金额 / 通报日期」,作为 fixture 正文 + 备注的 source of truth
+  - 失败(`Unable to verify if domain` 或类似):在 `_text_plan.md` 追加「采集方法说明」段,本桶 fixture 状态记为 `URL-OK / content-snippet`,正文重建自 WebSearch snippet;fixture 的 `备注` 字段加一句「内容来自 WebSearch snippet,非 WebFetch 直读」
+
 - [ ] **Step 2: WebFetch 每条 URL,提取 4 个核心字段**
 
 每个 URL 抽取:
