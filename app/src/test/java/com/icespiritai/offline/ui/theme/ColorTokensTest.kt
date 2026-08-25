@@ -71,6 +71,10 @@ class ColorTokensTest {
     @Test fun lightIceChatPositiveContainerIsPinned() = assertEquals(Color(0xFFDCFCE7), LightIceChatPositiveContainer)
     @Test fun lightIceChatOnPositiveContainerIsPinned() = assertEquals(Color(0xFF14532D), LightIceChatOnPositiveContainer)
 
+    // Positive onAccent (added Phase 3.1 Task 4 — needed by SeverityColors.Positive mapping)
+    @Test fun darkIceChatOnPositiveIsPinned() = assertEquals(Color(0xFF08131B), DarkIceChatOnPositive)
+    @Test fun lightIceChatOnPositiveIsPinned() = assertEquals(Color(0xFFFFFFFF), LightIceChatOnPositive)
+
     @Test fun darkIceChatInfoIsPinned() = assertEquals(Color(0xFF60A5FA), DarkIceChatInfo)
     @Test fun darkIceChatOnInfoIsPinned() = assertEquals(Color(0xFF08131B), DarkIceChatOnInfo)
     @Test fun darkIceChatInfoContainerIsPinned() = assertEquals(Color(0xFF1E3A8A), DarkIceChatInfoContainer)
