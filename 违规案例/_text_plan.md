@@ -114,3 +114,28 @@
 6. **`蓝帽子` / `国食健字` 是 `ad_signage_signage_medicine_flag` 的独占 keyword**:本批 fixture 用「保健食品」(独占 keyword)命中该规则,未用「蓝帽子」「国食健字」,但这两个 keyword 也可独立使用 — 例如在「保健品店门口贴蓝帽子标志但未显著标明警示语」场景下。
 7. **本批 fixture 的 URL 来源**:bjsp_01 与 sldz_01 来自 samr.gov.cn 一手通报(URL gov.cn-ownership 已验证);tssj_01 来自广西金秀瑶族自治县政府站 jinxiu.gov.cn 一手处罚决定书(金市监处罚〔2025〕72号,URL gov.cn-ownership 已验证)。三 fixture 均未做 WebFetch 直读(WebFetch 持续 blocked on `.gov.cn`),正文来自 WebSearch snippet,与已建立模式(URL-OK / content-snippet)一致。
 8. **`%` / `百分百` / `百分之百` 对 food 桶的影响**:food_function_claim / food_disease_target / infant_milk / medicine_flag 4 条规则的 keyword 列表均不含 `百分百`/`百分之百`,但 `ad_signage_art11_data_citation` 把 `%` 单独作为 keyword,任何含 `%` 字符的 fixture 会同时触发该规则。本批 3 条 fixture 全部回避 `%` 字符(原文虽有「84%」「75%」等数据表述,fixture 设计改为纯中文人群指向),保 set 干净。
+
+---
+
+## realestate 桶(3 条,Task 7 完成)
+
+- [x] text_realestate_sz_01 — https://scjgj.sc.gov.cn/scsjgj/c104475/2026/1/15/29cc165341bc4c73a522310632d9f60f.shtml / URL-OK / content-snippet / 2026-08-25 采集(四川省市场监督管理局「发现一起查处一起!四川揭露房地产广告'四大套路'」2026-01-15 通报,典型案例「宜宾某房地产经纪有限公司」使用「投资回报率 9%」表述违反《广告法》第二十六条第（一）项 + 第二十八条,罚款 4 万元)
+- [x] text_realestate_xqf_01 — https://scjgj.tl.gov.cn/tlsscjdglj/c00085/pc/content/content_1845747378521169920.html / URL-OK / content-snippet / 2026-08-25 采集(安徽省铜陵市市场监督管理局 2024 年市市场监管局行政处罚案件信息公示 115 号,当事人「铜陵万海佰川置业有限公司」公众号 + 户外广告牌宣传「万海澜山郡」为「十二中本部」学区房并含有升值承诺,违反《房地产广告发布规定》第四条 + 第十八条 + 《广告法》第二十六条第（一）项 + 第（四）项,罚款 10,000 元)
+- [x] text_realestate_wzj_01 — https://jnszjj.jining.gov.cn/art/2025/1/26/art_36365_2706399.html / URL-OK / content-snippet / 2026-08-25 采集(山东省济宁市住房和城乡建设局 行政执法指导案例 2025-01-26 通报「某市房地产开发有限公司违法预售商品房案」,未取得《商品房预售许可证》与 61 户购房人签订合同收取预付款 4593.9 万元,违反《城市房地产开发经营管理条例》第三十六条 + 《房地产广告发布规定》第五条)
+
+### realestate 桶测试结果
+
+- `every text fixture has matching rule hits (exact set)` → **PASS**(3 条全部精确 set 命中:sz_01 = {ad_signage_art26_re_prm};xqf_01 = {ad_signage_art26_re_prm, ad_signage_re_art26_planned_facility};wzj_01 = {ad_signage_re_art7_license_no})
+- `minimum 30 text fixtures collected` → FAIL(18/30,后续任务继续补 12 条)
+- `all 13 buckets represented across fixtures` → FAIL(medical + absolute + education + food + realestate = 5/13,后续任务继续补 8 桶)
+
+### realestate 桶注意事项
+
+1. **7 条 realestate 规则的 35 个 keyword 全部独占**(经 Python 脚本 `kw_map[kw] == [rule_id]` 全量扫描,无任何 keyword 跨规则共享):art26_re_prm(升值回报 / 投资回报 / 学区房包入学)、re_art26_planned_facility(地铁直达 / 学区确定 / 规划学校 / 规划医院 / 未来 X 号线)、re_art26_price_violation(最低价 / 一口价 / 封顶价 / 工抵房 / 内部价 / 团购价)、re_art26_time_distance(分钟到 / 车程 / 驾车 X 分钟 / 步行 X 分钟可达 / 距市中心 X 分钟)、re_art4_sqmeter(赠送面积 / 超大户型 / N 平米实得 / 使用面积)、re_art7_license_no(内部认购 / 认筹 / 排号 / 圈存 / 小产权 / 无证销售)、re_art8_superstition(风水宝地 / 龙脉 / 聚财 / 纳福 / 旺宅 / 辟邪)。本批 3 条 fixture 的 hit set 由所选 keyword 唯一决定,无需担心跨规则污染。
+2. **`学区房包入学`(art26_re_prm)+ `学区确定` / `规划学校`(re_art26_planned_facility)的同时命中是真实世界「同时违反 §26 第（一）项 + 第（四）项」的双重违法场景,set 严格等于 2 个 rule id,这是 fixture 设计预期的**:text_realestate_xqf_01 原案「万海佰川置业」违反《广告法》第二十六条第（一）项(房地产广告不得含有升学承诺)+ 第（四）项(不得对规划中的教育设施作误导宣传),同时违反《房地产广告发布规定》第十八条(不得使用「学区房」「学位房」「对口名校」)。fixture 用「学区房包入学」独占 keyword 落点 §26 第（一）项,「学区确定」+「规划学校」独占 keyword 落点 §26 第（四）项,set = {ad_signage_art26_re_prm, ad_signage_re_art26_planned_facility},合法反映双重违法。
+3. **`%` 字符污染 realestate 桶的影响**:art26_re_prm 经常被原文案以「投资回报率 9%」「年均升值 X%」「租金覆盖月供」等形式呈现,但任何含 `%` 字符的 fixture 会同时触发 `ad_signage_art11_data_citation`(把 `%` 单独作为 keyword)。本批 sz_01 原文案为「投资回报率 9%」,fixture 设计刻意改为「升值回报」「投资回报」2 个独占 keyword(无 `%`),set 严格等于 1 个 rule id;若补「text_realestate_pct_01」等百分比回报类 fixture,可单独触发 art26_re_prm + art11_data_citation 双规则命中(对应原案「虚假数据 + 升值回报」双重违法),未来 Task 8+ 可补此类。
+4. **`研究院推荐` / `学会推荐` / `专家推荐` 在 realestate 桶不可用**:这 3 个 keyword 被 5 条规则(ad_signage_outdoor_art4_unaudited + ad_signage_art16_med_health + ad_signage_pesticide_art4_endorsement + ad_signage_veterinary_art4_endorsement + ad_signage_edu_art24_recommendation)共享。realestate 桶常见「专业机构推荐」「研究院推荐学区房」类表述,任何含此类 keyword 的 fixture 会触发 5-rule 跨域污染,set 失败。本批 3 条 fixture 全部回避此类 keyword。
+5. **`首付贷` / `0 首付` / `免息贷款` 在 realestate 桶不可用**:这几个 keyword 触发 `finance_*` 域规则(广告法 §25 金融服务类违规),与 realestate 桶 §26 不同。本批 wzj_01 原案含「交五万抵十万」金融促销表述,改为「认筹优惠」/「限量房源排号中」以保 set 干净;若补「text_realestate_finance_01」等场景,应将 fixture 的 `category` 字段改为 `finance`(而非 `realestate`)以反映双域违规。
+6. **`购买即可落户` / `落户指标` 在 realestate 桶不可用**:这 2 个表述触发 `signage_art29_*` 互联网相关规则 + `cosmetic_art17_*` 等多重规则。本批 xqf_01 原案含「学区房 + 升学 + 落户承诺」三重违法,fixture 仅设计为「学区房包入学 + 学区确定 + 规划学校」双重违反(§26 第（一）项 + 第（四）项),回避「落户」承诺以保 set 干净。
+7. **本批 fixture 的 URL 来源**:sz_01 来自四川省市场监督管理局 scjgj.sc.gov.cn 一手通报(2026-01-15,URL gov.cn-ownership 已验证);xqf_01 来自铜陵市市场监管局 scjgj.tl.gov.cn 一手行政处罚案件信息公示(2024,URL gov.cn-ownership 已验证);wzj_01 来自济宁市住建局 jnszjj.jining.gov.cn 一手行政执法指导案例(2025-01-26,URL gov.cn-ownership 已验证)。三 fixture 均未做 WebFetch 直读(WebFetch 持续 blocked on `.gov.cn`),正文来自 WebSearch snippet,与已建立模式(URL-OK / content-snippet)一致。
+8. **所有 7 条 realestate 规则的 keyword 完全独占,意味着 realestate 桶未来的 fixture 扩展自由度极高**:`re_art26_price_violation`(6 个独占 kw)可补「text_realestate_price_01」(起售价 / 最低价 / 一口价 / 团购价 / 工抵房 / 内部价)、`re_art26_time_distance`(5 个独占 kw)可补「text_realestate_distance_01」(分钟到 / 车程 / 驾车 X 分钟)、`re_art4_sqmeter`(4 个独占 kw)可补「text_realestate_area_01」(赠送面积 / 超大户型 / N 平米实得)、`re_art8_superstition`(6 个独占 kw)可补「text_realestate_fengshui_01」(风水宝地 / 龙脉 / 聚财)。每条规则平均 4-6 个独占 keyword 候选,realestate 桶未来扩展非常顺畅。
