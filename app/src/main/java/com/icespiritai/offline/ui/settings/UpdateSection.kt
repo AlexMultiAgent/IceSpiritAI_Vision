@@ -100,7 +100,7 @@ fun UpdateSection(
                         Text(stringResource(R.string.update_ready_to_install))
                         Spacer(Modifier.height(8.dp))
                         Button(onClick = { viewModel.install(s.file, context) }) {
-                            Text(stringResource(R.string.update_download_button))
+                            Text(stringResource(R.string.update_install_button))
                         }
                     }
                 }
