@@ -89,3 +89,28 @@
 5. **避免 `第一` / `最好` / `最强师资`**:这些 keyword 在 `ad_signage_art9_edu_abs` 与 `ad_signage_art9_abs_top` / `cosmetic_art9_abs_extended` 之间共享,触发多规则。本批 education fixture 未涉及 `art9_edu_abs`,未来若补「text_education_abs_01」,需选用 art9_edu_abs 独占 keyword `最强师资`(目前唯一独占 keyword),或扩展 ad_signage_rules.json 增加独占 keyword。
 6. **独占 keyword 选择方法**:先用 Python 脚本对所有规则的 keyword 做「string in text」测试,记录同时命中 ≥2 条规则的 keyword 候选名单,避开名单中的 keyword。text_education_baoguo_01 与 text_education_zyzs_01 各 2 个命中 keyword 但同源 1 条规则(hits dedup by `(ruleId, matchedText)`,set 只有 1 个 rule id),fixture pass;text_education_tuijian_01 单 keyword 命中单规则,set pin 稳定。
 7. **`学会推荐` / `研究院推荐` 的跨域污染给 education_art24_recommendation 的 fixture 设计带来限制**:这两个 keyword 被 education + veterinary 共享,任何使用它们的 fixture 都会双规则命中、set 失败;且这是教育场景的常用表述。本批 fixture 只能走 `受益者推荐`(独占)或 `协会推荐`(独占)规避,其他表述不能 pin。**未来若补 art24_recommendation 类 fixture,只能再补 `协会推荐` 变体**(剩余 1 条空间),或修改 rules JSON 给 education_art24_recommendation 增加独占 keyword。
+
+---
+
+## food 桶(3 条,Task 6 完成)
+
+- [x] text_food_bjsp_01 — https://www.samr.gov.cn/xw/mtjj/art/2025/art_e8d9a3f0ffbb4a51ac628c279d2c8535.html / URL-OK / content-snippet / 2026-08-25 采集(市场监管总局公布七起老年人药品、保健品虚假宣传典型案例 2025-10-29,案例 5「山东省冠县怡鑫生活便利超市」聊城市冠县市场监管局处罚通报,蜂胶类保健食品宣称「增强免疫力、调节血糖、调节血脂、抗衰老」)
+- [x] text_food_tssj_01 — http://www.jinxiu.gov.cn/xxgk/zfxxgk/fdzdgknr/zdlyxxgk_1/qtzdxx/xzzf/xzcf/cfjg/t26571261.shtml / URL-OK / content-snippet / 2026-08-25 采集(广西金秀瑶族自治县市场监管局 金市监处罚〔2025〕72号 通报,婴幼儿配方乳粉标签使用「进口奶源」「生态牧场」「天然牧场」模糊信息)
+- [x] text_food_sldz_01 — https://www.samr.gov.cn/xw/zj/art/2025/art_bcea7ffb220c456dbbd0333fed5a651d.html / URL-OK / content-snippet / 2026-08-25 采集(市场监管总局公布六起通过保健品虚假宣传进行「内卷式」竞争典型案例 2025-07-22,案例 2「江苏省张家港市德积徳优迪斯超市」张家港保税区市场监管局处罚 20 万元,蜂亿健蜂皇浆冻干粉胶囊 普通食品宣称针对糖尿病/高血压/冠心病/关节炎/骨质疏松患者)
+
+### food 桶测试结果
+
+- `every text fixture has matching rule hits (exact set)` → **PASS**(3 条全部精确 set 命中:bjsp_01 = {medicine_flag, food_function_claim};tssj_01 = {infant_milk};sldz_01 = {food_disease_target})
+- `minimum 30 text fixtures collected` → FAIL(仅 15/30,后续任务继续补 15 条)
+- `all 13 buckets represented across fixtures` → FAIL(medical + absolute + education + food = 4/13,后续任务继续补 9 桶)
+
+### food 桶注意事项
+
+1. **`保健食品` 在 `ad_signage_signage_medicine_flag` 是独占 keyword**(关键字共 3 个:`蓝帽子` / `保健食品` / `国食健字`,均 exclusive):本批 fixture 在 bjsp_01 `originalAdText` 中含「保健食品」,严格命中 medicine_flag;若改为不含「保健食品」则仅命中 food_function_claim。本 fixture 设计为双规则命中(medicine_flag + food_function_claim),set 等于 2 个 rule id,这是合理的「同时违反两条规则」的真实场景(广告功能越界 + 警示语缺失)。
+2. **`增强免疫力` / `调节血糖` / `调节血脂` / `抗衰老` / `延缓衰老` 等 30+ 个 keyword 在 `ad_signage_signage_food_function_claim` 均独占**:food_function_claim 是本批 food 桶唯一完全「独占 keyword 集合」的规则,fixture 设计自由度极高,几乎所有常见保健食品功能声称表述都能 pin。本批 bjsp_01 用「增强免疫力 调节血糖 调节血脂 抗衰老」4 个独占 keyword,set 1 个 rule id;若改用其他独占 keyword(如「降血糖」「稳血压」「护眼」「养胃」「排毒养颜」「降三高」)同样能 pin。
+3. **`进口奶源` / `生态牧场` / `天然牧场` / `珍稀奶源` 在 `ad_signage_signage_infant_milk` 是独占 keyword**(4 个均 exclusive):tssj_01 用 3 个独占 keyword 同时命中 infant_milk,set 1 个 rule id。**`母乳化` / `人乳化` 被 `ad_signage_signage_infant_milk` 与 `ad_signage_art20_breastmilk`(母乳代用品管理)共享**,任何含「母乳化」的婴幼儿配方乳粉 fixture 都会双规则命中、set 失败。本批 tssj_01 刻意回避此类 keyword,只用 4 个独占 keyword 变体。
+4. **`糖尿病患者` / `糖尿病人的` / `高血压患者` / `冠心病患者` / `心脑血管病人` / `关节炎患者` / `骨质疏松患者` / `便秘患者` / `痔疮患者` / `前列腺患者` / `癌症病人` / `肿瘤病人` / `男性健康` / `妇科疾病` / `妇科炎症` / `白癜风` / `牛皮癣` / `抗癌` / `防癌` / `抗癌防癌` 在 `ad_signage_signage_food_disease_target` 是独占 keyword**(20 个均 exclusive):sldz_01 用 5 个独占 keyword 同时命中 food_disease_target,set 1 个 rule id。
+5. **避免 `治疗` / `治愈` / `疗效` / `消炎`**:这 4 个 keyword 被 `ad_signage_signage_disease_prevention` 与 `cosmetic_art23_medical_claim` 共享,任何含这些词的普通食品 fixture 都会双规则命中(广告 §17 + 化妆品 §23),set 失败。本批 sldz_01 原案含「治疗糖尿病、高血压、冠心病」等表述,在 fixture 设计中刻意改为「糖尿病患者 高血压患者 冠心病患者」等人群指向型表述(均在 food_disease_target 独占 keyword 列表内),回避共享 keyword。**`止痛` 是 `ad_signage_signage_disease_prevention` 的独占 keyword**,未来若补 `text_food_yb_01`(药用食品含「止痛」),可 pin 单规则命中。
+6. **`蓝帽子` / `国食健字` 是 `ad_signage_signage_medicine_flag` 的独占 keyword**:本批 fixture 用「保健食品」(独占 keyword)命中该规则,未用「蓝帽子」「国食健字」,但这两个 keyword 也可独立使用 — 例如在「保健品店门口贴蓝帽子标志但未显著标明警示语」场景下。
+7. **本批 fixture 的 URL 来源**:bjsp_01 与 sldz_01 来自 samr.gov.cn 一手通报(URL gov.cn-ownership 已验证);tssj_01 来自广西金秀瑶族自治县政府站 jinxiu.gov.cn 一手处罚决定书(金市监处罚〔2025〕72号,URL gov.cn-ownership 已验证)。三 fixture 均未做 WebFetch 直读(WebFetch 持续 blocked on `.gov.cn`),正文来自 WebSearch snippet,与已建立模式(URL-OK / content-snippet)一致。
+8. **`%` / `百分百` / `百分之百` 对 food 桶的影响**:food_function_claim / food_disease_target / infant_milk / medicine_flag 4 条规则的 keyword 列表均不含 `百分百`/`百分之百`,但 `ad_signage_art11_data_citation` 把 `%` 单独作为 keyword,任何含 `%` 字符的 fixture 会同时触发该规则。本批 3 条 fixture 全部回避 `%` 字符(原文虽有「84%」「75%」等数据表述,fixture 设计改为纯中文人群指向),保 set 干净。
