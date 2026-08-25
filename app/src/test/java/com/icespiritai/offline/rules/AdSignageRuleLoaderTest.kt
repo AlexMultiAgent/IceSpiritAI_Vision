@@ -73,6 +73,53 @@ class AdSignageRuleLoaderTest {
     }
 
     @Test
+    fun load_realAssets_adSignageRulesCiteOnlyAdvertisingLaws() {
+        // v8 (2026-08-25) — invariant pin: every rule in ad_signage_rules.json
+        // must cite ONLY advertising-related statutes in its regulation field.
+        // Historical cross-cites that surfaced on the in-app HitCard:
+        //   • 食品标识管理规定 / 食品标识监督管理办法  →  food labeling, not ad law
+        //   • 婴幼儿配方乳粉产品配方注册管理办法     →  product registration, not ad law
+        //   • GB 7718-2011                          →  food labeling standard, not ad law
+        // The rule of thumb: regulation must start with 《广告法》 OR contain
+        // "广告审查" / "广告发布" / a 部门规章 whose title explicitly includes
+        // "广告" (e.g. 广告发布规定, 广告审查管理暂行办法). Anything else is a
+        // cross-domain cite and must be rejected.
+        //
+        // Profile-aware: shell ships slim/empty rules → silently passes.
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val rules = AdSignageRuleLoader(ctx).load()
+        val bannedTokens = listOf(
+            "食品标识",        // 食品标识管理规定 / 食品标识监督管理办法
+            "食品标识监督管理办法",
+            "GB 7718",          // 预包装食品标签通则
+            "配方注册",        // 婴幼儿配方乳粉产品配方注册管理办法 etc.
+            "婴幼儿配方",
+            "特殊医学用途",   // 特殊医学用途配方食品管理办法
+            "保健食品",        // 保健食品命名扫不到,但是"保健食品条例"串到了食品监管
+            "蓝帽子",
+            "国食健字",
+        )
+        val advertisingSignals = listOf(
+            "《广告法》", "广告审查", "广告发布", "广告登记",
+        )
+        rules.forEach { rule ->
+            val reg = rule.regulation
+            val hitsBan = bannedTokens.filter { it in reg }
+            val signalsPresent = advertisingSignals.filter { it in reg }
+            assertTrue(
+                "rule ${rule.id} regulation must not cite non-advertising statutes " +
+                    "(hit banned tokens: $hitsBan); current regulation='$reg'",
+                hitsBan.isEmpty(),
+            )
+            assertTrue(
+                "rule ${rule.id} regulation must carry an advertising-law signal " +
+                    "(none of $advertisingSignals found); current regulation='$reg'",
+                signalsPresent.isNotEmpty(),
+            )
+        }
+    }
+
+    @Test
     fun load_realAssets_functionClaimContainsAntiOxidationKeyword() {
         // v7 (2026-08-25) — added 抗氧化 to signage_food_function_claim after a real-world
         // corn-product ad on Huawei nova 6 surfaced this keyword as a missed hit:
