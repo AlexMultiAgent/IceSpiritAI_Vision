@@ -1,5 +1,15 @@
 # 用户更新日志
 
+## v0.1.24 · 2026-08-25
+
+- **规则库 v8 — ad_signage regulation 字段清理**:4 条 ad_signage 规则之前串了食品标识 / 婴幼儿配方注册 / GB 7718 等非广告法规。修正为只引《广告法》对应条款,HitCard 「依据」行不再出现食品标识相关法规
+  - `ad_signage_art10_minor`:→《广告法》第十条(二) + 第五十七条
+  - `ad_signage_signage_infant_milk`:→《广告法》第二十条 + 第五十七条
+  - `ad_signage_signage_food_function_claim`:→《广告法》第十七条 + 第五十八条
+  - `ad_signage_signage_food_disease_target`:→《广告法》第十七条 + 第五十八条
+- **回归 pin**:`AdSignageRuleLoaderTest.load_realAssets_adSignageRulesCiteOnlyAdvertisingLaws` — 每条规则的 regulation 字段不得含 `食品标识 / GB 7718 / 配方注册 / 婴幼儿配方 / 特殊医学用途 / 保健食品 / 蓝帽子 / 国食健字`,且必须含广告法规信号(`《广告法》` / `广告审查` / `广告发布` / `广告登记`)
+- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`)
+
 ## v0.1.23 · 2026-08-25
 
 - **规则库 v7 — 食品功能宣称补漏**:实地拍摄小园玉米紫玉米花青素广告时,OCR 把「抗氧化」识别为独立 TextLine,但 `ad_signage_signage_food_function_claim` v6 keywords 没收,HighlightOverlay 没有红框。v7 把 `抗氧化` 加入 keywords 列表(38 → 39 条),填补真实场景漏报
