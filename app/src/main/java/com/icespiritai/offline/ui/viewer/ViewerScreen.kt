@@ -1,6 +1,7 @@
 package com.icespiritai.offline.ui.viewer
 
 import android.net.Uri
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -37,7 +38,7 @@ fun ViewerScreen(
         modifier = modifier.fillMaxSize(),
         topBar = { ViewerTopBar(onBack = onBack) },
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Column(modifier = Modifier.fillMaxSize().padding(padding).animateContentSize()) {
             if (imageUri == null) {
                 ViewerEmpty(modifier = Modifier.weight(1f))
             } else {
