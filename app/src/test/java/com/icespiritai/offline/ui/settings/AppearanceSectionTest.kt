@@ -1,11 +1,12 @@
 package com.icespiritai.offline.ui.settings
 
-import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.icespiritai.offline.ui.theme.ThemeMode
@@ -24,12 +25,16 @@ import org.robolectric.annotation.Config
  * Pins:
  *  - the section title "外观" is rendered
  *  - three options render: 跟随系统 / 深色雪夜 / 浅色冰月
- *  - exactly one option is `selected` at a time, matching the `current`
- *    parameter
- *  - clicking an unselected option invokes onSelect with that mode
+ *  - exactly three Role.RadioButton semantic nodes exist (Material 3
+ *    SegmentedButton emits Role.RadioButton via its Surface merge node)
+ *  - exactly one option is `selected` at a time, matching `current`
+ *  - clicking the DARK option (when SYSTEM is selected) invokes onSelect(DARK)
  *
- * RobolectricTestRunner + sdk=33 because targetSdk=37 > Robolectric 4.13's
- * maxSdk=34.
+ * Note: full click-coverage across all 3 options is exercised in
+ * SettingsViewModelTest via the repository flow — UI tests here pin
+ * the structural shape and the visible "selected" state.
+ *
+ * RobolectricTestRunner + sdk=33 because targetSdk=37 > Robolectric 4.13's maxSdk=34.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -57,12 +62,9 @@ class AppearanceSectionTest {
     }
 
     @Test
-    fun `renders exactly one selected radio per option set`() {
-        // Three RadioButtons must always be present (regardless of which
-        // is selected) — guards against anyone accidentally hiding the
-        // options for a non-default theme.
+    fun `renders exactly three radio-button roles regardless of selection`() {
         composeRule.setContent {
-            AppearanceSection(current = ThemeMode.DARK, onSelect = {})
+            AppearanceSection(current = ThemeMode.SYSTEM, onSelect = {})
         }
         composeRule.onAllNodes(
             SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton),
@@ -70,39 +72,31 @@ class AppearanceSectionTest {
     }
 
     @Test
-    fun `SYSTEM is selected when current is SYSTEM`() {
+    fun `SYSTEM option is selected when current is SYSTEM`() {
         composeRule.setContent {
             AppearanceSection(current = ThemeMode.SYSTEM, onSelect = {})
         }
-        // We click into the row containing the radio to test selection.
-        // RadioButton carries Role.RadioButton + selected semantics.
-        composeRule.onAllNodes(
-            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton),
-        )[0].assertIsSelected()
+        composeRule.onNodeWithTag("theme_SYSTEM").assertIsSelected()
     }
 
     @Test
-    fun `DARK is selected when current is DARK`() {
+    fun `DARK option is selected when current is DARK`() {
         composeRule.setContent {
             AppearanceSection(current = ThemeMode.DARK, onSelect = {})
         }
-        composeRule.onAllNodes(
-            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton),
-        )[1].assertIsSelected()
+        composeRule.onNodeWithTag("theme_DARK").assertIsSelected()
     }
 
     @Test
-    fun `LIGHT is selected when current is LIGHT`() {
+    fun `LIGHT option is selected when current is LIGHT`() {
         composeRule.setContent {
             AppearanceSection(current = ThemeMode.LIGHT, onSelect = {})
         }
-        composeRule.onAllNodes(
-            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton),
-        )[2].assertIsSelected()
+        composeRule.onNodeWithTag("theme_LIGHT").assertIsSelected()
     }
 
     @Test
-    fun `clicking an option invokes onSelect with that mode`() {
+    fun `clicking the DARK option invokes onSelect with DARK`() {
         var lastSelected: ThemeMode? = null
         composeRule.setContent {
             AppearanceSection(
@@ -110,12 +104,7 @@ class AppearanceSectionTest {
                 onSelect = { lastSelected = it },
             )
         }
-        // The RadioButton (index 1 = DARK / "深色雪夜") carries the onClick.
-        // The label Text sibling does not, so we click the RadioButton node
-        // directly.
-        composeRule.onAllNodes(
-            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton),
-        )[1].performClick()
+        composeRule.onNodeWithTag("theme_DARK").performClick()
         assertEquals(ThemeMode.DARK, lastSelected)
     }
 }
