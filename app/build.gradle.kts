@@ -766,7 +766,7 @@ tasks.register("uploadVisionReleaseToGitea") {
         // 3. Upload two new assets. Order matters: APK first, because the
         // JSON's apkUrl field is rewritten to point at the just-uploaded
         // APK's attachment UUID.
-        val stagedApk = uploadStagingDir.resolve("icespritai-vision.apk")
+        val stagedApk = uploadStagingDir.resolve("icespiritai-vision.apk")
         val stagedJson = uploadStagingDir.resolve("vision-latest.json")
         require(stagedApk.exists()) {
             "uploadVisionReleaseToGitea: missing staged APK ${stagedApk.absolutePath}. Run archiveVisionRelease first."
@@ -806,7 +806,7 @@ tasks.register("uploadVisionReleaseToGitea") {
         // (hardcoded `releases/download/...` URL baked in) and gets
         // regenerated on every build. Only the staged copy that goes to
         // Gitea needs the live attachment URL.
-        val apkUrlOld = "$giteaBaseUrl/giteaadmin/vision-app/releases/download/latest/icespritai-vision.apk"
+        val apkUrlOld = "$giteaBaseUrl/giteaadmin/vision-app/releases/download/latest/icespiritai-vision.apk"
         val originalJson = stagedJson.readText(Charsets.UTF_8)
         require(originalJson.contains(apkUrlOld)) {
             "uploadVisionReleaseToGitea: staged JSON did not contain expected apkUrl placeholder " +

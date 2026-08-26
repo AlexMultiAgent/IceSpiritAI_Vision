@@ -171,10 +171,10 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 
 - **`uploadVisionReleaseToGitea` 大文件 POST 偶发卡住(HTTP 100 + curl 超时)**:
   - 症状:删除已有 APK + JSON 成功(`HTTP=204`),但随后 `POST .../assets` 上传 APK 一直返回 HTTP 100,10m 内不返最终 status code,`--max-time 600` 触发超时
-  - **不要回滚代码**:这只是 Gitea 端瞬时问题,APK 已字节级通过 cert-pin gate(本地的 `发布版历史存档/最新版改名上传/icespritai-vision.apk` 是权威 source of truth);先看 `发布版历史存档/最新版改名上传/vision-latest.json` 的 `signerCertSha256` 是否 = `4a21f4...3043`
+  - **不要回滚代码**:这只是 Gitea 端瞬时问题,APK 已字节级通过 cert-pin gate(本地的 `发布版历史存档/最新版改名上传/icespiritai-vision.apk` 是权威 source of truth);先看 `发布版历史存档/最新版改名上传/vision-latest.json` 的 `signerCertSha256` 是否 = `4a21f4...3043`
   - 恢复步骤(纯 curl,与 build.gradle.kts 内的 curl 等价):
     1. 先 POST vision-latest.json(1.4 KB,~1s 内完成)→ 客户端至少能拉到 v0.1.14 metadata
-    2. 再 POST icespritai-vision.apk(`--max-time 900` 替 `--max-time 600`,给大文件更宽裕)
+    2. 再 POST icespiritai-vision.apk(`--max-time 900` 替 `--max-time 600`,给大文件更宽裕)
     3. 删残留:DELETE 任何重复 asset id(curl 探测失败的中间状态可能留下重复 JSON)
   - 客户端视角最终态校验:
     - `curl -sI <apkUrl>` 应返 `Content-Length: <本地 APK size>` + `HTTP 200`
@@ -183,11 +183,11 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 ## 发布流水线踩坑(2026-08-26 v0.1.31)
 
 - **Gitea 1.22.x `releases/download/<tag>/<filename>` 对 `.apk` 文件名 404**:
-  - 症状:`releases/download/latest/icespritai-vision.apk` 一直返 `HTTP 404`,但同 release tag 下 `releases/download/latest/vision-latest.json` 正常 200。改文件名(`xxx.zip` / `xxx-update.apk`)同样 404 → 不是 filename pattern 问题,是 Gitea 服务端路由 bug,触发表决于 release tag (`latest` 字面量也可能参与)。底层 attachment `GET /attachments/<uuid>` 200 OK,Content-Length / Disposition 完全正确
+  - 症状:`releases/download/latest/icespiritai-vision.apk` 一直返 `HTTP 404`,但同 release tag 下 `releases/download/latest/vision-latest.json` 正常 200。改文件名(`xxx.zip` / `xxx-update.apk`)同样 404 → 不是 filename pattern 问题,是 Gitea 服务端路由 bug,触发表决于 release tag (`latest` 字面量也可能参与)。底层 attachment `GET /attachments/<uuid>` 200 OK,Content-Length / Disposition 完全正确
   - 客户端影响: in-app update 拉 JSON 时看到新版本 → 点下载按钮 → APK URL 404 → 下载失败。原因与 v0.1.30 imageSize 透传修复无关,纯 Gitea 服务端行为
   - **修复路径**(`app/build.gradle.kts` 的 `uploadVisionReleaseToGitea` 3a/3b/3c 步):
     1. POST APK, 从 response `{"id":260,...,"uuid":"39c59ab3-..."}` 抓出 attachment UUID
-    2. 把 staged `vision-latest.json` 的 `apkUrl` 从 `releases/download/latest/icespritai-vision.apk` 改成 `http://125.211.45.14:3000/attachments/<uuid>`
+    2. 把 staged `vision-latest.json` 的 `apkUrl` 从 `releases/download/latest/icespiritai-vision.apk` 改成 `http://125.211.45.14:3000/attachments/<uuid>`
     3. POST 重写后的 JSON
   - 客户端 cert-pin gate 不变(`signerCertSha256: 4a21f4...3043`),只是 APK 下载路径绕过 broken 路由
   - 源码 `app/build/outputs/apk/release/vision-latest.json` 仍含原 `releases/download/...` URL(`generateVisionLatestJson` 的 hardcoded 模板),下一版构建会重生成,无需手动维护
