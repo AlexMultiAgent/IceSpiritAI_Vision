@@ -763,8 +763,10 @@ tasks.register("uploadVisionReleaseToGitea") {
             }
         }
 
-        // 3. Upload two new assets.
-        val stagedApk = uploadStagingDir.resolve("icespiritai-vision.apk")
+        // 3. Upload two new assets. Order matters: APK first, because the
+        // JSON's apkUrl field is rewritten to point at the just-uploaded
+        // APK's attachment UUID.
+        val stagedApk = uploadStagingDir.resolve("icespritai-vision.apk")
         val stagedJson = uploadStagingDir.resolve("vision-latest.json")
         require(stagedApk.exists()) {
             "uploadVisionReleaseToGitea: missing staged APK ${stagedApk.absolutePath}. Run archiveVisionRelease first."
@@ -772,16 +774,65 @@ tasks.register("uploadVisionReleaseToGitea") {
         require(stagedJson.exists()) {
             "uploadVisionReleaseToGitea: missing staged JSON ${stagedJson.absolutePath}. Run generateVisionLatestJson first."
         }
-        listOf(stagedApk, stagedJson).forEach { f ->
-            val (upBody, upCode) = splitStatus(curl(listOf(
-                "-X", "POST", "-F", "attachment=@${f.absolutePath}",
-                "$api/$releaseId/assets")))
-            require(upCode == "201") {
-                "uploadVisionReleaseToGitea: upload ${f.name} returned HTTP $upCode: $upBody"
-            }
-            logger.lifecycle("uploadVisionReleaseToGitea: uploaded ${f.name} (${f.length()} bytes)")
+
+        // 3a. Upload the APK and capture its attachment UUID. The
+        // `releases/download/<tag>/<filename>` route on this Gitea 1.22.x
+        // instance returns 404 for any `.apk` filename (verified 2026-08-26
+        // with a fresh v0.1.31 push — same APK works at
+        // `/attachments/<uuid>` with HTTP 200, so the upload itself landed,
+        // only the route is broken). The in-app update client downloads from
+        // whatever URL is in vision-latest.json, so we point apkUrl at the
+        // attachment UUID and bypass the broken route.
+        val (apkUpBody, apkUpCode) = splitStatus(curl(listOf(
+            "-X", "POST", "-F", "attachment=@${stagedApk.absolutePath}",
+            "$api/$releaseId/assets")))
+        require(apkUpCode == "201") {
+            "uploadVisionReleaseToGitea: upload ${stagedApk.name} returned HTTP $apkUpCode: $apkUpBody"
         }
-        logger.lifecycle("uploadVisionReleaseToGitea: pushed 2 assets to tag $tag (release id=$releaseId)")
+        val apkUuid = Regex(""""uuid"\s*:\s*"([0-9a-fA-F-]+)"""")
+            .find(apkUpBody)?.groupValues?.get(1)
+            ?: throw GradleException(
+                "uploadVisionReleaseToGitea: APK upload response had no uuid field: $apkUpBody"
+            )
+        val apkAttachmentUrl = "$giteaBaseUrl/attachments/$apkUuid"
+        logger.lifecycle(
+            "uploadVisionReleaseToGitea: uploaded ${stagedApk.name} " +
+                "(${stagedApk.length()} bytes, uuid=$apkUuid)"
+        )
+
+        // 3b. Rewrite the staged JSON's apkUrl to the attachment UUID URL.
+        // The source JSON at outputs/apk/release/vision-latest.json is left
+        // alone — it's the as-built snapshot from generateVisionLatestJson
+        // (hardcoded `releases/download/...` URL baked in) and gets
+        // regenerated on every build. Only the staged copy that goes to
+        // Gitea needs the live attachment URL.
+        val apkUrlOld = "$giteaBaseUrl/giteaadmin/vision-app/releases/download/latest/icespritai-vision.apk"
+        val originalJson = stagedJson.readText(Charsets.UTF_8)
+        require(originalJson.contains(apkUrlOld)) {
+            "uploadVisionReleaseToGitea: staged JSON did not contain expected apkUrl placeholder " +
+                "$apkUrlOld — generateVisionLatestJson's hardcoded URL drifted; update both ends"
+        }
+        val rewrittenJson = originalJson.replace(apkUrlOld, apkAttachmentUrl)
+        stagedJson.writeText(rewrittenJson, Charsets.UTF_8)
+        logger.lifecycle(
+            "uploadVisionReleaseToGitea: rewrote staged JSON apkUrl → $apkAttachmentUrl"
+        )
+
+        // 3c. Upload the rewritten JSON.
+        val (jsonUpBody, jsonUpCode) = splitStatus(curl(listOf(
+            "-X", "POST", "-F", "attachment=@${stagedJson.absolutePath}",
+            "$api/$releaseId/assets")))
+        require(jsonUpCode == "201") {
+            "uploadVisionReleaseToGitea: upload ${stagedJson.name} returned HTTP $jsonUpCode: $jsonUpBody"
+        }
+        logger.lifecycle(
+            "uploadVisionReleaseToGitea: uploaded ${stagedJson.name} " +
+                "(${stagedJson.length()} bytes)"
+        )
+        logger.lifecycle(
+            "uploadVisionReleaseToGitea: pushed 2 assets to tag $tag " +
+                "(release id=$releaseId, apkUuid=$apkUuid)"
+        )
     }
 }
 

@@ -34,6 +34,20 @@
 
 **为什么保留 FoodLabeling 代码路径不删**:FoodLabeling 是「广告招牌模式 → 其他视觉判别域」的可复制模板,把 `FoodLabelRuleMatcher` + domain 字段 + 知识库 + 类别显示一并删除等于砍掉这条扩展路。`RuleTabBar.kt` 顶部注释明示"恢复时把 `visibleTabs` 改回 `RuleTab.entries.toList()` 即可"。
 
+### Tab → 初始页功能规范(待实现,2026-08-26 立项)
+
+**用户场景**:识别完一张图片后(state = `Complete`,ResultPanel + 高亮叠加显示中),用户想「从头再来一次」(换张图 / 再拍一张),目前必须手动点右下角的相机/相册按钮。期望:**再次点击「广告招牌」tab**(已经是选中态)直接回到 Idle 初始页**(清空 pendingUri + state 清成 Idle,无需用户再去点拍照/选图按钮之外的"返回"入口)。
+
+**目前行为**(2026-08-26):`IceSpiritVisionViewModel.setTab(tab)` 在 tab 没变时返回 `false`,即"已是当前 tab 不动作"。`HomeScreen` 见到 false 也不调 `reset()`,所以「识别完成 → 再点 tab」是空响应。要落地得改 setTab 行为:
+
+- 当 `selectedTab == tab` **且** `state !is Loading` 时,`setTab` 视为「回到初始」调用 `reset()`(等于把 selectedTab 复位不变,但 state 走回 Idle)
+- 当 `selectedTab == tab` **且** `state is Loading` 时,保持原 no-op(防误触打断正在跑的 OCR / 规则扫描)
+- 当 `selectedTab != tab` 时(等 FoodLabeling 解锁后才有意义),维持现状的"切换 matcher,保留 state"
+
+**为什么不绑去拍照/相册按钮**:相机/相册按钮本身有"开始新一次分析"的语义(自动调 `setPendingUri + startAnalysis`),不适合复用为"回到初始"。Tab 点击是更纯净的「清空」入口。
+
+**测试锚点**:`IceSpiritVisionViewModelTabTest.kt` 加一组 `setTab` 行为契约 — (a) tab 不变 + state=Complete → reset();(b) tab 不变 + state=Loading → no-op;(c) tab 切换 → 老路径(若 FoodLabeling 解锁后启用)。
+
 ## modelProfile 系统
 
 Gradle property `modelProfile` 控制当前构建启用哪个模型配置:
@@ -165,6 +179,18 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
   - 客户端视角最终态校验:
     - `curl -sI <apkUrl>` 应返 `Content-Length: <本地 APK size>` + `HTTP 200`
     - `curl <jsonUrl>` 应含 `versionCode:14`、`signerCertSha256: 4a21f4...3043`
+
+## 发布流水线踩坑(2026-08-26 v0.1.31)
+
+- **Gitea 1.22.x `releases/download/<tag>/<filename>` 对 `.apk` 文件名 404**:
+  - 症状:`releases/download/latest/icespritai-vision.apk` 一直返 `HTTP 404`,但同 release tag 下 `releases/download/latest/vision-latest.json` 正常 200。改文件名(`xxx.zip` / `xxx-update.apk`)同样 404 → 不是 filename pattern 问题,是 Gitea 服务端路由 bug,触发表决于 release tag (`latest` 字面量也可能参与)。底层 attachment `GET /attachments/<uuid>` 200 OK,Content-Length / Disposition 完全正确
+  - 客户端影响: in-app update 拉 JSON 时看到新版本 → 点下载按钮 → APK URL 404 → 下载失败。原因与 v0.1.30 imageSize 透传修复无关,纯 Gitea 服务端行为
+  - **修复路径**(`app/build.gradle.kts` 的 `uploadVisionReleaseToGitea` 3a/3b/3c 步):
+    1. POST APK, 从 response `{"id":260,...,"uuid":"39c59ab3-..."}` 抓出 attachment UUID
+    2. 把 staged `vision-latest.json` 的 `apkUrl` 从 `releases/download/latest/icespritai-vision.apk` 改成 `http://125.211.45.14:3000/attachments/<uuid>`
+    3. POST 重写后的 JSON
+  - 客户端 cert-pin gate 不变(`signerCertSha256: 4a21f4...3043`),只是 APK 下载路径绕过 broken 路由
+  - 源码 `app/build/outputs/apk/release/vision-latest.json` 仍含原 `releases/download/...` URL(`generateVisionLatestJson` 的 hardcoded 模板),下一版构建会重生成,无需手动维护
 
 ## 文档索引
 
