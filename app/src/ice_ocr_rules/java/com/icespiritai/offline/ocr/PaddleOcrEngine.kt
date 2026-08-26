@@ -176,18 +176,21 @@ class PaddleOcrEngine(
                 lineBoxes = runResult.results.map { it.toTextLine(loaded.sampleSize) },
                 avgConfidence = if (runResult.results.isEmpty()) 0f
                 else runResult.results.map { it.confidence }.average().toFloat(),
-                // Display-oriented dimensions of the FULL bitmap PaddleOCR
-                // actually saw. [loaded.bitmap] is post-EXIF-rotation on
-                // API 24+ (minSdk=26), so bitmap.width/height are already
-                // in the same coordinate space as the boxes above (which
-                // were multiplied by loaded.sampleSize to undo the
-                // power-of-two downsample). ImagePreview consumes these
-                // as the reference dims for HighlightOverlay's transform
-                // — NOT painter.intrinsicSize, which reflects Coil's
-                // layout-size downsampled bitmap and would put boxes in
-                // the wrong coordinate space.
-                imageWidth = bitmap.width,
-                imageHeight = bitmap.height,
+                // Display-oriented dimensions of the FULL bitmap (post-EXIF
+                // rotation, full resolution). [loaded.bitmap] is the DOWNSAMPLED
+                // display-oriented bitmap (inSampleSize applied), so its
+                // width/height are in the *downsampled* coord space — NOT the
+                // space the boxes above live in. Boxes were multiplied by
+                // loaded.sampleSize in [OCRBox.toBoundingRect] to recover the
+                // full-resolution display-oriented space, so we must multiply
+                // the bitmap dims by sampleSize here too, or
+                // [ImagePreview.computeFitTransform] will compute a transform
+                // whose refW/refH is smaller than the actual box coord space
+                // (boxes drift toward the canvas's right/bottom letterbox —
+                // see the 2026-08-26 smoke-test repro on a 4032×3024 bus
+                // photo: red box landed in the upper-right empty area).
+                imageWidth = bitmap.width * loaded.sampleSize,
+                imageHeight = bitmap.height * loaded.sampleSize,
             )
         }
     }

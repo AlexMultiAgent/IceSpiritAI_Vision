@@ -1,5 +1,16 @@
 # 用户更新日志
 
+## v0.1.31 · 2026-08-26
+
+- **修复:首页「红框位置标错了」三次复盘(真机 A/B 验证 v0.1.30 修复未闭环)** — `HighlightOverlay` 矩形在 `ice_ocr_rules` profile 上对 `sampleSize > 1` 的图仍错位。2026-08-26 烟测 3 图:截图 1(竖图)框在文字上、截图 2(竖图)单框碰巧落文字,但截图 3(横图,真机拍摄公交车 + durex 广告)红框完全落在右上角空白处,与 OCR 检出的「激情公益红 守护爱始终」「durex」「创维汽车」等文字完全不重叠
+  - **新根因(独立于 v0.1.29 EXIF 双重旋转 / v0.1.30 imageSize 透传)**:v0.1.30 加的 imageSize 链路在「消费契约」层面对了(`computeFitTransform` 优先 `imageSize` + `ImagePreviewFitTransformTest` 6 例 Robolectric pin 住 `imageSize=IntSize(3024, 4032)` → `scale=0.248`),但**生产端契约**漏了一半 —— `PaddleOcrEngine.recognize` 设 `imageWidth = bitmap.width`(下采样 bitmap 尺寸,典型 `sampleSize=2` 时 = `2016×1512`),不是全分辨率 display-oriented 尺寸(4032×3024 / 3024×4032)。而 box 坐标已在 `OCRBox.toBoundingRect` 里被乘以 `loaded.sampleSize` 投到全分辨率空间,`imageSize` 与 `line.box` 活在两个不同坐标系,`computeFitTransform` 用错误的 `imageSize` 当 `refW/refH` → `scale` 偏约 2× → box 整体飘到 canvas 右下方 letterbox
+  - **截图 1 vs 截图 3 行为差异解释**:`BitmapLoader.sampleSize(longestEdge, maxEdge=2048)` 对 `longEdge ≤ 2048` 返回 1 → `bitmap.width × 1 = bitmap.width`(等于全分辨率),bug 静默;`longEdge > 2048`(典型手机相机 4032+ 像素)才 `sampleSize=2` 触发 bug。截图 1 长边可能较小 → `sampleSize=1` → 框对;截图 3 真机拍摄 4032×3024 横图 → `sampleSize=2` → bug 全显。截图 2 视觉上框在文字上,实际也已经偏移 `sampleSize²` 倍(典型 2×),只是「东莞·福州·宁波·济南」该行横向铺满中部不易察觉
+  - **修复**:`PaddleOcrEngine.recognize` 设 `imageWidth = bitmap.width * loaded.sampleSize`、`imageHeight = bitmap.height * loaded.sampleSize`,与 `OCRBox.toBoundingRect` 已有的 sampleSize 乘法对齐,保证 `imageSize` 和 `line.box` 在同一坐标系。注释同步更新(从「BitmapFactory 看到的就是 FULL bitmap」改成「bitmap 是下采样版,× sampleSize 才回到 box 坐标空间」)
+  - **回归 pin**:`PaddleOcrEngineTest` +1 例 androidTest —— `recognize_imageSize_isFullResDisplayDims_notDownsampled`,用 `fixtures/dongjiao_daojia.jpg`(1.5 MB 真机照片,`longEdge > 2048` → `sampleSize=2`,必触发 bug;`test.png` `longEdge ≤ 2048` → `sampleSize=1`,OLD 错代码也过,必须换 fixture):① `BitmapFactory.decodeFile(inJustDecodeBounds=true)` + `BitmapLoader.exifRotationDegrees` 计算期望全分辨率 display-oriented 尺寸(避免分配 4032×3024 ARGB_8888 bitmap 占 ~50 MB 测试设备内存)② 断言 `result.imageWidth == expectedW && result.imageHeight == expectedH` ③ 交叉断言每个 `line.box.right/bottom <= imageWidth/imageHeight`(OLD 错代码下每个 box 越界直接 fail)④ sanity guard —— fixture `longEdge` 必须 > 2048,否则 `sampleSize=1`、pin 失牙。androidTest 跑前需 `connectedDebugAndroidTest` + 真机 + `ice_ocr_rules` profile 配齐 ONNX 模型(同 `PaddleOcrExifTest` / `PaddleOcrFixtureTest` 路径,CLAUDE.md 已踩)
+  - **残余未 pin**(同 v0.1.29 / v0.1.30 的限制):PaddleOCR SDK 是 native + ONNX Runtime + OpenCV,Robolectric 跑不动,androidTest + 真机烟测把关;Compose runtime 真渲染 canvas letterbox + Painter ContentScale.Fit + Coil 额外下采样的协同层也只能真机烟测(2026-08-26 烟测 截图 1 + 3 已显式验证)
+- v0.1.30 / v0.1.29 的修复保留,本版本不撤销 —— 那两条在 Robolectric 不可复现的 API 24+ 路径上仍然必要,只是不足以独立闭环红框位置问题
+- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`,总 568 / 0 failures —— unit test 未动)
+
 ## v0.1.30 · 2026-08-26
 
 - **修复:首页「红框位置标错了」二次复盘(真机 A/B 验证 v0.1.29 修复未生效)** — `HighlightOverlay` 矩形在 `ice_ocr_rules` profile 上依然落不到文字上(其他真机复核 8 命中 / 8 全错位,与 v0.1.29 同症状)
