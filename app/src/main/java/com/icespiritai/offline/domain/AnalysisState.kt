@@ -23,6 +23,20 @@ sealed class AnalysisState {
         val text: String,
         val confidence: Float,
         val lineBoxes: List<TextLine>,
+        /**
+         * Display-oriented dimensions of the FULL bitmap the OCR engine
+         * actually saw (post-EXIF rotation, in pixels). Used by
+         * [com.icespiritai.offline.ui.home.ImagePreview] as the reference
+         * space for HighlightOverlay rects — not `painter.intrinsicSize`,
+         * which reflects Coil's layout-size downsampled bitmap and would
+         * put boxes in a coordinate space that does NOT match OCR's.
+         *
+         * Defaulted to 0 so legacy callers / unit tests that don't need
+         * overlay rects still compile; `computeFitTransform` treats
+         * (0, 0) as "fall back to painter.intrinsicSize".
+         */
+        val imageWidth: Int = 0,
+        val imageHeight: Int = 0,
         val lowConfidence: Boolean = confidence < 0.5f
     ) : AnalysisState()
     data class RuleScanned(val hits: List<RuleHit>) : AnalysisState()
@@ -45,7 +59,14 @@ sealed class AnalysisState {
 data class OcrResult(
     val fullText: String,
     val lineBoxes: List<TextLine>,
-    val avgConfidence: Float
+    val avgConfidence: Float,
+    /**
+     * Display-oriented dimensions of the FULL bitmap OCR actually saw
+     * (post-EXIF rotation). See [AnalysisState.OcrDone.imageWidth] for
+     * why this is propagated through the pipeline.
+     */
+    val imageWidth: Int = 0,
+    val imageHeight: Int = 0,
 )
 
 data class TextLine(
@@ -95,6 +116,17 @@ data class ViolationReport(
      * compile (the Viewer shows an empty text list and skips the overlay).
      */
     val lineBoxes: List<TextLine> = emptyList(),
+    /**
+     * Display-oriented dimensions of the analyzed image, propagated from
+     * the [OcrResult] that produced [lineBoxes]. Drives the overlay's
+     * coordinate-space transform on the HomeScreen when the user has
+     * progressed past OcrDone into the Complete state (where the OcrDone
+     * `AnalysisState` is no longer the active state and we have to read
+     * the dims from the report). Defaulted to 0 so legacy constructions
+     * continue to compile.
+     */
+    val imageWidth: Int = 0,
+    val imageHeight: Int = 0,
 ) {
     /** True when OCR found at least one non-blank character. */
     val hasText: Boolean get() = ocrText.isNotBlank()

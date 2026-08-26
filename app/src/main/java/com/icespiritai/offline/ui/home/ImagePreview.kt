@@ -1,6 +1,7 @@
 package com.icespiritai.offline.ui.home
 
 import android.net.Uri
+import androidx.annotation.VisibleForTesting
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -30,24 +31,64 @@ import com.icespiritai.offline.R
 import com.icespiritai.offline.domain.RuleHit
 import com.icespiritai.offline.domain.TextLine
 
-private data class FitTransform(val scaleX: Float, val scaleY: Float, val offsetX: Float, val offsetY: Float)
+internal data class FitTransform(val scaleX: Float, val scaleY: Float, val offsetX: Float, val offsetY: Float)
 
-private fun computeFitTransform(painter: Painter?, boxSize: IntSize): FitTransform {
-    if (painter == null || boxSize == IntSize.Zero) return FitTransform(1f, 1f, 0f, 0f)
-    val intrinsicW = painter.intrinsicSize.width
-    val intrinsicH = painter.intrinsicSize.height
-    if (!intrinsicW.isFinite() || !intrinsicH.isFinite() ||
-        intrinsicW <= 0f || intrinsicH <= 0f) return FitTransform(1f, 1f, 0f, 0f)
+/**
+ * Compute the (scale, offset) needed to render OCR boxes (whose coordinates
+ * live in the FULL bitmap's display-oriented pixel space) onto [boxSize].
+ *
+ * Reference-dim precedence:
+ *   1. [imageSize] if both width and height are > 0 — this is the FULL
+ *      bitmap's display-oriented dims from the OCR engine. Using it
+ *      guarantees the transform matches the coordinate space the boxes
+ *      were emitted in, regardless of how Coil chose to downsample the
+ *      preview bitmap to fit the layout.
+ *   2. [painter]'s `intrinsicSize` (the downsampled bitmap Coil returned)
+ *      as a fallback for callers that don't have the OCR dims yet (e.g.
+ *      initial render before OcrDone arrives, or the FakeOcrEngine shell
+ *      profile where no image is processed).
+ *   3. Identity (1, 1, 0, 0) when nothing is usable.
+ *
+ * Visible for unit tests so `computeFitTransformTest` can pin the
+ * precedence rules without driving Compose.
+ */
+@VisibleForTesting
+internal fun computeFitTransform(
+    painter: Painter?,
+    boxSize: IntSize,
+    imageSize: IntSize? = null,
+): FitTransform {
     val boxW = boxSize.width.toFloat()
     val boxH = boxSize.height.toFloat()
     if (boxW <= 0f || boxH <= 0f) return FitTransform(1f, 1f, 0f, 0f)
-    val scale = minOf(boxW / intrinsicW, boxH / intrinsicH)
+
+    // Prefer the FULL bitmap dims from the OCR engine. painter.intrinsicSize
+    // is the downsampled bitmap Coil handed Compose, which is NOT the same
+    // coordinate space the boxes were emitted in — using it would put boxes
+    // off-screen on every non-trivial layout (verified on the corn
+    // advertisement fixture, scale collapsed to 1.0 and boxes drifted into
+    // the right margin and the OCR-text panel).
+    val refW: Float
+    val refH: Float
+    if (imageSize != null && imageSize.width > 0 && imageSize.height > 0) {
+        refW = imageSize.width.toFloat()
+        refH = imageSize.height.toFloat()
+    } else if (painter != null) {
+        refW = painter.intrinsicSize.width
+        refH = painter.intrinsicSize.height
+        if (!refW.isFinite() || !refH.isFinite() ||
+            refW <= 0f || refH <= 0f) return FitTransform(1f, 1f, 0f, 0f)
+    } else {
+        return FitTransform(1f, 1f, 0f, 0f)
+    }
+
+    val scale = minOf(boxW / refW, boxH / refH)
     if (!scale.isFinite() || scale <= 0f) return FitTransform(1f, 1f, 0f, 0f)
     return FitTransform(
         scaleX = scale,
         scaleY = scale,
-        offsetX = (boxW - intrinsicW * scale) / 2f,
-        offsetY = (boxH - intrinsicH * scale) / 2f,
+        offsetX = (boxW - refW * scale) / 2f,
+        offsetY = (boxH - refH * scale) / 2f,
     )
 }
 
@@ -57,6 +98,14 @@ fun ImagePreview(
     lineBoxes: List<TextLine>,
     hits: List<RuleHit>,
     modifier: Modifier = Modifier,
+    /**
+     * Display-oriented dims of the FULL bitmap the OCR engine processed.
+     * Used as the reference space for [HighlightOverlay] — see
+     * [computeFitTransform] KDoc for why painter.intrinsicSize is NOT
+     * reliable here. Defaulted to `null` so existing call sites
+     * (tests, shell-profile previews without OCR) keep working.
+     */
+    imageSize: IntSize? = null,
     /**
      * Optional double-tap handler. When provided AND [lineBoxes] is non-empty
      * (i.e. there is an OCR result worth a Viewer screen), the preview
@@ -116,8 +165,15 @@ fun ImagePreview(
                 onSuccess = { result -> imagePainter = result.painter },
             )
             if (lineBoxes.isNotEmpty()) {
-                val transform = remember(boxSize, imagePainter) {
-                    computeFitTransform(imagePainter, boxSize)
+                // imageSize is the stable reference; imagePainter only
+                // matters as the fallback when imageSize is null (e.g.
+                // shell-profile FakeOcrEngine with no real dims). Once
+                // OcrDone lands, the remember key no longer depends on
+                // imagePainter, so the transform is set up on the first
+                // recomposition after OCR completes — without waiting for
+                // Coil to finish loading the bitmap.
+                val transform = remember(boxSize, imageSize, imagePainter) {
+                    computeFitTransform(imagePainter, boxSize, imageSize)
                 }
                 HighlightOverlay(
                     lines = lineBoxes,

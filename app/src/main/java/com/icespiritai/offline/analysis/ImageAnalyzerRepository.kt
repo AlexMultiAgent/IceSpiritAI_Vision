@@ -77,7 +77,9 @@ class ImageAnalyzerRepository(
             AnalysisState.OcrDone(
                 text = ocrResult.fullText,
                 confidence = ocrResult.avgConfidence,
-                lineBoxes = ocrResult.lineBoxes
+                lineBoxes = ocrResult.lineBoxes,
+                imageWidth = ocrResult.imageWidth,
+                imageHeight = ocrResult.imageHeight,
             )
         )
 
@@ -125,6 +127,8 @@ class ImageAnalyzerRepository(
                     timestampMs = System.currentTimeMillis(),
                     avgConfidence = ocrResult.avgConfidence,
                     lineBoxes = ocrResult.lineBoxes,
+                    imageWidth = ocrResult.imageWidth,
+                    imageHeight = ocrResult.imageHeight,
                 )
             )
         )

@@ -176,6 +176,18 @@ class PaddleOcrEngine(
                 lineBoxes = runResult.results.map { it.toTextLine(loaded.sampleSize) },
                 avgConfidence = if (runResult.results.isEmpty()) 0f
                 else runResult.results.map { it.confidence }.average().toFloat(),
+                // Display-oriented dimensions of the FULL bitmap PaddleOCR
+                // actually saw. [loaded.bitmap] is post-EXIF-rotation on
+                // API 24+ (minSdk=26), so bitmap.width/height are already
+                // in the same coordinate space as the boxes above (which
+                // were multiplied by loaded.sampleSize to undo the
+                // power-of-two downsample). ImagePreview consumes these
+                // as the reference dims for HighlightOverlay's transform
+                // — NOT painter.intrinsicSize, which reflects Coil's
+                // layout-size downsampled bitmap and would put boxes in
+                // the wrong coordinate space.
+                imageWidth = bitmap.width,
+                imageHeight = bitmap.height,
             )
         }
     }

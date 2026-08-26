@@ -1,5 +1,16 @@
 # 用户更新日志
 
+## v0.1.30 · 2026-08-26
+
+- **修复:首页「红框位置标错了」二次复盘(真机 A/B 验证 v0.1.29 修复未生效)** — `HighlightOverlay` 矩形在 `ice_ocr_rules` profile 上依然落不到文字上(其他真机复核 8 命中 / 8 全错位,与 v0.1.29 同症状)
+  - **新根因(独立于 v0.1.29 的 EXIF 双重旋转 bug)**:`PaddleOcrEngine.recognize()` 喂给 `PaddleOCR.recognize(bitmap)` 的是 `BitmapLoader.downsampledBitmapWithScale(bytes).bitmap`(`maxEdgePx=2048` floor-based 下采样后,maxEdge=4032 仍走 `sampleSize=1` 不下采样,得到 API 24+ 自动 EXIF 旋转过的 3024×4032 全分辨率 display-oriented bitmap),PaddleOCR 返回的 bbox 坐标就在这 3024×4032 空间。但 `AsyncImage` + Coil 按 layout 约束(典型 800×1000 px)做了下采样,`painter.intrinsicSize` 反映的是下采样后的 bitmap 尺寸(800×1000),不是 3024×4032。`computeFitTransform` 误把 800×1000 当参考 → `scale = min(800/800, 1000/1000) = 1.0`,`offset = (0, 0)` → 3024×4032 空间的 bbox 直接画到 800×1000 canvas → 整块飘出右边/下边
+  - **修复**:把 OCR 跑过的全分辨率 display-oriented bitmap 尺寸沿数据流透传:`PaddleOcrEngine` 取 `bitmap.width/height` 写进 `OcrResult.imageWidth/imageHeight` → `ImageAnalyzerRepository` 透传到 `AnalysisState.OcrDone.imageWidth/imageHeight` 与 `ViolationReport.imageWidth/imageHeight` → `HomeScreen` 派生 `imageSize: IntSize?` 传入 → `ImagePreview.computeFitTransform(painter, boxSize, imageSize)` **优先**用 `imageSize` 当参考,fallback 才回到 `painter.intrinsicSize`(shell profile / OcrDone 到达前用)。附带:`imagePainter` race 也消失,transform 不再依赖 painter 加载完成
+  - 7 处文件改动(纯增量,旧 API 全部加默认值,既有的 9 处 `OcrResult(...)` / `OcrDone(...)` / `ViolationReport(...)` 构造点零回归):`OcrResult` / `AnalysisState.OcrDone` / `ViolationReport` 加 `imageWidth: Int = 0` + `imageHeight: Int = 0`;`PaddleOcrEngine` 填入 `bitmap.width/height`;`ImageAnalyzerRepository` 透传;`ImagePreview.computeFitTransform` 提升为 `internal` + `@VisibleForTesting`,签名加 `imageSize: IntSize?`;`ImagePreview` 增加 `imageSize: IntSize?` 参数;`HomeScreen` 派生并传入
+  - **回归 pin**:`ImagePreviewFitTransformTest` 6 例 Robolectric(SDK 33)锁住 transform 契约:① `imageSize` 优先于 `painter.intrinsicSize`(玉米广告 repro:3024×4032 全 + 800×1000 layout → scale = min(800/3024, 1000/4032) ≈ 0.248,letterbox 居中,box at (1500,2000,1700,2100) 落点 x=397 y=496 — 这次实测在 800×1000 canvas 内)② `imageSize=null` fallback `painter.intrinsicSize` ③ `imageSize=IntSize(0,0)`(默认值 sentinel)也 fallback,不把 0 当真实尺寸 ④ box 与 image 同尺寸 → identity ⑤ `painter=null` & `imageSize=null` → safe identity ⑥ 横向 letterbox 居中
+  - `computeFitTransform` 同时补 `Float.isFinite()` / `> 0` 防御:之前 `intrinsicSize` 为 NaN/0/负时会返回 `scale = NaN` 让 Canvas 静默崩(同 v0.1.29 那条防御的覆盖范围扩展到 `imageSize` 路径)
+- v0.1.29 的 EXIF 双重旋转修复与本版本独立,本版本不撤销 v0.1.29 — 那条修复在 Robolectric 不可复现的 API 24+ 路径上仍然必要,只是不足以独立闭环红框位置问题
+- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`,新增 ImagePreviewFitTransformTest 6 例,总 562 / 0 failures)
+
 ## v0.1.29 · 2026-08-26
 
 - **修复:首页「红框位置标错了」** — `HighlightOverlay` 矩形在 `ice_ocr_rules` profile 上落不到文字上(实测 8 命中 / 8 全错位:大框飘到图片右上角、小框散落到 OCR 文字面板与底部拍照按钮区)

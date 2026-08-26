@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -145,6 +146,21 @@ fun HomeScreen(
     val lineBoxes = ocrResult?.lineBoxes ?: completeReport?.lineBoxes ?: emptyList()
     val hits = completeReport?.hits ?: emptyList()
     val showLineBoxes = (state is AnalysisState.OcrDone) || completeReport != null
+    // Display-oriented dims of the bitmap the OCR engine actually saw.
+    // ImagePreview's HighlightOverlay needs this as the reference space for
+    // box transforms — using painter.intrinsicSize would put boxes in the
+    // wrong coordinate space (Coil downsamples to layout size, so the
+    // painter's intrinsicSize is much smaller than the bitmap OCR saw).
+    // The OcrDone state carries them; once we transition to Complete the
+    // dims survive via ViolationReport. Before OcrDone (Idle / Loading)
+    // no boxes are drawn, so null is fine.
+    val imageSize: IntSize? = when {
+        ocrResult != null && ocrResult.imageWidth > 0 && ocrResult.imageHeight > 0 ->
+            IntSize(ocrResult.imageWidth, ocrResult.imageHeight)
+        completeReport != null && completeReport.imageWidth > 0 && completeReport.imageHeight > 0 ->
+            IntSize(completeReport.imageWidth, completeReport.imageHeight)
+        else -> null
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         HomeTopBar(
@@ -162,6 +178,7 @@ fun HomeScreen(
             imageUri = pendingUri,
             lineBoxes = if (showLineBoxes) lineBoxes else emptyList(),
             hits = hits,
+            imageSize = imageSize,
             onDoubleTap = onOpenViewer,
             modifier = Modifier
                 .weight(1f)
