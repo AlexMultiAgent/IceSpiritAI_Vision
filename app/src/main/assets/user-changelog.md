@@ -1,5 +1,17 @@
 # 用户更新日志
 
+## v0.1.32 · 2026-08-26
+
+- **优化:底部操作栏 affordance 强化**(`CaptureBar.kt`)
+  - 左「选图」:从单图标 `FloatingActionButton(40dp)` 升级为 `ExtendedFloatingActionButton` + 可见"选图"文字标签 + PhotoLibrary 图标。按用户规格"icon左边加上「选图」"实现 text-then-icon(图右)顺序 — 借助 Extended FAB 的 `icon` 槽故意空、`text` 槽放自定义 `Row { Text; Icon }`,绕开 FAB 内部 icon→text 硬编码(无原生 text-then-icon 的 Extended FAB 变体)
+  - 右「拍照」:同 `ExtendedFloatingActionButton` 组件(`CaptureButton.kt` 已封装),新加 `Modifier.fillMaxWidth()` 让它拉满 BottomAppBar 的右半区 — 视觉上明显比左边的「选图」长,主操作 affordance 更显眼
+  - `enabled = false` 仍只影响 capture FAB(pick 仍是 Loading 期间的逃生口)
+- 单测更新 + 全套测试通过:
+  - `CaptureBarTest.kt` 加 `onNodeWithText("选图", useUnmergedTree = true).assertExists()`(原断言只检 a11y desc,现在检可见文字)
+  - `HomeScreenTest.kt` 同步注释 + 加 `onNodeWithText("选图", ...)` 断言
+  - `ChangelogScreenTest.kt` shipping-version pin `v0.1.31 → v0.1.32`(常规 bump 同步)
+  - `testDebugUnitTest -PmodelProfile=shell`:568 通过 / 2 skipped / 0 failures
+
 ## v0.1.31 · 2026-08-26
 
 - **修复:首页「红框位置标错了」三次复盘(真机 A/B 验证 v0.1.30 修复未闭环)** — `HighlightOverlay` 矩形在 `ice_ocr_rules` profile 上对 `sampleSize > 1` 的图仍错位。2026-08-26 烟测 3 图:截图 1(竖图)框在文字上、截图 2(竖图)单框碰巧落文字,但截图 3(横图,真机拍摄公交车 + durex 广告)红框完全落在右上角空白处,与 OCR 检出的「激情公益红 守护爱始终」「durex」「创维汽车」等文字完全不重叠
