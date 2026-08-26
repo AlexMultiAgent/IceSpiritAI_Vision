@@ -8,8 +8,10 @@
   - 7 处文件改动(纯增量,旧 API 全部加默认值,既有的 9 处 `OcrResult(...)` / `OcrDone(...)` / `ViolationReport(...)` 构造点零回归):`OcrResult` / `AnalysisState.OcrDone` / `ViolationReport` 加 `imageWidth: Int = 0` + `imageHeight: Int = 0`;`PaddleOcrEngine` 填入 `bitmap.width/height`;`ImageAnalyzerRepository` 透传;`ImagePreview.computeFitTransform` 提升为 `internal` + `@VisibleForTesting`,签名加 `imageSize: IntSize?`;`ImagePreview` 增加 `imageSize: IntSize?` 参数;`HomeScreen` 派生并传入
   - **回归 pin**:`ImagePreviewFitTransformTest` 6 例 Robolectric(SDK 33)锁住 transform 契约:① `imageSize` 优先于 `painter.intrinsicSize`(玉米广告 repro:3024×4032 全 + 800×1000 layout → scale = min(800/3024, 1000/4032) ≈ 0.248,letterbox 居中,box at (1500,2000,1700,2100) 落点 x=397 y=496 — 这次实测在 800×1000 canvas 内)② `imageSize=null` fallback `painter.intrinsicSize` ③ `imageSize=IntSize(0,0)`(默认值 sentinel)也 fallback,不把 0 当真实尺寸 ④ box 与 image 同尺寸 → identity ⑤ `painter=null` & `imageSize=null` → safe identity ⑥ 横向 letterbox 居中
   - `computeFitTransform` 同时补 `Float.isFinite()` / `> 0` 防御:之前 `intrinsicSize` 为 NaN/0/负时会返回 `scale = NaN` 让 Canvas 静默崩(同 v0.1.29 那条防御的覆盖范围扩展到 `imageSize` 路径)
+  - **链路级 pin**:`ImageAnalyzerRepositoryTest` 增 2 例 — `OcrResult.imageWidth/imageHeight` 必须沿 `OcrDone` 与 `ViolationReport` 双向透传(`HomeScreen` 在 OcrDone 阶段从 OcrDone 读,在 Complete 阶段从 ViolationReport 读 — 任一断点都让 computeFitTransform 拿到 0 → fallback 到 painter.intrinsicSize → 红框漂走);`HomeScreenImageSizeDerivationTest` 4 例纯 JVM pin 派生契约 — OcrDone 优先、report 兜底、双零/null 返回 null、负值/单零视为不可用
+  - **残余未 pin**:`PaddleOcrEngine.recognize` 内部 `imageWidth = bitmap.width` 这一行 — PaddleOCR SDK 是 native,Robolectric 跑不动,只能 androidTest + 真机烟测把关(v0.1.29 的 helper-level pin 同等限制,沿用)
 - v0.1.29 的 EXIF 双重旋转修复与本版本独立,本版本不撤销 v0.1.29 — 那条修复在 Robolectric 不可复现的 API 24+ 路径上仍然必要,只是不足以独立闭环红框位置问题
-- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`,新增 ImagePreviewFitTransformTest 6 例,总 562 / 0 failures)
+- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`,新增 ImagePreviewFitTransformTest 6 + ImageAnalyzerRepositoryTest 2 + HomeScreenImageSizeDerivationTest 4,总 568 / 0 failures)
 
 ## v0.1.29 · 2026-08-26
 

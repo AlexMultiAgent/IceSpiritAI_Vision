@@ -38,6 +38,7 @@ import com.icespiritai.offline.R
 import com.icespiritai.offline.domain.AnalysisState
 import com.icespiritai.offline.domain.ErrorCode
 import com.icespiritai.offline.domain.Severity
+import com.icespiritai.offline.domain.ViolationReport
 import com.icespiritai.offline.export.ExportAction
 import java.io.File
 
@@ -146,21 +147,7 @@ fun HomeScreen(
     val lineBoxes = ocrResult?.lineBoxes ?: completeReport?.lineBoxes ?: emptyList()
     val hits = completeReport?.hits ?: emptyList()
     val showLineBoxes = (state is AnalysisState.OcrDone) || completeReport != null
-    // Display-oriented dims of the bitmap the OCR engine actually saw.
-    // ImagePreview's HighlightOverlay needs this as the reference space for
-    // box transforms — using painter.intrinsicSize would put boxes in the
-    // wrong coordinate space (Coil downsamples to layout size, so the
-    // painter's intrinsicSize is much smaller than the bitmap OCR saw).
-    // The OcrDone state carries them; once we transition to Complete the
-    // dims survive via ViolationReport. Before OcrDone (Idle / Loading)
-    // no boxes are drawn, so null is fine.
-    val imageSize: IntSize? = when {
-        ocrResult != null && ocrResult.imageWidth > 0 && ocrResult.imageHeight > 0 ->
-            IntSize(ocrResult.imageWidth, ocrResult.imageHeight)
-        completeReport != null && completeReport.imageWidth > 0 && completeReport.imageHeight > 0 ->
-            IntSize(completeReport.imageWidth, completeReport.imageHeight)
-        else -> null
-    }
+    val imageSize: IntSize? = imageSizeForState(ocrResult, completeReport)
 
     Column(modifier = Modifier.fillMaxSize()) {
         HomeTopBar(
@@ -323,4 +310,34 @@ internal fun HomeScreenBare(onCapture: () -> Unit, onPick: () -> Unit) {
         )
         CaptureBar(onCapture = onCapture, onPick = onPick)
     }
+}
+
+/**
+ * Derive the display-oriented bitmap dimensions [ImagePreview] should use
+ * as the reference space for HighlightOverlay rects.
+ *
+ * Resolution order:
+ *  1. [AnalysisState.OcrDone.imageWidth/Height] when both > 0 — this is the
+ *     primary source while the user is mid-pipeline (between OCR and rules).
+ *  2. [ViolationReport.imageWidth/Height] when both > 0 — fallback after
+ *     state transitions to Complete (where the OcrDone AnalysisState is no
+ *     longer active; the dims survive on the report).
+ *  3. `null` when nothing usable — Idle / Loading states, legacy reports
+ *     without dims, or any path where dims haven't been populated. ImagePreview
+ *     falls back to painter.intrinsicSize in that case (covered by
+ *     `ImagePreviewFitTransformTest`).
+ *
+ * Extracted as a pure helper (no Composable) so unit tests can pin the
+ * precedence rules without driving Compose / ViewModel state.
+ */
+@VisibleForTesting
+internal fun imageSizeForState(
+    ocrResult: AnalysisState.OcrDone?,
+    completeReport: ViolationReport?,
+): IntSize? = when {
+    ocrResult != null && ocrResult.imageWidth > 0 && ocrResult.imageHeight > 0 ->
+        IntSize(ocrResult.imageWidth, ocrResult.imageHeight)
+    completeReport != null && completeReport.imageWidth > 0 && completeReport.imageHeight > 0 ->
+        IntSize(completeReport.imageWidth, completeReport.imageHeight)
+    else -> null
 }

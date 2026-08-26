@@ -218,4 +218,80 @@ class ImageAnalyzerRepositoryTest {
         val complete = states[4] as AnalysisState.Complete
         assertEquals(ocrDone.lineBoxes, complete.report.lineBoxes)
     }
+
+    // v0.1.30 regression pin: the FULL bitmap's display-oriented dimensions
+    // flow from OcrResult through OcrDone AND ViolationReport so
+    // ImagePreview.computeFitTransform can use them as the reference space
+    // for HighlightOverlay rects (NOT painter.intrinsicSize, which reflects
+    // Coil's layout-size downsampled bitmap). If any of these three
+    // propagation steps drops the dims, the overlay lands off-text on any
+    // image whose layout ≠ bitmap dimensions.
+    @Test
+    fun `ocrResult imageWidth imageHeight propagate to OcrDone and ViolationReport`() = runTest {
+        val fullW = 3024
+        val fullH = 4032
+        val sizedOcr = object : OcrEngine {
+            override suspend fun recognize(uri: Uri) = OcrResult(
+                fullText = cannedText,
+                lineBoxes = listOf(
+                    com.icespiritai.offline.domain.TextLine(
+                        text = cannedText,
+                        box = android.graphics.Rect(0, 0, 100, 20),
+                        confidence = 0.9f,
+                    )
+                ),
+                avgConfidence = 0.9f,
+                imageWidth = fullW,
+                imageHeight = fullH,
+            )
+            override suspend fun release() = Unit
+        }
+        val states = ImageAnalyzerRepository(sizedOcr).analyze(StubUri(), matcher).toList()
+        val ocrDone = states[1] as AnalysisState.OcrDone
+        val complete = states[4] as AnalysisState.Complete
+
+        assertEquals("OcrDone must carry the FULL bitmap width", fullW, ocrDone.imageWidth)
+        assertEquals("OcrDone must carry the FULL bitmap height", fullH, ocrDone.imageHeight)
+        assertEquals(
+            "ViolationReport must carry the same FULL bitmap width (used after OcrDone " +
+                "is no longer the active state — HomeScreen reads from the report)",
+            fullW, complete.report.imageWidth,
+        )
+        assertEquals(
+            "ViolationReport must carry the same FULL bitmap height",
+            fullH, complete.report.imageHeight,
+        )
+    }
+
+    @Test
+    fun `ocrResult with zero imageWidth falls through as the legacy default`() = runTest {
+        // Legacy / shell-profile engines that don't populate imageWidth pass
+        // 0 through both OcrDone and ViolationReport. HomeScreen treats (0, 0)
+        // as "fall back to painter.intrinsicSize" — that path is covered by
+        // ImagePreviewFitTransformTest's `falls back to painter intrinsicSize
+        // when imageSize is zero` case.
+        val legacyOcr = object : OcrEngine {
+            override suspend fun recognize(uri: Uri) = OcrResult(
+                fullText = cannedText,
+                lineBoxes = listOf(
+                    com.icespiritai.offline.domain.TextLine(
+                        text = cannedText,
+                        box = android.graphics.Rect(0, 0, 100, 20),
+                        confidence = 0.9f,
+                    )
+                ),
+                avgConfidence = 0.9f,
+                // imageWidth/Height intentionally defaulted to 0
+            )
+            override suspend fun release() = Unit
+        }
+        val states = ImageAnalyzerRepository(legacyOcr).analyze(StubUri(), matcher).toList()
+        val ocrDone = states[1] as AnalysisState.OcrDone
+        val complete = states[4] as AnalysisState.Complete
+
+        assertEquals(0, ocrDone.imageWidth)
+        assertEquals(0, ocrDone.imageHeight)
+        assertEquals(0, complete.report.imageWidth)
+        assertEquals(0, complete.report.imageHeight)
+    }
 }
