@@ -1,5 +1,15 @@
 # 用户更新日志
 
+## v0.1.34 · 2026-08-27
+
+- **规则扩充 v8→v9**(`ad_signage_rules.json`,121 → 129):
+  - 新增 8 条规则,覆盖审计发现的 6 张未覆盖案例 + 弱覆盖强化: `ad_signage_signage_alcohol_drink_scenario`(酒类通用场景)、`ad_signage_signage_gift_to_leader`(送领导/客户公务商务送礼诱导)、`ad_signage_signage_military_political_marketing`(商业借用军政形象营销,§9(七))、`ad_signage_signage_weight_loss_food_claim`(普通食品减肥/保健宣称,§17+§18)、`ad_signage_edu_art24_public_servant_endorsement`(在职公务员代言教育,§9(二)+§24(三))、`ad_signage_signage_weight_loss_data_commitment`(虚构减重数据,§17+§18+§28)、`ad_signage_signage_food_lung_health_claim`(食品肺部保健宣称,§17+§18)、`ad_signage_signage_food_beneficiary_count_claim`(亿国人夸大受益人群,§9(三)+§28)
+  - 强化 2 条规则: `ad_signage_art22_tob_alc` 加 `白酒/啤酒/红酒/黄酒/洋酒/酒类/酒精度数` 7 keyword;`ad_signage_art10_minor` 加 `未成年人/小学生/中学生`(去掉 `婴儿/幼儿`,避免与 infant_milk 规则抢命中)
+- **违规案例归档**: 42 个 text fixture 全覆盖 16 桶,新增 8 fixture(text_signage_alcohol / gift / military / weightloss / weightloss_data / lung / beneficiary + text_education_official),全部走政府站一手「处罚通报」类文本,AdSignageTextFixtureRegressionTest 命中集合精确 pin
+- **`_违规档案总册.md` 演化**: 加 `关联规则 ID` 列(66 节 × ≥1 ruleId)、§审计日志、§桶汇总(本次审计,主桶计入)
+- **`_coverage_matrix.md` 双向矩阵建立**: §1 规则→示例图 129 行、§2 示例图→规则 66 行、§3 覆盖率 60/66 已覆盖 + 6/66 backlog + 17/66 弱覆盖
+- **测试回归**: AdSignageTextFixtureRegressionTest 命中集合 pin(收紧过度关键词 + fixture expected 同步)+ AssetRuleLoaderTest v9 版本断言(8→9)。568 tests / 0 failures / 2 skipped / 100% successful
+
 ## v0.1.33 · 2026-08-27
 
 - **规则扩充(ad_signage_rules.json)**:
