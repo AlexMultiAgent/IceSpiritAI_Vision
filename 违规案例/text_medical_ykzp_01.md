@@ -10,6 +10,8 @@
 预期命中规则:
   - id: ad_signage_art16_med_abs
     severity: Violation
+  - id: ad_signage_signage_food_safety_implication
+    severity: Violation
 处罚结果: 责令停止发布广告,罚款 20 万元
 备注: 2024-03-15 市场监管总局公布典型案例之一。广告主在某药店海报及店堂告示上发布上述内容,宣称其普通食品/保健食品具有疾病治疗功能并对疗效作绝对化断言,违反《广告法》第十六条第一款。同类常见变体:「一次断根」「当天见效」「无任何副作用」「彻底治愈」均命中同一规则。
 ---
