@@ -122,6 +122,60 @@ Scope tags in parens: `rules` / `build` / `kb` / `ui` / `ocr` / `updater` /
 
 Subject line ≤ 72 chars. Body wraps at 72.
 
+## Release 三段式打标 (tag + version + changelog)
+
+When the commit subject includes a release marker (`feat(v0.1.X):` /
+`fix(v0.1.X):` / explicit "发版" / "release"), this skill performs the
+**three-piece tag** synchronously, all referencing the same commit SHA:
+
+1. **`versionCode` bump** in `app/build.gradle.kts`
+   - Find the current `versionCode N` and bump by 1
+   - Find the current `versionName "X.Y.Z"` and bump per CLAUDE.md
+     (per release hygiene: only actual feature/fix changes bump version)
+
+2. **`user-changelog.md` top entry** — prepend a v0.1.X section:
+
+   ```markdown
+   ## v0.1.X — <YYYY-MM-DD>
+
+   - <commit subject 1>
+   - <commit subject 2>
+   - ...
+
+   ### 修复
+   - <fix list>
+
+   ### 变更
+   - <change list>
+   ```
+
+   Verify first paragraph parses via:
+   ```bash
+   python3 -c "
+   import sys, re
+   md = open('app/src/main/assets/user-changelog.md').read()
+   first = md.split('\n## ', 1)[1].split('\n', 1)[0]
+   assert first.startswith('v0.1.X'), f'stale first entry: {first!r}'
+   print('first entry:', first)
+   "
+   ```
+
+3. **`git tag v0.1.X` + push `latest` ref**:
+   ```bash
+   git tag v0.1.X
+   git push origin v0.1.X
+   git tag -f latest
+   git push origin :latest
+   git push origin latest
+   ```
+
+**Why all three must move together**: `app/build.gradle.kts uploadVisionReleaseToGitea` reads `versionCode` to generate `vision-latest.json.versionCode`; `user-changelog.md` is rendered into the in-app update dialog; `git tag v0.1.X` is what Gitea's `releases/download/latest/<file>` routes resolve against. Splitting introduces the v0.1.14-style drift where the APK is live but JSON shows the old version.
+
+**Pre-flight for tag push**:
+- The release APK must already be verified live (per `icevision-release` post-release smoke)
+- The commit must already be authored by `AlexMultiAgent`
+- Local HEAD must equal the release SHA — `git rev-parse HEAD` should match the APK's expected commit
+
 ## Returns
 
 A short summary:

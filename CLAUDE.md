@@ -55,7 +55,7 @@ Gradle property `modelProfile` 控制当前构建启用哪个模型配置:
 | Profile | 状态 | 含义 |
 | --- | --- | --- |
 | `shell` | **默认 / 首版** | 仅展示骨架;UI 可跑,Fake OCR + slim rules,APK 不带模型 |
-| `ice_ocr_rules` | Phase 1(shipped) | **PP-OCRv6_small**(2026-08-20 升级,rec dict 18708 条)经 PaddleOCR v3.7.0 SDK(走 ONNX Runtime + OpenCV)+ AdSignageRuleMatcher + FoodLabelRuleMatcher 已接入;rules JSON 从 `assets/rules/ad_signage_rules.json`(广告招牌 118 条 / v5)与 `assets/rules/food_label_rules.json`(食品标识 66 条 / v4)出;ONNX 模型(bundled in APK)在 `assets/models/{det,rec}/inference.onnx` + `inference.yml` |
+| `ice_ocr_rules` | Phase 1(shipped) | **PP-OCRv6_small**(2026-08-20 升级,rec dict 18708 条)经 PaddleOCR v3.7.0 SDK(走 ONNX Runtime + OpenCV)+ AdSignageRuleMatcher + FoodLabelRuleMatcher 已接入;rules JSON 从 `assets/rules/ad_signage_rules.json`(广告招牌 121 条 / v5,含 2026-08-27 新增 `ad_signage_signage_food_safety_implication` 暗示安全性规则)与 `assets/rules/food_label_rules.json`(食品标识 66 条 / v4)出;ONNX 模型(bundled in APK)在 `assets/models/{det,rec}/inference.onnx` + `inference.yml` |
 | `ice_vision` | 未来 | 多标签 + 法规依据的端侧 VLM |
 
 切换方式:`./gradlew assembleDebug -PmodelProfile=<name>`
@@ -79,6 +79,14 @@ Gradle property `modelProfile` 控制当前构建启用哪个模型配置:
 
 `packaging.jniLibs.useLegacyPackaging = true` 必须显式开启:AGP 9 默认 `false` 会把 `.so` 压缩在 APK 里,Android 14/15 + `extractNativeLibs=false` 下 `System.loadLibrary` 找不到 lib。开启后 native libs 在安装时解压到 `/data/app/<pkg>/lib/<abi>/`,容量略大但能 load。`shell` profile 无 native lib,此配置对它无影响。
 
+## 知识库时效性整理(2026-08-27)
+
+`知识库/` 是规则引擎的法源。每个规则 JSON 条目的 `regulation` 字段必须能指回 `知识库/<域>/<现行法规>.md`,不得指已废止法规。
+
+- `知识库/<域>/*.md` = **现行有效**的法规,规则 JSON 引用走这里
+- `知识库/已废止/*.md` = 已废止 / 被上位法替代 / 过渡期已结束的法规,仅作历史溯源用
+- 政策:新增规则或扩规则时,先用 WebSearch 确认 `regulation` 字段所引法规仍现行(2026-08-27 已完成批量清理:户外广告登记规定、母乳代用品销售管理办法、烟草广告管理暂行办法 → 已废止 / 实质替代;GB 7718-2011 / GB 28050-2011 / 食品标识管理规定 → 已废止并替换为 2025/2027 新版)
+
 ## 视觉/OCR 模型路线(2026-08 锁定)
 
 Phase 1 走 OCR + 规则库路线(**PP-OCRv6_small** + PaddleOCR 官方 SDK v3.7.0 + HankCS AC 自动机)。候选从 PaddleOCR-slim / Paddle-Lite / ONNX Runtime / MediaPipe Tasks 收敛到:**PaddleOCR 官方 SDK** 走 **ONNX Runtime + OpenCV**(Android 端 nn 推理),不再 hardcode 视觉模型路线。
@@ -93,7 +101,7 @@ Phase 1 走 OCR + 规则库路线(**PP-OCRv6_small** + PaddleOCR 官方 SDK v3.7
 # 默认(骨架 APK,Fake OCR + slim rules)
 ./gradlew.bat assembleDebug -PmodelProfile=shell
 
-# Phase 1 shipped(PP-OCRv6_small + PaddleOCR v3.7.0 + 广告招牌 116 条 / 食品标识 66 条 + ONNX 模型)
+# Phase 1 shipped(PP-OCRv6_small + PaddleOCR v3.7.0 + 广告招牌 121 条 / 食品标识 66 条 + ONNX 模型)
 ./gradlew.bat assembleDebug -PmodelProfile=ice_ocr_rules
 
 # 单元测试 / Lint
@@ -167,20 +175,25 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 - `gradle.token.properties`(Gitea PAT)、`~/.gradle/gradle.properties`(release signing)已在 `.gitignore`,不要尝试 commit 它们。
 - 提交前 `git status` 检查是否包含敏感文件;`git add` 用具体路径,避免 `git add -A`。
 
-## 发布流水线踩坑(2026-08-21 v0.1.14)
+## Claude Code 自动化(skills + hooks)
 
-- **`uploadVisionReleaseToGitea` 大文件 POST 偶发卡住(HTTP 100 + curl 超时)**:
-  - 症状:删除已有 APK + JSON 成功(`HTTP=204`),但随后 `POST .../assets` 上传 APK 一直返回 HTTP 100,10m 内不返最终 status code,`--max-time 600` 触发超时
-  - **不要回滚代码**:这只是 Gitea 端瞬时问题,APK 已字节级通过 cert-pin gate(本地的 `发布版历史存档/最新版改名上传/icespiritai-vision.apk` 是权威 source of truth);先看 `发布版历史存档/最新版改名上传/vision-latest.json` 的 `signerCertSha256` 是否 = `4a21f4...3043`
-  - 恢复步骤(纯 curl,与 build.gradle.kts 内的 curl 等价):
-    1. 先 POST vision-latest.json(1.4 KB,~1s 内完成)→ 客户端至少能拉到 v0.1.14 metadata
-    2. 再 POST icespiritai-vision.apk(`--max-time 900` 替 `--max-time 600`,给大文件更宽裕)
-    3. 删残留:DELETE 任何重复 asset id(curl 探测失败的中间状态可能留下重复 JSON)
-  - 客户端视角最终态校验:
-    - `curl -sI <apkUrl>` 应返 `Content-Length: <本地 APK size>` + `HTTP 200`
-    - `curl <jsonUrl>` 应含 `versionCode:14`、`signerCertSha256: 4a21f4...3043`
+仓库内置 2 个 user-only skill + 1 个 PreToolUse hook,把"发版 / 提交 / 防误删"三条最容易出错的路径固化成 bash 闸门 + 文档化清单:
 
-## 发布流水线踩坑(2026-08-26 v0.1.31)
+| Skill / Hook | 触发方式 | 职责边界 |
+|---|---|---|
+| `/icevision-release` (`.claude/skills/icevision-release/SKILL.md`) | 用户说 `/icevision-release` 或"发版" / "走发布流水线" | 5 步 pre-flight(JDK 17 / v1 signing / Gitea PAT / AAR+ONNX / cert-pin)+ 4 步流水线(`assembleRelease → generateVisionLatestJson → archiveVisionRelease → uploadVisionReleaseToGitea`)+ Gitea 1.22.x APK 404 绕路 + 大文件 POST 卡死恢复 + 发版后 smoke 校验。**不放开版打标**(那是 commit 阶段的事) |
+| `/project-commit` (`.claude/skills/project-commit/SKILL.md`) | 用户说 `/project-commit` / "commit" / "提交" | 8 步提交 hygiene(作者 AlexMultiAgent 校验 / 无 Claude trailer / 显式 `git add` / 敏感文件扫描 / JDK 17 / build 校验)+ 当 commit 主题含 release marker(`feat(v0.1.X):` / `fix(v0.1.X):` / "发版")时同步执行 **Release 三段式打标**:`versionCode` bump + `user-changelog.md` 顶部条目 + `git tag v0.1.X` + push `latest` ref |
+| `.claude/hooks/pre-tool-use.js` | Claude Code 每次 Bash 调用前自动跑 | Rule 1:`git add -A` / `git add .` 拦截;Rule 2:`gradle.token.properties` / `~/.gradle/gradle.properties` / `local.properties` 等敏感文件的 git 操作拦截;Rule 3:`app/libs/*.aar`(PaddleOCR SDK,~70 MB,不被每次 build 重新生成)的破坏性操作(`rm` / `mv` / `del` / `unlink` / `truncate` / `git rm`)拦截。规则命中 exit 2 + stderr 解释 |
+
+**关键边界**:`icevision-release` 发版后 smoke 校验通过 → 才调用 `project-commit` 走 Release 三段式(确保 tag SHA = APK SHA = JSON SHA,避免 v0.1.14 那种 APK live 但 JSON 旧版本的 drift)。
+
+## 发布流水线踩坑
+
+完整恢复步骤(curl 级)与 Gitea 1.22.x 404 绕路在 [.claude/skills/icevision-release/SKILL.md](.claude/skills/icevision-release/SKILL.md),这里只保留症状 + 修复指针,避免 CLAUDE.md 与 skill 内容漂移。
+
+- **2026-08-21 v0.1.14 — `uploadVisionReleaseToGitea` 大文件 POST 卡住(HTTP 100)**:`POST .../assets` 上传 APK 一直返回 HTTP 100,`--max-time 600` 触发超时。**不要回滚代码**,纯 Gitea 端瞬时问题。先 POST JSON(小,~1s)再 POST APK(`--max-time 900`)。详 → `icevision-release` "大文件 POST 超时恢复"段
+- **2026-08-26 v0.1.31 — Gitea 1.22.x `releases/download/latest/<file>.apk` 返 404**:JSON 200 但 APK URL 404,改名也不解决。workaround:从 POST response 抓 `uuid`,把 `apkUrl` 改成 `http://125.211.45.14:3000/attachments/<uuid>`,cert-pin gate 不变。详 → `icevision-release` "Gitea 1.22.x APK 404 workaround"段
+- **Cert-pin 锚点**:`signerCertSha256` 必须 = `4a21f4...3043`。release 凭据在 `~/.gradle/gradle.properties`(gitignored),Gitea PAT 在 `gradle.token.properties`(gitignored,见 `.token.properties.example` 模板)。stage 路径:`build/generated/release-staging/`(per memory `feedback-no-release-history-archive.md`,已不再写 `发布版历史存档/`)
 
 - **Gitea 1.22.x `releases/download/<tag>/<filename>` 对 `.apk` 文件名 404**:
   - 症状:`releases/download/latest/icespiritai-vision.apk` 一直返 `HTTP 404`,但同 release tag 下 `releases/download/latest/vision-latest.json` 正常 200。改文件名(`xxx.zip` / `xxx-update.apk`)同样 404 → 不是 filename pattern 问题,是 Gitea 服务端路由 bug,触发表决于 release tag (`latest` 字面量也可能参与)。底层 attachment `GET /attachments/<uuid>` 200 OK,Content-Length / Disposition 完全正确
