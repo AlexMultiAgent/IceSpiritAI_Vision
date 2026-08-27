@@ -11,6 +11,10 @@
 预期命中规则:
   - id: ad_signage_signage_food_lung_health_claim
     severity: Violation
+  - id: ad_signage_signage_medicine_flag
+    severity: Violation
+  - id: ad_signage_signage_food_function_claim
+    severity: Violation
 处罚结果: fixture / 审计场景(2026-08-27)
 备注: 2026-08-27 违规案例审计 #41。原案 `41_肺肽片保健食品_清肺排毒提升肺功能_食品.png` 桶分类 = food_function_claim × food_disease_target,「清肺 / 清肺排毒 / 提升肺功能 / 养肺 / 润肺 / 清肺解毒 / 肺功能」均命中 `ad_signage_signage_food_lung_health_claim` 的 7 个 keyword 列表(category=signage,severity=Violation,《广告法》§17 + §18 + §58)。原案产品为「肺肽片」标注「保健食品」,但产品分类属运动营养食品(耐力类)— 保健食品分类与「肺功能」宣称不匹配,「清肺排毒 / 提升肺功能 / 2 瓶拥有 1 健康好肺」属保健食品广告「表示功效、安全性的断言或者保证」+「涉及疾病预防、治疗功能」双项违制;「2 瓶拥有 1 健康好肺」属具体效果保证,违反 §18(一)。同类常见变体:含「清肺 / 清肺排毒 / 提升肺功能 / 养肺 / 润肺 / 清肺解毒 / 肺功能」keyword 的食品 / 保健食品 / 普通食品电商页 / 户外招牌均命中同一规则(Violation);「清肺茶 / 润肺茶 / 养肺汤 / 护肺食品 / 烟民清肺」等同义变体应同样命中。fixture 来自 audit #41,非 WebFetch 直读。
 ---

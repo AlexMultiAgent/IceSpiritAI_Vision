@@ -12,6 +12,10 @@
 预期命中规则:
   - id: ad_signage_signage_food_beneficiary_count_claim
     severity: Violation
+  - id: ad_signage_art9_abs_top
+    severity: Warning
+  - id: ad_signage_signage_gift_to_leader
+    severity: Warning
 处罚结果: fixture / 审计场景(2026-08-27)
 备注: 2026-08-27 违规案例审计 #42。原案 `42_寒地森林有机茶_行业领导品牌滋养14亿_绝对化.png` 桶分类 = absolute × food_function_claim,「亿国人 / 亿人选择 / 滋养 14 亿 / 滋养 13 亿 / 14 亿国人 / 13 亿国人 / 覆盖 14 亿」均命中 `ad_signage_signage_food_beneficiary_count_claim` 的 7 个 keyword 列表(category=signage,severity=Violation,《广告法》§9(三) + §17 + §18 + §28 + §57)。本 fixture 同时承担 audit 报告指出的「行业领导品牌」属绝对化用语(由 `ad_signage_art9_abs_top` 命中,与本规则共用 fixture);「滋养 14 亿国人」属无依据保健功能 + 引人误解受益人群规模,违反 §28 商品功能信息与实际情况不符。同页「送礼送贵人 / 送领导 / 送客户」亦可由 `ad_signage_signage_gift_to_leader` 命中(本 fixture 设计为主命中 beneficiary_count_claim,故不展开)。依据 §57 发布绝对化广告处广告主 20 万 ~ 100 万元罚款。fixture 来自 audit #42,非 WebFetch 直读。
 ---

@@ -10,6 +10,8 @@
 预期命中规则:
   - id: ad_signage_signage_alcohol_drink_scenario
     severity: Warning
+  - id: ad_signage_art22_tob_alc
+    severity: Info
 处罚结果: fixture / 审计场景(2026-08-27)
 备注: 2026-08-27 违规案例审计 #18。原案 `18_白酒电商页_闻香入口天然桦树清香.png` 属「酒类电商页通用场景」,关键词「闻香 / 白酒 / 纯粮 / 陈酿」均命中 `ad_signage_signage_alcohol_drink_scenario` 的 14 个 keyword 列表。法规依据是《广告法》第二十三条(酒类广告 4 项禁止内容)+ 第五十七条(违反 §23 处 20 万 ~ 100 万罚款);本 fixture 不含诱导饮酒 / 无节制饮酒 / 饮酒动作 / 驾车动作 / 消除紧张焦虑等 §23 4 项明文禁制情形,仅落入「酒类广告通用场景」识别,作为该规则的 category=restricted 类 Warning 级入口。同类常见变体:任何含「白酒 / 茅台 / 五粮液 / 洋河 / 剑南春 / 泸州老窖 / 汾酒 / 酒类 / 酒精度 / 纯粮 / 闻香 / 清爽顺滑 / 商务宴请 / 陈酿」keyword 的电商页 / 户外招牌 / 销售页均命中 `ad_signage_signage_alcohol_drink_scenario`(Warning)。fixture 来自 audit #18,非 WebFetch 直读。
 ---
