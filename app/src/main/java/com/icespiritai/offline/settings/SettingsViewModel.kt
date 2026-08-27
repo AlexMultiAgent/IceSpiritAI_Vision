@@ -83,9 +83,12 @@ class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
      *
      * Caches [info] in [lastDownloadInfo] so a subsequent [cancel] can recompute
      * the same downloadId that [UpdateRepository.downloadApk] minted for the
-     * service Intent. Currently the FGS does not push a [UpdateState.Downloading]
-     * transition carrying `downloadId`, so the VM-side cache is the only source
-     * of truth for the cancel path.
+     * service Intent. The FGS pushes an initial `UpdateState.Downloading`
+     * transition carrying `downloadId` via `UpdateRepository.onDownloadProgress`
+     * before the first body byte lands, so the VM-side cache is now a
+     * belt-and-braces second source for [cancel] (the live StateFlow is the
+     * primary source — covers the cold-resume path where a freshly-created
+     * `SettingsViewModel` has a null `lastDownloadInfo`).
      */
     fun download(info: AppVersionInfo, context: Context) {
         lastDownloadInfo = info

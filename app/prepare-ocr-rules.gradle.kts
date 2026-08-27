@@ -3,9 +3,13 @@
 // Both rule domains (ad_signage + food_label) are staged for every profile so
 // the runtime loader can hydrate either domain regardless of the active model.
 // shell           → ad_signage_rules.json + food_label_rules.json = {"version":1,"rules":[]} (skeleton)
-// ice_ocr_rules   → ad_signage_rules.json (116 rules / v4) + food_label_rules.json (66 rules / v4)
+// ice_ocr_rules   → ad_signage_rules.json (129 rules / v9) + food_label_rules.json (66 rules / v4)
 // ice_vision      → same as shell (Phase 2+)
 //
+// Counts above MUST match the committed source-of-truth JSON in
+// app/src/main/assets/rules/. Bump them when shipping a rule audit. A drift
+// here is a documentation-only bug (no runtime impact) but trips up future
+// audit readers — see the ad_signage_v9 audit in commit 8b20e98.
 // Source files at app/src/main/assets/rules/ are NEVER mutated.
 // AGP picks up only from app/build/generated/assets/rules/ via a reconfigured
 // assets sourceSet (see app/build.gradle.kts hook).

@@ -19,13 +19,11 @@ import org.gradle.api.GradleException
 // since the `Task` receiver doesn't expose `services` (only `DefaultTask`
 // does, and that's an internal API in Gradle 9).
 import java.io.ByteArrayOutputStream
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.security.DigestInputStream
 import java.security.MessageDigest
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.util.zip.ZipFile
+import com.icespiritai.buildhelpers.ArchiveVision
 import com.icespiritai.buildhelpers.LatestJsonGenerator
 
 plugins {
@@ -75,8 +73,8 @@ android {
         applicationId = "com.icespiritai.vision"
         minSdk = 26
         targetSdk = 37
-        versionCode = 35
-        versionName = "0.1.35"
+        versionCode = 36
+        versionName = "0.1.36"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -409,21 +407,6 @@ androidComponents {
 // =============================================================================
 
 /**
- * SHA-256 hex of a file. MUST STAY IN SYNC with LatestJsonGenerator.sha256Hex
- * (build scripts cannot import app/src/main/java/ — see CLAUDE.md Gotchas).
- */
-fun sha256HexForBuild(file: java.io.File): String {
-    val md = MessageDigest.getInstance("SHA-256")
-    FileInputStream(file).use { fis ->
-        DigestInputStream(fis, md).use { dis ->
-            val buf = ByteArray(64 * 1024)
-            while (dis.read(buf) >= 0) { /* drain */ }
-        }
-    }
-    return md.digest().joinToString("") { "%02x".format(it) }
-}
-
-/**
  * Reads the v1 signing certificate from META-INF/CERT.{RSA,DSA,EC} and
  * returns its SHA-256 fingerprint. MUST STAY IN SYNC with
  * `ApkSignatureVerifier.readFirstSignerCert` at
@@ -524,10 +507,10 @@ tasks.register("generateVisionLatestJson") {
             )
         }
 
-        val vc = android.defaultConfig.versionCode
-        val vn = android.defaultConfig.versionName
+        val vc = android.defaultConfig.versionCode ?: error("defaultConfig.versionCode is unset")
+        val vn = android.defaultConfig.versionName ?: error("defaultConfig.versionName is unset")
         val size = apk.length()
-        val sha = sha256HexForBuild(apk)
+        val sha = LatestJsonGenerator.sha256Hex(apk)
         val url = "http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/icespiritai-vision.apk"
         // Read user-changelog.md from the SOURCE path (not the build/
         // generated/assets/ mirror) so this task doesn't depend on the
@@ -546,18 +529,22 @@ tasks.register("generateVisionLatestJson") {
         // loadAndAccumulateDownloadStats pattern).
         val apkCumulative = 0L
 
-        val payload = mapOf(
-            "versionCode" to vc,
-            "versionName" to vn,
-            "apkUrl" to url,
-            "apkSize" to size,
-            "apkSha256" to sha,
-            "changelog" to cl,
-            "apkCumulativeDownloads" to apkCumulative,
-            "signerCertSha256" to apkCertSha256,
-        )
+        // Delegate JSON serialization to the buildSrc helper so the field
+        // shape + escaping rules live in exactly one place. The helper's own
+        // round-trip test (LatestJsonGeneratorTest) pins the wire format
+        // against AppVersionInfo's parser.
         outJson.get().asFile.writeText(
-            groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(payload)) + "\n"
+            LatestJsonGenerator.buildLatestJson(
+                versionCode = vc,
+                versionName = vn,
+                apkUrl = url,
+                apkSize = size,
+                apkSha256 = sha,
+                changelog = cl,
+                apkCumulativeDownloads = apkCumulative,
+                signerCertSha256 = apkCertSha256,
+                pretty = true,
+            ) + "\n"
         )
         logger.lifecycle(
             "generateVisionLatestJson: ${outJson.get().asFile.name} versionCode=$vc " +
@@ -599,21 +586,13 @@ tasks.register("archiveVisionRelease") {
         // The Gitea release asset name comes from the multipart upload
         // basename, so the rename is non-negotiable — clients fetch
         // `<gitea>/.../latest/icespiritai-vision.apk` directly.
-        if (!uploadStagingDir.exists()) uploadStagingDir.mkdirs()
-        require(uploadStagingDir.isDirectory) {
-            "archiveVisionRelease: ${uploadStagingDir.absolutePath} exists but is not a directory"
-        }
-        val apkUploadDest = uploadStagingDir.resolve("icespiritai-vision.apk")
-        // Byte-for-byte copy via buffered streams so the APK signature
-        // stays intact (Windows File.copy can mangle binary writes if
-        // not opened in binary mode).
-        FileInputStream(apk).use { ins ->
-            FileOutputStream(apkUploadDest).use { out ->
-                ins.copyTo(out, bufferSize = 64 * 1024)
-            }
-        }
-        val jsonUploadDest = uploadStagingDir.resolve(json.name)
-        json.copyTo(jsonUploadDest, overwrite = true)
+        // Delegate to the buildSrc helper so the rename + byte-for-byte copy
+        // logic lives in exactly one place (covered by ArchiveVisionTest).
+        val (apkUploadDest, jsonUploadDest) = ArchiveVision.archiveForUpload(
+            apkSource = apk,
+            jsonSource = json,
+            uploadStagingDir = uploadStagingDir,
+        )
 
         logger.lifecycle(
             "archiveVisionRelease: staged icespiritai-vision.apk -> ${apkUploadDest.absolutePath}, " +

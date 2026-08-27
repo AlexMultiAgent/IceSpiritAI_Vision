@@ -61,6 +61,7 @@ object ApkDownloader {
         resumeFrom: Long?,
         etag: String?,
         onProgress: (Long) -> Unit,
+        onMetadata: (Long) -> Unit = {},
     ): FetchOutcome {
         val conn = openConnection()
         try {
@@ -76,6 +77,15 @@ object ApkDownloader {
             val totalBytes = if (code == 206 && resumeFrom != null) resumeFrom + partialBodyLen
                              else partialBodyLen
             val respEtag = conn.getHeaderField("ETag")
+
+            // Fire onMetadata as soon as Content-Length is known so the caller's
+            // progress UI (and the FGS notification) get a non-zero `total`
+            // before the first byte of the body lands. Defaulted to a no-op so
+            // existing call sites that only care about byte-by-byte progress
+            // (or unit tests) don't have to plumb the callback through.
+            // -1 means "server omitted Content-Length" — don't surface that as
+            // a real total to UI consumers (would divide by it).
+            if (totalBytes > 0) onMetadata(totalBytes)
 
             when {
                 code == 200 || code == 206 -> {

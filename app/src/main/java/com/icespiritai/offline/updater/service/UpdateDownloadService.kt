@@ -139,6 +139,13 @@ class UpdateDownloadService : Service() {
         var lastEtag = record.etag
         var lastNotifUpdate = 0L
         var lastStateUpdate = 0L
+        // Live, mutable copy of [record] shared between onMetadata (fires once
+        // per fetch, when Content-Length is known) and onProgress (every 500
+        // ms). The initial [record] has totalBytes=0 for a fresh download and
+        // only gets the real value from onMetadata — without a mutable copy,
+        // onProgress would publish `total=0` for the entire download and the
+        // UI's `progress = written/total` would stay at 0%.
+        var liveRecord = record
 
         while (true) {
             val outcome = ApkDownloader.fetch(
@@ -147,11 +154,12 @@ class UpdateDownloadService : Service() {
                 resumeFrom = resumeOffset,
                 etag = lastEtag,
                 onProgress = { written ->
+                    liveRecord = liveRecord.copy(bytesWritten = written)
                     val now = System.currentTimeMillis()
                     if (now - lastNotifUpdate >= 500) {
-                        notifier.buildProgressNotification(record, written).also {
+                        notifier.buildProgressNotification(liveRecord, written).also {
                             val nm = getSystemService(NotificationManager::class.java)
-                            nm?.notify(notifIdFor(record), it)
+                            nm?.notify(notifIdFor(liveRecord), it)
                         }
                         lastNotifUpdate = now
                     }
@@ -161,23 +169,38 @@ class UpdateDownloadService : Service() {
                     // lastNotifUpdate: if either side lags the other won't stall.
                     if (now - lastStateUpdate >= 500) {
                         UpdateRepository.onDownloadProgress(
-                            downloadId = record.downloadId,
+                            downloadId = liveRecord.downloadId,
                             written = written,
-                            total = record.totalBytes,
+                            total = liveRecord.totalBytes,
                         )
                         lastStateUpdate = now
                     }
-                    scope.launch { stateStore.upsert(record.copy(bytesWritten = written)) }
+                    scope.launch { stateStore.upsert(liveRecord.copy(bytesWritten = written)) }
+                },
+                // onMetadata fires once per fetch when Content-Length is known
+                // (before the first body byte). Pushes the real total to both
+                // the StateFlow (so the UI bar stops showing indeterminate) and
+                // DataStore (so a subsequent process death + resume preserves
+                // it for the on-disk progress mirror).
+                onMetadata = { total ->
+                    liveRecord = liveRecord.copy(totalBytes = total)
+                    UpdateRepository.onDownloadProgress(
+                        downloadId = liveRecord.downloadId,
+                        written = liveRecord.bytesWritten,
+                        total = total,
+                    )
+                    scope.launch { stateStore.upsert(liveRecord.copy(totalBytes = total)) }
                 },
             )
 
             when (outcome) {
                 is FetchOutcome.Success -> {
-                    onDownloadComplete(record.copy(
+                    val finalRecord = liveRecord.copy(
                         bytesWritten = outcome.result.bytesWritten,
                         totalBytes = outcome.result.totalBytes,
                         etag = outcome.result.etag,
-                    ), outcome.result)
+                    )
+                    onDownloadComplete(finalRecord, outcome.result)
                     return
                 }
                 is FetchOutcome.Retryable -> {

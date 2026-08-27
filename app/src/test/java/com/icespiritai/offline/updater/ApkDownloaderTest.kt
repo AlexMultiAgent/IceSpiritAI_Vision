@@ -97,6 +97,61 @@ class ApkDownloaderTest {
         )
         assertTrue("expected Retryable, got $outcome", outcome is FetchOutcome.Retryable)
     }
+
+    @Test
+    fun onMetadata_fires_once_with_total_bytes_before_body() {
+        val body = ByteArray(1024) { (it and 0xFF).toByte() }
+        val conn = FakeHttpConn(
+            code = 200,
+            contentLength = body.size.toLong(),
+            inputBytes = body,
+        )
+        var metadataFires = 0
+        var progressFires = 0
+        var metadataValue = -1L
+        var firstWrittenAfterMetadata = -1L
+        ApkDownloader.fetch(
+            openConnection = { conn },
+            destFile = tmp.newFile("out.apk"),
+            resumeFrom = null,
+            etag = null,
+            onProgress = {
+                progressFires += 1
+                if (metadataFires == 1 && firstWrittenAfterMetadata < 0L) firstWrittenAfterMetadata = it
+            },
+            onMetadata = {
+                metadataFires += 1
+                metadataValue = it
+            },
+        )
+        assertEquals(1, metadataFires)
+        assertEquals(body.size.toLong(), metadataValue)
+        // onMetadata must fire BEFORE any onProgress callback — UpdateDownloadService
+        // relies on the total being published to StateFlow before the first body byte
+        // lands so the UI bar moves from indeterminate to a real percentage immediately.
+        assertTrue(
+            "expected onMetadata to fire before onProgress, got metadata=$metadataFires progress=$progressFires",
+            metadataFires == 1 && progressFires >= 1,
+        )
+    }
+
+    @Test
+    fun onMetadata_skipped_when_content_length_unknown() {
+        // -1 is HttpURLConnection's sentinel for "server didn't send
+        // Content-Length" — fetch() must not surface that as a fake total
+        // to UI consumers (would divide by it).
+        val conn = FakeHttpConn(code = 200, contentLength = -1L)
+        var metadataFires = 0
+        ApkDownloader.fetch(
+            openConnection = { conn },
+            destFile = tmp.newFile("out.apk"),
+            resumeFrom = null,
+            etag = null,
+            onProgress = {},
+            onMetadata = { metadataFires += 1 },
+        )
+        assertEquals(0, metadataFires)
+    }
 }
 
 private class FakeHttpConn(

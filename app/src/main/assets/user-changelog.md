@@ -1,5 +1,21 @@
 # 用户更新日志
 
+## v0.1.36 · 2026-08-28
+
+- **修复 APK 下载进度条卡在 totalBytes=0**(audit finding #2): `ApkDownloader` 新增 `onMetadata: (Long) -> Unit = {}` 回调,Content-Length 已知(非 -1)时一次性触发;`UpdateDownloadService.handleDownload` 用 mutable `liveRecord = record`,`onMetadata` 写入 StateFlow + DataStore,`onSuccess` 用 `liveRecord.copy(totalBytes = liveRecord.totalBytes)` —— 之前 `totalBytes` 只在 recreate 时从持久化的 `AppVersionInfo.totalBytes` 读,如果下载过程中网络层提前传了 Content-Length 也不会更新,进度条一直 0%。配 2 个 unit test pin(`onMetadata_fires_once_with_total_bytes_before_body` / `onMetadata_skipped_when_content_length_unknown`)
+- **修复 UpdateAvailable 触发 POST_NOTIFICATIONS 权限请求**(audit finding #3): `UpdateSection.kt` API33+ 在 UpdateAvailable 卡片首次出现时调 `rememberLauncherForActivityResult(RequestPermission())`,dedup via `promptedForNotif` state(避免每次重新 compose 都弹),rationale string 复用 `update_notification_rationale`。**死代码清理**: `currentVersionString(versionCode)` 的 `versionCode` 参数从未被使用,删除
+- **修复 Severity 排序显式化**(audit finding #4): `Severity` enum 重排 `{Violation, Warning, Info, Positive}` + KDoc 解释「Positive 放末位是 guard」;`HomeScreen` 改用显式 `severityRank` 函数(Violation=3 / Warning=2 / Info=1 / Positive=0),过滤 Positive 取 `worstViolationOrWarning`(替代原 `maxOfOrNull { it.severity }` —— 该隐式 ordinal 比较把 Info > Positive 误当成更高严重度)。配 `HomeScreenSeverityRankingTest` 6 tests pin 契约(纯 JVM,无 Compose 渲染,稳定)
+- **buildSrc helper 三合一**(audit finding #5): `app/build.gradle.kts` 删除 inline `groovy.json.JsonSlurper` 块 / `FileInputStream` copy / `sha256HexForBuild` 函数(共 -56 行,加 import 4 行),改用 `LatestJsonGenerator.buildLatestJson(...pretty=true)` + `ArchiveVision.archiveForUpload(...)` + `LatestJsonGenerator.sha256Hex(apk)`。`buildSrc:helper` 三处职责收口在 `LatestJsonGeneratorTest` + `ArchiveVisionTest` JVM 单测
+- **零碎清理**:
+  - `FakeRuleMatcher` 加 `@VisibleForTesting internal` 修饰符(lint 现在能识别其 test-only 性质)
+  - `prepare-ocr-rules.gradle.kts` 注释 `116 rules / v4` → `129 rules / v9` + drift warning
+  - `network_security_config.xml` 注释澄清 `apkSha256` 是 forensic / debugging 用途,**`signerCertSha256` + BuildConfig.UPDATE_EXPECTED_CERT_SHA256 才是真正的 trust anchor**(server 只能明文 HTTP 下载 APK,所以 `apkSha256` 无法在传输层验证)
+  - `SettingsViewModel.kt` `download()` KDoc 更新描述 FGS 推送 `downloadId` 到 `UpdateRepository.onDownloadProgress` 的契约
+  - `PaddleOcrRealDeviceAbTest.kt` fixture 重构:`test_set/img1/2/3.jpg` 与 `fixtures/mentor/mentor_1_5/2_6/3_9_2011.jpg` 字节一致(SHA-256 验证),改共享同一份,避免两份独立 fixture 漂移;`img4.jpg`(signage-11-2011)独有,保留在 `test_set/`
+  - `README.md` v0.1.18 → v0.1.35 → v0.1.36(shipping version banner 同步)
+  - `ChangelogScreenTest` shipping-version pin `v0.1.35 → v0.1.36`
+- **测试覆盖**: 574 tests / 0 failures / 2 skipped / 100% successful(`testDebugUnitTest -PmodelProfile=shell` + `:buildSrc:test`)
+
 ## v0.1.35 · 2026-08-28
 
 - **修复 v0.1.34 case #13 miss — bare「高产」seed 广告**(《广告法》第二十七条第(一)项「科学上无法验证的断言」+ 第(二)项「表示功效的断言或者保证」):`ad_signage_art27_seed_yield_guarantee` keyword 列表扩 3 个 bare 产量承诺 keyword `高产` / `丰产` / `稳产`(原 14 keyword 全部围绕「保证 / 承诺 / 必 / 确保 / 效益保证」短语,bare「高产」命中不了)。即使放实物照片也不能直接宣称「高产」——果实饱满特写 ≠ 整田丰产保证,无对照组 / 区域条件 / 品种试验即科学上无法验证。配 fixture `违规案例/text_signage_pea_01.md` 锁住 case #13 命中集合 `{ad_signage_art27_seed_yield_guarantee, Violation}`,AdSignageTextFixtureRegressionTest 命中集合精确 pin

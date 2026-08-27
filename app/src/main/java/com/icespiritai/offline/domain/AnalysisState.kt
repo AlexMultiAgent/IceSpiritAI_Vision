@@ -95,7 +95,19 @@ data class RuleHit(
     val lawText: String = "",
 )
 
-enum class Severity { Info, Warning, Violation, Positive }
+/**
+ * Hit severity, used to drive the [StatusBannerKind] banner choice and the
+ * per-bucket counts surfaced in the result panel. Ordering matters here
+ * even though we don't rely on enum.ordinal: the matcher rules in
+ * `StatusBannerFor` are written as `when (severity)` and exhaustive, so
+ * adding a new bucket means adding a new entry AND a new `when` branch
+ * (compiler-enforced).
+ *
+ * Order picked so Positive sits at the END — keeping it as the trailing
+ * entry guards against any future caller that falls back to enum.ordinal
+ * for ranking and accidentally surfaces "compliant" as the worst banner.
+ */
+enum class Severity { Violation, Warning, Info, Positive }
 
 data class ViolationReport(
     val imageUri: Uri,

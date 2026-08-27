@@ -6,21 +6,22 @@
   vision-latest.json + the APK via this single host. Without cleartext
   allowance, the in app update flow is blocked.
 
-  SECURITY POSTURE (Wave 1 v0.1.14):
+  SECURITY POSTURE (Wave 1 v0.1.14, refined v0.1.36):
     - Cleartext is whitelisted ONLY for this single IP. All other hosts
       default to HTTPS via the implicit <base-config> (system CAs only).
-    - apkSha256 byte-level verification (UpdateRepository.downloadApkTo)
-      guards against transport tampering: even a MITM that serves a
-      different APK over this cleartext channel is rejected because the
-      downloaded file's SHA-256 won't match vision-latest.json's apkSha256.
-    - signerCertSha256 byte-level verification (UpdateRepository
-      .verifySignatureForDownload, Wave 1 Task 1.4) provides a second
-      gate against APK content tampering.
-    - v0.1.18+: the client pins the signer cert via
-      BuildConfig.UPDATE_EXPECTED_CERT_SHA256 (the build-time release cert).
-      This makes the signerCertSha256 in the (cleartext) JSON advisory, not
-      the trust anchor — a MITM can no longer pass the gate by serving a
-      self-consistent {JSON + APK} pair.
+    - apkSha256 is currently EMBEDDED in vision-latest.json (forensic /
+      debugging value) but is NOT enforced at download time. A MITM on
+      this cleartext channel could rewrite BOTH the JSON and the APK to
+      a self-consistent {apkSha256, signed-by-trusted-cert} pair, so byte-
+      level SHA-256 matching provides no real protection against transport
+      tampering.
+    - signerCertSha256 + BuildConfig.UPDATE_EXPECTED_CERT_SHA256 (the
+      cert-pin gate enforced in UpdateDownloadService.onDownloadComplete)
+      is the ACTUAL trust anchor: it pins the v1 signer cert baked at
+      build time. Even a MITM serving a coherent JSON+APK pair cannot
+      pass the cert-pin check, because the v1 cert comes from the APK
+      itself, not from the JSON.
+    - See CLAUDE.md "Cert-pin 锚点" for the pinned SHA-256.
 
   DEFERRED (audit P0-2):
     Once the Gitea server has TLS terminated (self-signed or LE cert),

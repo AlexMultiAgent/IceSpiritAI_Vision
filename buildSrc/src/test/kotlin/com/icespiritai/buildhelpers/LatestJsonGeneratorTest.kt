@@ -74,6 +74,21 @@ class LatestJsonGeneratorTest {
     }
 
     @Test
+    fun buildLatestJson_pretty_isParseableAndHumanReadable() {
+        val pretty = LatestJsonGenerator.buildLatestJson(
+            versionCode = 1, versionName = "0.1.0",
+            apkUrl = "http://x/y.apk", apkSize = 1L,
+            apkSha256 = "g".repeat(64), changelog = "",
+            pretty = true,
+        )
+        // Pretty format must still round-trip through the same parser.
+        val info = parser.decodeFromString(TestAppVersionInfo.serializer(), pretty)
+        assertEquals(1, info.versionCode)
+        assertEquals("0.1.0", info.versionName)
+        assertTrue("pretty output should contain newlines", pretty.contains("\n"))
+    }
+
+    @Test
     fun sha256Hex_isStableAndLowerCase64() {
         val tmp = java.io.File.createTempFile("icespirit-hash", ".bin")
         tmp.writeBytes(ByteArray(1024) { it.toByte() })

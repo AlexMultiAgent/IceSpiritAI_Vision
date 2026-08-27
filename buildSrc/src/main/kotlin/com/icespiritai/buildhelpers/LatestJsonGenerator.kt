@@ -66,6 +66,7 @@ object LatestJsonGenerator {
         changelog: String,
         apkCumulativeDownloads: Long = 0,
         signerCertSha256: String = "",
+        pretty: Boolean = false,
     ): String {
         val sb = StringBuilder(256)
         sb.append('{')
@@ -81,6 +82,57 @@ object LatestJsonGenerator {
             sb.append("\"signerCertSha256\":").append(jsonString(signerCertSha256))
         }
         sb.append('}')
+        val raw = sb.toString()
+        return if (pretty) prettyPrint(raw) else raw
+    }
+
+    /**
+     * Minimal JSON pretty-printer — no dependencies on `groovy.json.JsonOutput`
+     * (which would force the build script to depend on Groovy stdlib). Just
+     * inserts newlines + 2-space indent between commas and braces. Keeps
+     * every string value verbatim (does NOT re-escape) so callers get a
+     * stable, deterministic format suitable for source-controlled JSON
+     * artifacts that downstream consumers (in-app version banner) parse
+     * back without surprises.
+     */
+    private fun prettyPrint(json: String): String {
+        val sb = StringBuilder(json.length + 32)
+        var depth = 0
+        var inString = false
+        var prev = ' '
+        for (c in json) {
+            when {
+                inString -> {
+                    sb.append(c)
+                    if (c == '"' && prev != '\\') inString = false
+                }
+                c == '"' -> {
+                    sb.append(c); inString = true
+                }
+                c == '{' || c == '[' -> {
+                    sb.append(c)
+                    if (prev != ':') {
+                        depth += 1
+                        sb.append('\n').append("  ".repeat(depth))
+                    } else {
+                        sb.append('\n').append("  ".repeat(depth + 1))
+                        depth += 1
+                    }
+                }
+                c == '}' || c == ']' -> {
+                    depth -= 1
+                    sb.append('\n').append("  ".repeat(depth)).append(c)
+                }
+                c == ',' -> {
+                    sb.append(',').append('\n').append("  ".repeat(depth))
+                }
+                c == ':' -> {
+                    sb.append(": ")
+                }
+                else -> sb.append(c)
+            }
+            prev = c
+        }
         return sb.toString()
     }
 

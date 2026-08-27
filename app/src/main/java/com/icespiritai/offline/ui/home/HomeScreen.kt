@@ -241,17 +241,22 @@ private fun StatusBannerFor(state: AnalysisState) {
             if (!report.hasText) {
                 StatusBanner(StatusBannerKind.Warning)
             } else {
-                // FIXME Task 11: Severity enum is currently [Info, Warning, Violation, Positive];
-                // maxOfOrNull uses Comparable (ordinal-based), so Positive wins over Violation.
-                // Reorder enum to [Violation, Warning, Info, Positive] before Positive hits get emitted.
-                val maxSev = report.hits.maxOfOrNull { it.severity }
-                val kind = when (maxSev) {
+                // Banner kind is driven by the WORST non-Positive hit — a
+                // Positive hit on the same image must not drown out a
+                // genuine Violation. Worst-rank is computed via an
+                // explicit `severityRank` (not enum.ordinal — the enum
+                // ordering is a presentation detail and could shift
+                // without warning as new buckets are added).
+                val worstViolationOrWarning = report.hits
+                    .filter { it.severity != Severity.Positive }
+                    .maxByOrNull { severityRank(it.severity) }
+                val kind = when (worstViolationOrWarning?.severity) {
                     Severity.Violation -> StatusBannerKind.Violation
                     Severity.Warning -> StatusBannerKind.Warning
-                    Severity.Info -> StatusBannerKind.Success  // info-only → still "compliant"
-                    // TODO Phase 3.3: split Positive into its own KPI bucket once container is added.
-                    Severity.Positive -> StatusBannerKind.Success
-                    null -> StatusBannerKind.Success
+                    // No violation/warning: Info-only or Positive-only →
+                    // both surface as "compliant". Phase 3.3 may split
+                    // Positive into its own KPI bucket.
+                    else -> StatusBannerKind.Success
                 }
                 StatusBanner(
                     kind = kind,
@@ -340,4 +345,28 @@ internal fun imageSizeForState(
     completeReport != null && completeReport.imageWidth > 0 && completeReport.imageHeight > 0 ->
         IntSize(completeReport.imageWidth, completeReport.imageHeight)
     else -> null
+}
+
+/**
+ * Explicit rank used to pick the WORST non-Positive hit for the status banner.
+ *
+ * Why not enum.ordinal: enum order is a presentation detail (the enum is
+ * declared `[Violation, Warning, Info, Positive]` so Positive sits at the
+ * END as a guard against ordinal-based ranking accidentally surfacing
+ * Positive as "worst"). `severityRank` instead pins the policy in code:
+ * Violation > Warning > Info, with Positive deliberately excluded from the
+ * rank (Positive hits must NEVER escalate the banner — they're surfaced
+ * separately if/when Phase 3.3 ships a Positive KPI bucket).
+ *
+ * Higher number = worse. The function is `internal` + `@VisibleForTesting`
+ * so `StatusBannerRankingTest` can pin the contract.
+ */
+@VisibleForTesting
+internal fun severityRank(severity: Severity): Int = when (severity) {
+    Severity.Violation -> 3
+    Severity.Warning -> 2
+    Severity.Info -> 1
+    // Positive is intentionally not ranked — callers that want Positive
+    // surfaced must filter for it explicitly (see [StatusBannerFor]).
+    Severity.Positive -> 0
 }

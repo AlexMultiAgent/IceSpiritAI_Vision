@@ -52,11 +52,21 @@ class PaddleOcrRealDeviceAbTest {
 
     private val tag = "RealDeviceAbTest"
 
-    private val fixtures: List<Pair<String, String>> = listOf(
-        "img1.jpg" to "signage-5-2011",
-        "img2.jpg" to "signage-6-2011",
-        "img3.jpg" to "signage-9-2011",
-        "img4.jpg" to "signage-11-2011",
+    // Fixtures: the 3 mentor snapshots are byte-identical copies of the files
+    // MentorOcrSmokeTest uses under `fixtures/mentor/`. We read them from the
+    // SINGLE shared copy (`fixtures/mentor/`) instead of test_set/imgN.jpg so
+    // a future edit to a mentor image automatically flows into both tests
+    // — pre-v0.1.36 the two paths were independent and could drift silently
+    // (sha256 verified identical at the time of consolidation).
+    // img4.jpg (signage-11-2011) has no mentor counterpart and stays in
+    // test_set/ as the unique 4th fixture.
+    private data class Fixture(val assetPath: String, val stageFilename: String, val label: String)
+
+    private val fixtures: List<Fixture> = listOf(
+        Fixture("fixtures/mentor/mentor_1_5_2011.jpg", "mentor_1_5_2011.jpg", "signage-5-2011"),
+        Fixture("fixtures/mentor/mentor_2_6_2011.jpg", "mentor_2_6_2011.jpg", "signage-6-2011"),
+        Fixture("fixtures/mentor/mentor_3_9_2011.jpg", "mentor_3_9_2011.jpg", "signage-9-2011"),
+        Fixture("test_set/img4.jpg", "img4.jpg", "signage-11-2011"),
     )
 
     private data class Measurement(
@@ -77,9 +87,9 @@ class PaddleOcrRealDeviceAbTest {
         val coldLineCount: Int,
     )
 
-    private fun stageImage(appCtx: Context, testCtx: Context, fixtureName: String): Uri {
-        val cacheFile = File(appCtx.cacheDir, "ab_$fixtureName")
-        testCtx.assets.open("test_set/$fixtureName").use { input ->
+    private fun stageImage(appCtx: Context, testCtx: Context, fixture: Fixture): Uri {
+        val cacheFile = File(appCtx.cacheDir, "ab_${fixture.stageFilename}")
+        testCtx.assets.open(fixture.assetPath).use { input ->
             cacheFile.outputStream().use { output -> input.copyTo(output) }
         }
         return Uri.fromFile(cacheFile)
@@ -227,7 +237,7 @@ class PaddleOcrRealDeviceAbTest {
         val byLabel: Map<Int, Map<String, Measurement>> = perBatch.mapValues { (_, loop) ->
             loop.measurements.associateBy { it.label }
         }
-        val perImageEntries = fixtures.joinToString(",") { (_, label) ->
+        val perImageEntries = fixtures.joinToString(",") { (_, _, label) ->
             val m1 = byLabel[1]?.get(label)
             val m6 = byLabel[6]?.get(label)
             if (m1 != null && m6 != null) {
@@ -280,9 +290,10 @@ class PaddleOcrRealDeviceAbTest {
         prefix: String = "WARM",
     ): LoopResult {
         // Cold-start: first recognize pays PaddleOCR.create() cost.
-        val (coldFixture, coldLabel) = fixtures.first()
+        val coldFixture = fixtures.first()
+        val coldLabel = coldFixture.label
         val coldUri = stageImage(appCtx, testCtx, coldFixture)
-        val coldBytes = File(appCtx.cacheDir, "ab_$coldFixture").length()
+        val coldBytes = File(appCtx.cacheDir, "ab_${coldFixture.stageFilename}").length()
         val coldStart = System.nanoTime()
         val coldResult: OcrResult = engine.recognize(coldUri)
         val coldDurationMs = (System.nanoTime() - coldStart) / 1_000_000L
@@ -296,15 +307,16 @@ class PaddleOcrRealDeviceAbTest {
         // Warm: 4 timed recognize calls (one per fixture).
         val measurements = mutableListOf<Measurement>()
         val warmStart = System.nanoTime()
-        for ((fixture, label) in fixtures) {
+        for (fixture in fixtures) {
+            val label = fixture.label
             val uri = stageImage(appCtx, testCtx, fixture)
-            val bytes = File(appCtx.cacheDir, "ab_$fixture").length()
+            val bytes = File(appCtx.cacheDir, "ab_${fixture.stageFilename}").length()
             val start = System.nanoTime()
             val result: OcrResult = engine.recognize(uri)
             val durationMs = (System.nanoTime() - start) / 1_000_000L
             val hits = matcher.scan(result.fullText)
             val m = Measurement(
-                fixture = fixture,
+                fixture = fixture.stageFilename,
                 label = label,
                 bytes = bytes.toInt(),
                 durationMs = durationMs,
