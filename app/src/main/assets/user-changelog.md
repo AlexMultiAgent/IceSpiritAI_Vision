@@ -1,5 +1,10 @@
 # 用户更新日志
 
+## v0.1.35 · 2026-08-28
+
+- **修复 v0.1.34 case #13 miss — bare「高产」seed 广告**(《广告法》第二十七条第(一)项「科学上无法验证的断言」+ 第(二)项「表示功效的断言或者保证」):`ad_signage_art27_seed_yield_guarantee` keyword 列表扩 3 个 bare 产量承诺 keyword `高产` / `丰产` / `稳产`(原 14 keyword 全部围绕「保证 / 承诺 / 必 / 确保 / 效益保证」短语,bare「高产」命中不了)。即使放实物照片也不能直接宣称「高产」——果实饱满特写 ≠ 整田丰产保证,无对照组 / 区域条件 / 品种试验即科学上无法验证。配 fixture `违规案例/text_signage_pea_01.md` 锁住 case #13 命中集合 `{ad_signage_art27_seed_yield_guarantee, Violation}`,AdSignageTextFixtureRegressionTest 命中集合精确 pin
+- **测试 pin 修复**: `ChangelogScreenTest.bundled asset first section matches the shipping version` 版本断言 `v0.1.33 → v0.1.35`(v0.1.34 release 时漏 bump test pin,本次连同 v0.1.35 一起对齐)
+
 ## v0.1.34 · 2026-08-27
 
 - **规则扩充 v8→v9**(`ad_signage_rules.json`,121 → 129):
