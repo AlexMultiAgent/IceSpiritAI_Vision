@@ -63,15 +63,17 @@ def init_paddleocr():
     except ImportError:
         print("ERROR: paddleocr not installed. Run: pip install paddleocr==3.7.0", file=sys.stderr)
         sys.exit(2)
-    print("[init] loading PP-OCRv6_small model (first run downloads to ~/.paddleocr/)...", file=sys.stderr)
+    print("[init] loading PP-OCRv6 model (first run downloads to ~/.paddleocr/)...", file=sys.stderr)
     t0 = time.time()
-    # 3.7.0 API: ocr_version 字段选 v6_small;若版本不支持则 fallback 到默认
+    # 3.7.0 API: ocr_version 只接受 umbrella 名(PP-OCRv3/v4/v5/v6),不接受 _small 后缀;
+    # `show_log` 在 3.7.0 已移除(未知 kwarg 会被 parse_common_args 拒为 ValueError),故不传。
+    # 若版本不支持该参数(TypeError)或不接受该值(ValueError)则 fallback 到默认
     try:
-        ocr = PaddleOCR(use_angle_cls=True, lang="ch", ocr_version="PP-OCRv6_small", show_log=False)
-    except TypeError:
-        # 老版本 paddleocr 不支持 ocr_version 字段,降级
+        ocr = PaddleOCR(use_angle_cls=True, lang="ch", ocr_version="PP-OCRv6")
+    except (TypeError, ValueError):
+        # 老版本 paddleocr 不支持 ocr_version 字段 / 不接受该值,降级
         print("[init] WARNING: ocr_version param not supported, falling back to default model", file=sys.stderr)
-        ocr = PaddleOCR(use_angle_cls=True, lang="ch", show_log=False)
+        ocr = PaddleOCR(use_angle_cls=True, lang="ch")
     print(f"[init] model loaded in {time.time()-t0:.1f}s", file=sys.stderr)
     return ocr
 
