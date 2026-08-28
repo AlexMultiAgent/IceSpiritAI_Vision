@@ -43,11 +43,11 @@ IMAGE_EXTS = (".jpg", ".jpeg", ".png")
 DET_CFG = {
     "det_limit_side_len": 1280,
     "det_limit_type": "min",       # min(H,W) ≤ 1280 时保持比例 resize
-    "det_thresh": 0.2,             # DB 二值化阈值(放宽,检更多低概率像素)
-    "det_box_thresh": 0.45,        # box 平均分阈值(放宽,留更多低分 box)
-    "det_unclip_ratio": 1.8,       # 扩 box 系数(放大,抓边缘字)
+    "det_thresh": 0.3,             # DB 二值化阈值(Android 覆盖 inference.yml 0.2)
+    "det_box_thresh": 0.5,         # box 平均分阈值(Android 覆盖 inference.yml 0.45)
+    "det_unclip_ratio": 1.6,       # 扩 box 系数(Android 覆盖 inference.yml 1.4)
     "rec_batch_size": 6,           # Android Phase 1 default
-    "rec_score_thresh": 0.3,       # rec 置信度门控(放宽,接受更多低置信 rec)
+    "rec_score_thresh": 0.5,       # rec 置信度门控(过滤噪声)
     "max_candidates": 1000,        # det boxes top-K(Android 无显式,按 inference.yml 3000 收紧)
 }
 REC_CFG = {
