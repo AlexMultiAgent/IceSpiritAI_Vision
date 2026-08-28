@@ -67,42 +67,76 @@ def init_paddleocr():
     t0 = time.time()
     # 3.7.0 API: ocr_version 只接受 umbrella 名(PP-OCRv3/v4/v5/v6),不接受 _small 后缀;
     # `show_log` 在 3.7.0 已移除(未知 kwarg 会被 parse_common_args 拒为 ValueError),故不传。
+    # 关掉 doc-orient 系列(66 张图都是广告招牌,不需要):
+    #   use_doc_orientation_classify=False → 跳过 PP-LCNet_x1_0_doc_ori
+    #   use_doc_unwarping=False            → 跳过 UVDoc
+    #   use_textline_orientation=False     → 跳过 textline orientation 模型
+    # (use_angle_cls 是 deprecated alias,内部映射到 textline_orientation,直接关掉后者即可)
     # 若版本不支持该参数(TypeError)或不接受该值(ValueError)则 fallback 到默认
     try:
-        ocr = PaddleOCR(use_angle_cls=True, lang="ch", ocr_version="PP-OCRv6")
+        ocr = PaddleOCR(
+            lang="ch",
+            ocr_version="PP-OCRv6",
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=False,
+        )
     except (TypeError, ValueError):
-        # 老版本 paddleocr 不支持 ocr_version 字段 / 不接受该值,降级
-        print("[init] WARNING: ocr_version param not supported, falling back to default model", file=sys.stderr)
-        ocr = PaddleOCR(use_angle_cls=True, lang="ch")
+        # 任何 3.7.0 kwargs 不接受(更老 / 更激进的 API surface 收紧)
+        print("[init] WARNING: some params rejected, falling back to minimal config", file=sys.stderr)
+        ocr = PaddleOCR(lang="ch", ocr_version="PP-OCRv6")
     print(f"[init] model loaded in {time.time()-t0:.1f}s", file=sys.stderr)
+    # 模型目录是否已下载(网络失败 / 半路挂 的兜底提示)
+    model_dir = Path.home() / ".paddlex" / "official_models"
+    if not model_dir.exists() or not any(model_dir.iterdir()):
+        print("[init] NOTE: 模型目录为空,可能下载未完成", file=sys.stderr)
+        print("       retry 或手动: paddleocr --lang ch --ocr_version PP-OCRv6", file=sys.stderr)
     return ocr
 
 
 def ocr_one(ocr, image_path: Path) -> list[tuple[str, float]]:
-    """paddleocr 返回 [(box, (text, conf)), ...];统一为 [(text, y_top), ...] 按 y 排序"""
-    raw = ocr.ocr(str(image_path), cls=True)
+    """paddleocr 3.7.0 API: ocr.predict() 返回 list[dict](per page)。
+
+    每个 page dict 含:
+      rec_texts  : list[str]                 识别文本
+      rec_scores : list[float]               对应置信度
+      dt_polys   : numpy.ndarray shape (n,4,2) 每行 4 个角点
+    返回统一为 [(text, y_top), ...] 按 y_top 升序,匹配 fixture 行的视觉顺序。
+    """
+    try:
+        results = list(ocr.predict(str(image_path)))
+    except Exception as e:  # noqa: BLE001
+        print(f"[ocr_one] predict() failed: {type(e).__name__}: {e}", file=sys.stderr)
+        raise
     out: list[tuple[str, float]] = []
-    if not raw:
+    if not results:
         return out
-    # 3.7.0 嵌套结构 raw = [page];page = [(box, (text, conf)), ...]
-    for page in raw:
-        for item in page or []:
-            if not item or len(item) < 2:
+    for page in results:
+        if not isinstance(page, dict):
+            continue
+        rec_texts = page.get("rec_texts") or []
+        dt_polys = page.get("dt_polys")
+        # numpy 数组兼容:list-like → list[str]
+        try:
+            texts_iter = list(rec_texts.tolist()) if hasattr(rec_texts, "tolist") else list(rec_texts)
+        except Exception:
+            texts_iter = list(rec_texts)
+        for i, text in enumerate(texts_iter):
+            if text is None:
                 continue
-            box, payload = item[0], item[1]
-            if not box or not payload:
+            text_str = str(text).strip()
+            if not text_str:
                 continue
-            # payload 兼容 (text, conf) 或直接 text
-            if isinstance(payload, (list, tuple)) and len(payload) >= 1:
-                text = str(payload[0])
-            else:
-                text = str(payload)
-            # box = [[x1,y1],[x2,y2],[x3,y3],[x4,y4]],y_top = box[0][1]
-            try:
-                y_top = float(box[0][1])
-            except (TypeError, ValueError, IndexError):
-                y_top = 0.0
-            out.append((text.strip(), y_top))
+            # y_top = 第一个 box 顶点的 y 坐标
+            y_top = 0.0
+            if dt_polys is not None:
+                try:
+                    poly = dt_polys[i]
+                    # poly[i][0][1] = 第 i 个 box 的第一个角点的 y
+                    y_top = float(poly[0][1])
+                except (TypeError, ValueError, IndexError, KeyError):
+                    y_top = 0.0
+            out.append((text_str, y_top))
     out.sort(key=lambda x: x[1])
     return out
 
@@ -134,7 +168,8 @@ def main():
 
     manifest = {
         "paddleocr_version": _safe_version("paddleocr"),
-        "model_name": "PP-OCRv6_small",
+        "model_name": "PP-OCRv6_mobile",  # umbrella PP-OCRv6 默认 mobile 变体(不是 _small)
+        "runtime_note": "paddlepaddle native inference, NOT ONNX Runtime (Android 端用 ONNX)",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "fixture_dir": str(FIXTURES_DIR.relative_to(PROJECT_ROOT)),
         "files": {},
