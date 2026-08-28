@@ -126,3 +126,5 @@ app/src/main/assets/models/**/*.cache/
 *.token.properties
 gradle.properties.local
 release.keystore
+
+app/src/test/resources/fixtures/audit66_ocr/
