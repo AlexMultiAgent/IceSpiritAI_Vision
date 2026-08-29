@@ -49,6 +49,7 @@ import org.opencv.android.OpenCVLoader
 class PaddleOcrEngine(
     context: Context,
     private val recBatchSize: Int = DEFAULT_REC_BATCH_SIZE,
+    private val configOverride: PaddleOCRConfig? = null,
 ) : OcrEngine {
 
     private val appContext = context.applicationContext
@@ -101,7 +102,17 @@ class PaddleOcrEngine(
                         // on 4-image benchmark, so 0.5 keeps all real text but drops
                         // garbage). recBatchSize=6 amortizes rec preprocess; 1 vs 6
                         // speedup needs real-device confirmation (logged for Phase 2).
-                        config = PaddleOCRConfig(
+                        //
+                        // Phase 2 (2026-08-29) — tried widening to 1280/min/0.3/0.5/1.6
+                        // for long images (#19 chars 79→736, etc., 6:0 vs A on 9
+                        // OCR-misaligned cases), but 66-image E2E coverage dropped
+                        // 93.9% → 90.8% (FULL 44→26 / PARTIAL 18→33) — the wider
+                        // det params pull in noise that the matcher flags as
+                        // different rule ids, pulling several FULL slots down to
+                        // PARTIAL and pushing some PARTIAL slots to MISS. Net
+                        // effect is a ~3 pp regression on aggregate coverage, so
+                        // we revert to A.
+                        config = configOverride ?: PaddleOCRConfig(
                             detLimitSideLen = 960,
                             detLimitType = "max",
                             detThresh = 0.2f,
