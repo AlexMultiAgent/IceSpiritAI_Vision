@@ -2130,4 +2130,74 @@ class AdSignageRuleMatcherTest {
         )
         assertEquals("正常种子广告文案不应触发 §27", 0, hits.size)
     }
+
+    // --- Auto-decomposition:length>=5 keyword 自动 1-char-deletion 变体(2026-08-29 v0.1.32 落地) ---
+    //
+    // PP-OCRv6_small 在密集中文行上倾向于 drop/merge 1 字符(ver 2026-08-29 nova 6 实测:
+    // 关键字 "血压血糖血脂降下去" 9 字 → OCR 退化为 "高压血糖血脂降下去" 8 字,丢首字 血)。
+    // init 块对 length>=MIN_KEYWORD_FOR_VARIANTS (5) 的 keyword 自动注册所有
+    // 1-char-deletion 变体,以 1 次 build-time 展开替代 fuzzy-match runtime cost。
+    // 阈值 L>=5 通过 66-fixture cross-check 选定:见 AdSignageRuleMatcher.companion
+    // 对象 KDoc。
+
+    @Test fun scan_matches_ocr_one_char_drop_for_long_keyword() {
+        // 真实 case #48 (66-fixture / nova 6 OCR):
+        //   - keyword: "血压血糖血脂降下去" (9 字, length>=5 → 触发 1-char-deletion 变体)
+        //   - OCR 退化形式: "高血压患者 本品 高压血糖血脂降下去 安全无忧"
+        //     首字 血 被 OCR 吃,前面又插了个 高。AC trie 注册的 variant
+        //     "压血糖血脂降下去" (drop 首字 血, 8 字) 是 substring,exact-substring 命中。
+        // 注意:matchedText 是 AC 命中的字面子串 (= variant 长度),不包含
+        // variant 前面那个被 OCR 多插进来的 高。
+        val rule = AdSignageRule(
+            id = "test-food-fn",
+            category = "signage",
+            regulation = "广告法 §17 + §58",
+            keywords = listOf("血压血糖血脂降下去"),
+            severity = Severity.Violation,
+        )
+        val m = AdSignageRuleMatcher(listOf(rule))
+
+        // (a) OCR 退化形式 — 由 1-char-deletion variant 命中
+        val hitsDegraded = m.scan("高血压患者 本品 高压血糖血脂降下去 安全无忧")
+        assertEquals(
+            "OCR 退化形式 '压血糖血脂降下去' 应通过 1-char-deletion variant 命中 keyword",
+            1, hitsDegraded.size,
+        )
+        assertEquals("test-food-fn", hitsDegraded[0].ruleId)
+        // matchedText 是 AC 命中的字面子串 — 8 字 variant,不包含 OCR 多插的 高
+        assertEquals("压血糖血脂降下去", hitsDegraded[0].matchedText)
+
+        // (b) 原 keyword 仍能命中 — 没有回归
+        val hitsOriginal = m.scan("本品宣传 血压血糖血脂降下去 三高人群适用")
+        assertEquals("原 keyword 9 字形式仍应命中", 1, hitsOriginal.size)
+        assertEquals("test-food-fn", hitsOriginal[0].ruleId)
+        assertEquals("血压血糖血脂降下去", hitsOriginal[0].matchedText)
+    }
+
+    @Test fun scan_no_fp_on_short_keyword_deletion() {
+        // 回归保护:#13 #26 66-fixture OCR 含 "抗病高产"(植物抗病性描述,GT=art27_seed_yield_guarantee)。
+        // 若 "抗病毒" (3 字, length<5) 被分解为变体 "抗病",则 "抗病高产" 会 FP 命中
+        // disease_prevention 规则。threshold L>=5 必须保证 length<5 keyword **不分解**。
+        val rule = AdSignageRule(
+            id = "test-disease-prev",
+            category = "signage",
+            regulation = "广告法 §17 + §58",
+            // 真实 ad_signage_signage_food_function_claim keywords 中的短 keyword
+            keywords = listOf("抗病毒", "控糖", "稳血糖"),
+            severity = Severity.Violation,
+        )
+        val m = AdSignageRuleMatcher(listOf(rule))
+
+        // (a) length<5 keyword 不应被分解 — "抗病高产" 不应命中 "抗病毒" 的任何变体
+        val hitsFP = m.scan("豌豆种子 抗病高产 适合北方栽培")
+        assertTrue(
+            "length<5 keyword '抗病毒' 必须不分解;否则 '抗病高产' 会 FP 命中 disease_prevention",
+            hitsFP.isEmpty(),
+        )
+
+        // (b) 原 keyword "抗病毒" 自身仍正常命中 — exact substring match
+        val hitsReal = m.scan("本品抗病毒消炎,有效预防流感")
+        assertEquals("原 keyword '抗病毒' 应精确命中", 1, hitsReal.size)
+        assertEquals("test-disease-prev", hitsReal[0].ruleId)
+    }
 }
