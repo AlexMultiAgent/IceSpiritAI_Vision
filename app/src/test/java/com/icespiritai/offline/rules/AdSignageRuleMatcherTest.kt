@@ -2200,4 +2200,56 @@ class AdSignageRuleMatcherTest {
         assertEquals("原 keyword '抗病毒' 应精确命中", 1, hitsReal.size)
         assertEquals("test-disease-prev", hitsReal[0].ruleId)
     }
+
+    @Test fun scan_art28bFakeData_firesOnBuErZhiXuan() {
+        // 真实 case #61 (66-fixture / audit_gaps.md 标注):
+        //   - ad_signage_art9_abs_top 已含 "不二之选" (L119 of ad_signage_rules.json)
+        //   - ad_signage_art28b_fake_data **之前没有** "不二之选" → #61 GT 第 3 条规则
+        //     永远命中不了,FULL 升不上去。
+        // 修复:在 art28b_fake_data keywords 末尾加 "不二之选"。同一 OCR 出现 "不二之选"
+        // 时双命中(art9_abs_top + art28b_fake_data),合规审查上正确(同一事实同时违反
+        // 绝对化条款 §9 + 虚假数据条款 §28b)。
+        val art9 = AdSignageRule(
+            id = "ad_signage_art9_abs_top",
+            category = "absolute",
+            regulation = "广告法 §9(三)",
+            keywords = listOf("不二之选", "不二选择"),
+            severity = Severity.Warning,
+        )
+        val art28b = AdSignageRule(
+            id = "ad_signage_art28b_fake_data",
+            category = "absolute",
+            regulation = "广告法 §28(二)~(五) + §55",
+            // 模拟扩 keyword 后的 art28b_fake_data 完整 keywords 子集(测试只关心"不二之选")
+            keywords = listOf("销量第一", "全国第一", "不二之选"),
+            severity = Severity.Warning,
+        )
+        val m = AdSignageRuleMatcher(listOf(art9, art28b))
+
+        // (a) 纯 "不二之选" — 应双命中 art9_abs_top + art28b_fake_data
+        val hits = m.scan("不二之选")
+        assertEquals(
+            "'不二之选' 必须同时命中 art9_abs_top + art28b_fake_data(#61 GT 第 3 条规则覆盖)",
+            2, hits.size,
+        )
+        val ruleIds = hits.map { it.ruleId }.toSet()
+        assertTrue(
+            "必须含 art9_abs_top",
+            "ad_signage_art9_abs_top" in ruleIds,
+        )
+        assertTrue(
+            "必须含 art28b_fake_data(扩 keyword 后)",
+            "ad_signage_art28b_fake_data" in ruleIds,
+        )
+
+        // (b) #61 fixture 风格的复合文本 — 三规则都应命中(art9_abs_top + art28b_fake_data + art11)
+        //   注:此 test 不构造 art11,只验证两个 absolute 规则双命中
+        val hitsCompound = m.scan("哈尔滨排名第一 不二之选 公考培训")
+        assertEquals(
+            "复合文本 '不二之选' 部分应双命中",
+            2, hitsCompound.size,
+        )
+        assertEquals("不二之选", hitsCompound[0].matchedText)
+        assertEquals("不二之选", hitsCompound[1].matchedText)
+    }
 }
