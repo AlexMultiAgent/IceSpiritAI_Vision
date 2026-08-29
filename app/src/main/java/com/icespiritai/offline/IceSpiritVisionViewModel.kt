@@ -95,13 +95,29 @@ class IceSpiritVisionViewModel(application: Application) : AndroidViewModel(appl
 
     /**
      * Switch the active tab. Returns `true` when the call actually changed
-     * the selected tab — the caller typically pairs that with a
-     * [reset]/image-clear to drop the previous domain's stale report.
+     * the selected tab.
+     *
+     * Tab-routing contract (CLAUDE.md §Tab → 初始页, 2026-08-26):
+     *   - tab 切换 → 老路径:切换 matcher,保留 state (no reset)
+     *   - tab 不变 + `state is Loading` → no-op(防误触打断正在跑的 OCR / 规则扫描)
+     *   - tab 不变 + `state !is Loading` → 「回到初始」调 reset()(清 pendingUri +
+     *     state 走回 Idle)
+     *
+     * The third clause covers the user scenario where after a `Complete`
+     * report is shown, the user taps the already-selected 「广告招牌」tab
+     * to start fresh on a new image — there's no separate "back to home"
+     * button, and the tab is the cleanest "clear" affordance.
      */
     fun setTab(tab: RuleTab): Boolean {
-        val changed = _currentTab.value != tab
-        _currentTab.value = tab
-        return changed
+        val isTabSwitch = _currentTab.value != tab
+        if (isTabSwitch) {
+            _currentTab.value = tab
+            return true
+        }
+        // Same tab: Loading 时 no-op,否则 reset 回 Idle。
+        if (_state.value is AnalysisState.Loading) return false
+        reset()
+        return false
     }
 
     fun startAnalysis(uri: Uri) {

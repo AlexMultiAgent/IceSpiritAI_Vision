@@ -153,7 +153,11 @@ fun HomeScreen(
         HomeTopBar(
             selectedTab = selectedTab,
             onSelectTab = { tab ->
-                if (viewModel.setTab(tab)) reset()
+                // VM.setTab handles reset internally per CLAUDE.md §Tab → 初始页
+                // (2026-08-26):同 tab + !Loading → reset;同 tab + Loading → no-op;
+                // tab 切换 → 保留 state。caller-side reset() 路径已删除,因为它会
+                // 误把 tab 切换路径也走 reset 路径。
+                viewModel.setTab(tab)
             },
             tabEnabled = state !is AnalysisState.Loading,
             onOpenSettings = onOpenSettings,
