@@ -204,6 +204,16 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
     3. POST 重写后的 JSON
   - 客户端 cert-pin gate 不变(`signerCertSha256: 4a21f4...3043`),只是 APK 下载路径绕过 broken 路由
   - 源码 `app/build/outputs/apk/release/vision-latest.json` 仍含原 `releases/download/...` URL(`generateVisionLatestJson` 的 hardcoded 模板),下一版构建会重生成,无需手动维护
+- **Gitea 1.22.x 全面 broken(`releases/download/<tag>/<filename>` 对 `.json` 也 404,cascade delete attachment) — 2026-08-29 v0.1.37 release smoke 实证**: v0.1.31 那次的"只 .apk 404 + .json 200"假设已失效。当前 Gitea 实例:
+  - **`releases/download/<tag>/<filename>` 对 .apk 和 .json 都 404**(v0.1.31 时 .json 还能 200,2026-08-29 实测已经 broken)
+  - **release-attached `/attachments/<uuid>` 404**(orphaned 状态才 200 OK)
+  - **DELETE release 会 cascade 物理删除 attachment**(所以 v0.1.31 那种"删 release 让 attachment orphaned"的 workaround 在本实例已失效)
+  - **`/raw/branch/...`、`/media/branch/...`、`/src/branch/...` 全 404**(Gitea raw service 在本实例被关)
+  - **`/api/v1/.../git/blobs/<sha>` 200 但需 Bearer token**(client 无 token 路径)
+  - **GitHub PAT 401 Bad credentials**(无法 mirror 到 GitHub Releases)
+  - **客户端影响**: in-app update **完全暂停** — JSON 拉不到 → version check Failed → 不推送。APK attachment `c06d767b-...` (orphaned) 200 OK 可用户手动下载
+  - **临时方案**: v0.1.37 release commit `c48ea95` + git tag `v0.1.37` + ref `refs/tags/latest` 已 force-push 双远端,APK 实质可用。in-app update 推送等 server bug 修复或 nginx reverse proxy rewrite(候选路径见 [docs/knowledge/gitea-1.22x-release-route-broken.md](docs/knowledge/gitea-1.22x-release-route-broken.md) §4)
+  - **本仓库代码无需改** — 等服务端 reverse proxy 改写 `/releases/download/<tag>/<filename>` → `/attachments/<uuid>` 后,client `BuildConfig.UPDATE_JSON_URL` URL 模板不变,自动恢复
 
 ## 文档索引
 
