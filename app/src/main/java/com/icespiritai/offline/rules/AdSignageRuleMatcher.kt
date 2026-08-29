@@ -30,6 +30,26 @@ class AdSignageRuleMatcher(rules: List<AdSignageRule>) : RuleMatcher {
     private val variantOrigins: Map<String, String>
 
     init {
+        // Pre-pass: collect every normalized keyword across all rules. We need
+        // this set BEFORE registering variants so a 1-char-deletion variant
+        // that ALSO happens to be a separately-declared keyword (e.g. a 4-char
+        // keyword registered as both its own rule keyword AND as a variant of
+        // a 5-char keyword that contains it) is NOT marked as a variant — that
+        // string is already a legitimate independent keyword and must dedup
+        // under its own (ruleId, keyword) key, not the variant's longer-origin
+        // key. Without this pre-pass, Phase 2 dedup collapses both keyword
+        // hits into one and the rule's expected hit-count assertion fails.
+        // Bug surfaced 2026-08-29 while syncing AC behavior into
+        // FoodLabelRuleMatcher — its test suite caught it via
+        // scan_gb28050Art4TransFat which has both 4-char "反式脂肪" and 5-char
+        // "反式脂肪酸" as separate keywords.
+        val allNormalizedKeywords = HashSet<String>()
+        for (rule in rules) {
+            for (kw in rule.keywords) {
+                val key = TextNormalizer.forMatching(kw)
+                if (key.isNotEmpty()) allNormalizedKeywords += key
+            }
+        }
         // Two passes' worth of normalized keyword -> ALL rule ids that declare it.
         // A keyword shared by two rules (e.g. "第一" in both the education and the
         // general absolute-claim rules) must attribute the hit to every applicable
@@ -63,7 +83,9 @@ class AdSignageRuleMatcher(rules: List<AdSignageRule>) : RuleMatcher {
                     if (key.length >= MIN_KEYWORD_FOR_VARIANTS) {
                         for (i in key.indices) {
                             val variant = key.substring(0, i) + key.substring(i + 1)
-                            if (variant.isNotEmpty() && variant != key) {
+                            if (variant.isNotEmpty() && variant != key &&
+                                variant !in allNormalizedKeywords
+                            ) {
                                 keywordToRuleIds[variant] =
                                     (keywordToRuleIds[variant] ?: emptyList()) + rule.id
                                 // Record which original keyword this variant came

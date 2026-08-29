@@ -1017,4 +1017,65 @@ class FoodLabelRuleMatcherTest {
         assertEquals(1, hits.size)
         assertEquals("food_infant_formula_milk_register", hits[0].ruleId)
     }
+
+    // --- AC auto-decomposition (1-char-deletion variants) + Phase 2 longest-
+    // match dedup — mirrors AdSignageRuleMatcherTest. See
+    // AdSignageRuleMatcher.scan_matches_ocr_one_char_drop_for_long_keyword for
+    // the rationale and the L>=5 cross-check that prevents FP on short
+    // keywords like "抗病毒" → "抗病".
+
+    @Test
+    fun scan_matches_ocr_one_char_drop_for_long_keyword() {
+        // 9-char keyword "降糖降压降血脂" (>= 5). OCR drops the 降 after 压,
+        // yielding "降糖压降血脂" (still has all the same characters in
+        // roughly the same order with one character gone). The 8-char
+        // 1-char-deletion variant "糖降压降血脂" must register and match.
+        val r = FoodLabelRule(
+            id = "test-food-fn",
+            category = "nutrition",
+            regulation = "测试",
+            keywords = listOf("降糖降压降血脂"),
+            severity = Severity.Warning,
+        )
+        val m = FoodLabelRuleMatcher(listOf(r))
+        // OCR-degraded form: 1-char deletion (dropped the middle 降).
+        val hits1 = m.scan("降糖压降血脂")
+        assertEquals(
+            "OCR-degraded form must match the 1-char-deletion variant",
+            1, hits1.size,
+        )
+        assertEquals("test-food-fn", hits1[0].ruleId)
+        // Original keyword still matches (no regression on the direct path).
+        val hits2 = m.scan("降糖降压降血脂")
+        assertEquals(1, hits2.size)
+    }
+
+    @Test
+    fun scan_doesNotCollapseSeparateKeywordsWhenVariantEqualsAnotherKeyword() {
+        // Regression guard for the variantOrigins pre-pass (init block
+        // allNormalizedKeywords HashSet, added 2026-08-29 when syncing the
+        // AC auto-decomposition pattern from AdSignageRuleMatcher).
+        //
+        // Setup: rule has TWO keywords where one is exactly a 1-char-
+        // deletion variant of the other — "反式脂肪" (4 chars) is its own
+        // keyword AND is also a 1-char-deletion variant of "反式脂肪酸"
+        // (5 chars). Without the pre-pass, variantOriginBuilder["反式脂肪"]
+        // was overwritten to point at "反式脂肪酸" and Phase 2 dedup
+        // collapsed the two independent keyword hits into one.
+        val r = FoodLabelRule(
+            id = "test-trans-fat",
+            category = "nutrition",
+            regulation = "测试",
+            keywords = listOf("反式脂肪", "反式脂肪酸"),
+            severity = Severity.Warning,
+        )
+        // OCR text contains the SHORTER keyword "反式脂肪" standalone.
+        // "反式脂肪酸" is NOT present.
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("含反式脂肪")
+        assertEquals(
+            "shorter keyword must fire independently — not be deduped into the longer keyword's slot",
+            1, hits.size,
+        )
+        assertEquals("test-trans-fat", hits[0].ruleId)
+    }
 }
