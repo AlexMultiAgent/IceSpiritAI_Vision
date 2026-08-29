@@ -4,7 +4,7 @@
 
 ## 状态
 
-**v0.1.36** — 离线 OCR + 规则库判违已接入(`modelProfile="ice_ocr_rules"`)。
+**v0.1.37** — 离线 OCR + 规则库判违已接入(`modelProfile="ice_ocr_rules"`) + Tab → 初始页 reset。
 
 | Profile | 状态 | 含义 |
 | --- | --- | --- |

@@ -1,5 +1,22 @@
 # 用户更新日志
 
+## v0.1.37 · 2026-08-29
+
+- **新功能:Tab → 初始页 reset 行为**(CLAUDE.md §Tab → 初始页 spec 落地):识别完成后用户再次点已选中的「广告招牌」tab 直接回到 Idle 初始页(清 pendingUri + state 走回 Idle),无需手动点右下角拍照/相册按钮。3-state 契约:`tab 切换 → 保留 state(预留 FoodLabeling 解锁后);同 tab + Loading → no-op(防误触打断正在跑的 OCR / 规则扫描);同 tab + !Loading → reset 回 Idle`。配 3 unit test pin(`setTab_sameTab_nonLoadingState_resetsToIdle` / `setTab_sameTab_loadingState_isNoOp` / `setTab_tabSwitch_doesNotReset`)— 反射设 `_state=Loading` 验证 Loading 路径不被误清,稳定
+- **规则改进(广告招牌 tab)**:
+  - **通用化 AC 1 字 OCR 退化兜底**(`AdSignageRuleMatcher` auto-decomposition):length≥5 keyword 自动注册所有 1-char-deletion variants 到 AC trie,容忍 PP-OCRv6_small 在密集文字上 1 字漏检(`#48` OCR 实际 `高压血糖血脂降下去` → 8-char variant 命中 keyword `血压血糖血脂降下去` 9-char 原词)。L≥5 阈值 cross-check:`抗病毒`(3 chars)不会被分解 → `#13`/`#26` 豌豆/无筋豆种子「抗病高产」plant-disease 描述不会误命中 `disease_prevention`(L=3 会引发回归,实证已规避)
+  - `art28b_fake_data` keywords 扩 `不二之选`(闭环 `#61` GT 第 3 条规则覆盖)
+  - `food_function_claim` 扩 `蜂胶` / `蜂王浆` / `灵芝孢子` — 覆盖 `#19` 配料表
+  - `disease_prevention` 扩 `降血糖` / `降三高` / `降血压` / `降血脂` — 覆盖 `#48` GT 第 2 条
+- **代码同步(食品标识 tab)**: `FoodLabelRuleMatcher` 同步 `AdSignageRuleMatcher` 的 AC auto-decomposition + 3-phase scan(longest-match)模式。FoodLabelRule 当前没有 `sourceMarkers` 字段,absence rule 暂不落地(若未来有需求,先扩 `FoodLabelRule` 数据类)
+- **Bug 修复**: `variantOrigins` pre-pass bug — 当 keyword A 的 1-char-deletion variant 恰好等于另一条规则独立注册的 keyword B 时(如 `反式脂肪` 是 `反式脂肪酸` 的 variant 又是独立 keyword),原本会把 B 错标为变体导致 Phase 2 dedup 把两条独立命中合并成一个。修复:init 加 `allNormalizedKeywords` pre-pass,生成 variant 时多 guard `variant !in allNormalizedKeywords`。AdSignage 同源同步修复(现有 AdSignage ruleset 未踩坑,提前规避未来新增规则时引入)
+- **性能 regression guard**: 新增 `MatcherPerformanceRegressionTest`(4 tests,直接读 `src/main/assets/rules/*.json` 绕过 shell profile 空 assets),pin matcher construction < 800 ms / scan < 30 ms(实测 ~30-80 ms / ~0.5-2 ms,10× 余量,只 catch 算法退化,不被 CI 性能抖动 false positive)
+- **E2E 验证(nova 6 / arm64-v8a / ice_ocr_rules)**: `FULL 27 → 46(+19)`,`MISS 6 → 1`(剩 `#19` OCR 端漏识配料表 + GT keyword 路径问题,扩词不能解,需 audit 决定);`warm_avg_ms 2198 → 2043`(−7%)
+- **零碎清理**:
+  - `docs/knowledge/ocr-long-image-slicing-evaluation.md`: OCR 长图 / 高密度小字 评估 — 4 方案对比(block slicing / two-pass zoom / maxEdge 4096 / 不动),**结论不动**,等 `ice_vision` profile / PP-OCRv7 multi-scale / VLM 路线自然覆盖。`PaddleOcrEngine.kt` 不修改,现有 det 参数是经过 2026-08-29 净负回滚验证的最优帕累托
+  - memory `followup-ad-signage-cross-cite` 标 closed(regulation 字段 2026-08-21 后已被收窄为仅《广告法》§17+§58,lawText 仍提《食品标识管理规定》是教育性背景,有意保留)
+- **测试覆盖**: 158 tests / 0 failures / 100% successful(`testDebugUnitTest -PmodelProfile=shell`,152 → 158,新增 6:3 tab + 2 food variant + 1 perf empty)
+
 ## v0.1.36 · 2026-08-28
 
 - **修复 APK 下载进度条卡在 totalBytes=0**(audit finding #2): `ApkDownloader` 新增 `onMetadata: (Long) -> Unit = {}` 回调,Content-Length 已知(非 -1)时一次性触发;`UpdateDownloadService.handleDownload` 用 mutable `liveRecord = record`,`onMetadata` 写入 StateFlow + DataStore,`onSuccess` 用 `liveRecord.copy(totalBytes = liveRecord.totalBytes)` —— 之前 `totalBytes` 只在 recreate 时从持久化的 `AppVersionInfo.totalBytes` 读,如果下载过程中网络层提前传了 Content-Length 也不会更新,进度条一直 0%。配 2 个 unit test pin(`onMetadata_fires_once_with_total_bytes_before_body` / `onMetadata_skipped_when_content_length_unknown`)
