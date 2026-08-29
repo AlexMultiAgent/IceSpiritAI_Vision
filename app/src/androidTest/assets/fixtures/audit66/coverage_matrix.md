@@ -48,12 +48,12 @@
 | `internet_art8_rx_drug` | `internet_ad` | Violation | 0 | (backlog, 本批无案例) |
 | `internet_art8_tobacco` | `internet_ad` | Violation | 0 | (backlog, 本批无案例) |
 | `internet_art9_health_softarticle` | `internet_ad` | Violation | 0 | (backlog, 本批无案例) |
-| `ad_signage_art11_data_citation` | `signage` | Warning | 9 | `#01` 01_碧桂园华美天樾_中国地产三强_绝对化与数据引用.jpg, `#02` 02_名师教育申论班_龙江第一_绝对化用语.jpg, `#16` 16_蒙恩教育教师资格证_通过率85%_数据引用.png, `#17` 17_智行教育25省考申论保分_快速提分_教育承诺.png, `#39` 39_百自分高效氯氟氰菊酯_杀虫广谱害虫触杀_农药.png, `#58` 58_Ulike蓝宝石脱毛仪_连续6年销量第一_绝对化.jpg, `#60` 60_哈佛特区_出门即校门接送不烦恼_60-139㎡学府世家_地产.jpg, `#62` 62_东郊到家按摩APP_9万人1000万次_数据引用.jpg, `#65` 65_蟹都汇总部_全国销量第一领导品牌_绝对化.jpg |
+| `ad_signage_art11_data_citation` | `signage` | Warning | 10 | `#01` 01_碧桂园华美天樾_中国地产三强_绝对化与数据引用.jpg, `#02` 02_名师教育申论班_龙江第一_绝对化用语.jpg, `#16` 16_蒙恩教育教师资格证_通过率85%_数据引用.png, `#17` 17_智行教育25省考申论保分_快速提分_教育承诺.png, `#39` 39_百自分高效氯氟氰菊酯_杀虫广谱害虫触杀_农药.png, `#58` 58_Ulike蓝宝石脱毛仪_连续6年销量第一_绝对化.jpg, `#60` 60_哈佛特区_出门即校门接送不烦恼_60-139㎡学府世家_地产.jpg, `#61` 61_三元教育公考_哈尔滨排名第一通过率75%_教育.jpg, `#62` 62_东郊到家按摩APP_9万人1000万次_数据引用.jpg, `#65` 65_蟹都汇总部_全国销量第一领导品牌_绝对化.jpg |
 | `ad_signage_art12_fake_patent` | `absolute` | Warning | 0 | (backlog, 本批无案例) |
 | `ad_signage_art26_re_prm` | `realestate` | Warning | 1 | `#15` 15_银泰集茶巷_品牌加冕财富启航_地产广告.jpeg |
-| `ad_signage_art28b_fake_data` | `absolute` | Warning | 4 | `#39` 39_百自分高效氯氟氰菊酯_杀虫广谱害虫触杀_农药.png, `#60` 60_哈佛特区_出门即校门接送不烦恼_60-139㎡学府世家_地产.jpg, `#63` 63_糖尿病虚假宣传_吃喝不忌口血糖不再高_医疗.jpg, `#65` 65_蟹都汇总部_全国销量第一领导品牌_绝对化.jpg |
+| `ad_signage_art28b_fake_data` | `absolute` | Warning | 5 | `#39` 39_百自分高效氯氟氰菊酯_杀虫广谱害虫触杀_农药.png, `#60` 60_哈佛特区_出门即校门接送不烦恼_60-139㎡学府世家_地产.jpg, `#61` 61_三元教育公考_哈尔滨排名第一通过率75%_教育.jpg, `#63` 63_糖尿病虚假宣传_吃喝不忌口血糖不再高_医疗.jpg, `#65` 65_蟹都汇总部_全国销量第一领导品牌_绝对化.jpg |
 | `ad_signage_art9_abs_pct` | `absolute` | Warning | 0 | (backlog, 本批无案例) |
-| `ad_signage_art9_abs_top` | `absolute` | Warning | 13 | `#01` 01_碧桂园华美天樾_中国地产三强_绝对化与数据引用.jpg, `#02` 02_名师教育申论班_龙江第一_绝对化用语.jpg, `#05` 05_五常龙江医院_首选院长亲诊_医疗绝对化.jpg, `#15` 15_银泰集茶巷_品牌加冕财富启航_地产广告.jpeg, `#30` 30_卡巴迪油莎豆油_降三高抗肿瘤抗衰老_食品.png, `#39` 39_百自分高效氯氟氰菊酯_杀虫广谱害虫触杀_农药.png, `#42` 42_寒地森林有机茶_行业领导品牌滋养14亿_绝对化.png, `#57` 57_妆颜如玉蓝绷带_国内首创速度第一_化妆品.png, `#58` 58_Ulike蓝宝石脱毛仪_连续6年销量第一_绝对化.jpg, `#59` 59_凯利集团汽车后服务市场_升涨机会钱景新区发展_6888元㎡23万起_地产.jpg, `#60` 60_哈佛特区_出门即校门接送不烦恼_60-139㎡学府世家_地产.jpg, `#64` 64_杜蕾斯公交车身_首个公益装_化妆品绝对化.jpg, `#65` 65_蟹都汇总部_全国销量第一领导品牌_绝对化.jpg |
+| `ad_signage_art9_abs_top` | `absolute` | Warning | 14 | `#01` 01_碧桂园华美天樾_中国地产三强_绝对化与数据引用.jpg, `#02` 02_名师教育申论班_龙江第一_绝对化用语.jpg, `#05` 05_五常龙江医院_首选院长亲诊_医疗绝对化.jpg, `#15` 15_银泰集茶巷_品牌加冕财富启航_地产广告.jpeg, `#30` 30_卡巴迪油莎豆油_降三高抗肿瘤抗衰老_食品.png, `#39` 39_百自分高效氯氟氰菊酯_杀虫广谱害虫触杀_农药.png, `#42` 42_寒地森林有机茶_行业领导品牌滋养14亿_绝对化.png, `#57` 57_妆颜如玉蓝绷带_国内首创速度第一_化妆品.png, `#58` 58_Ulike蓝宝石脱毛仪_连续6年销量第一_绝对化.jpg, `#59` 59_凯利集团汽车后服务市场_升涨机会钱景新区发展_6888元㎡23万起_地产.jpg, `#60` 60_哈佛特区_出门即校门接送不烦恼_60-139㎡学府世家_地产.jpg, `#61` 61_三元教育公考_哈尔滨排名第一通过率75%_教育.jpg, `#64` 64_杜蕾斯公交车身_首个公益装_化妆品绝对化.jpg, `#65` 65_蟹都汇总部_全国销量第一领导品牌_绝对化.jpg |
 | `ad_signage_art9_edu_abs` | `education` | Warning | 1 | `#02` 02_名师教育申论班_龙江第一_绝对化用语.jpg |
 | `ad_signage_edu_art24_recommendation` | `education` | Warning | 0 | (backlog, 本批无案例) |
 | `ad_signage_edu_art24_test_authority` | `education` | Warning | 0 | (backlog, 本批无案例) |
@@ -87,11 +87,11 @@
 | `ad_signage_pesticide_art4_safety_violation` | `pesticide` | Warning | 0 | (backlog, 本批无案例) |
 | `ad_signage_pesticide_art5_deprecate` | `pesticide` | Warning | 0 | (backlog, 本批无案例) |
 | `ad_signage_pesticide_art6_endorsement` | `pesticide` | Warning | 0 | (backlog, 本批无案例) |
-| `ad_signage_re_art26_planned_facility` | `realestate` | Warning | 2 | `#59` 59_凯利集团汽车后服务市场_升涨机会钱景新区发展_6888元㎡23万起_地产.jpg, `#61` 61_三元教育公考_哈尔滨排名第一通过率75%_教育.jpg |
+| `ad_signage_re_art26_planned_facility` | `realestate` | Warning | 1 | `#59` 59_凯利集团汽车后服务市场_升涨机会钱景新区发展_6888元㎡23万起_地产.jpg |
 | `ad_signage_re_art26_price_violation` | `realestate` | Warning | 1 | `#59` 59_凯利集团汽车后服务市场_升涨机会钱景新区发展_6888元㎡23万起_地产.jpg |
 | `ad_signage_re_art26_time_distance` | `realestate` | Warning | 0 | (backlog, 本批无案例) |
 | `ad_signage_re_art4_sqmeter` | `realestate` | Warning | 0 | (backlog, 本批无案例) |
-| `ad_signage_re_art7_license_no` | `realestate` | Warning | 1 | `#61` 61_三元教育公考_哈尔滨排名第一通过率75%_教育.jpg |
+| `ad_signage_re_art7_license_no` | `realestate` | Warning | 0 | (backlog, 本批无案例) |
 | `ad_signage_re_art8_superstition` | `realestate` | Warning | 0 | (backlog, 本批无案例) |
 | `ad_signage_signage_alcohol_drink_scenario` *(new)* | `restricted` | Warning | 1 | `#18` 18_白酒电商页_闻香入口天然桦树清香.png |
 | `ad_signage_signage_art29_internet_identifiable` | `signage` | Warning | 0 | (backlog, 本批无案例) |
@@ -207,7 +207,7 @@
 | `58_Ulike蓝宝石脱毛仪_连续6年销量第一_绝对化.jpg` | `absolute` | Critical | 3 | `ad_signage_art9_abs_top`, `ad_signage_art11_data_citation`, `ad_signage_signage_disease_prevention` | 已覆盖 |
 | `59_凯利集团汽车后服务市场_升涨机会钱景新区发展_6888元㎡23万起_地产.jpg` | `realestate` | Warning | 3 | `ad_signage_art9_abs_top`, `ad_signage_re_art26_planned_facility`, `ad_signage_re_art26_price_violation` | 已覆盖 |
 | `60_哈佛特区_出门即校门接送不烦恼_60-139㎡学府世家_地产.jpg` | `absolute` | Critical | 3 | `ad_signage_art9_abs_top`, `ad_signage_art11_data_citation`, `ad_signage_art28b_fake_data` | 已覆盖 |
-| `61_三元教育公考_哈尔滨排名第一通过率75%_教育.jpg` | `realestate` | Warning | 2 | `ad_signage_re_art26_planned_facility`, `ad_signage_re_art7_license_no` | 弱覆盖(关键词薄) |
+| `61_三元教育公考_哈尔滨排名第一通过率75%_教育.jpg` | `absolute` `data_citation` `fake_data` | Critical | 3 | `ad_signage_art9_abs_top`, `ad_signage_art11_data_citation`, `ad_signage_art28b_fake_data` | 已覆盖 |
 | `62_东郊到家按摩APP_9万人1000万次_数据引用.jpg` | `data_citation` | Warning | 1 | `ad_signage_art11_data_citation` | 已覆盖 |
 | `63_糖尿病虚假宣传_吃喝不忌口血糖不再高_医疗.jpg` | `medical` | Critical | 2 | `ad_signage_signage_disease_prevention`, `ad_signage_art28b_fake_data` | 已覆盖 |
 | `64_杜蕾斯公交车身_首个公益装_化妆品绝对化.jpg` | `absolute` | Warning | 2 | `ad_signage_art9_abs_top`, `cosmetic_art9_abs_extended` | 已覆盖 |
@@ -226,6 +226,6 @@
 - 示例图总数:**66**
 - 被规则覆盖的图(已覆盖 + 弱覆盖):**62** / 66 (93%)
 - 无规则覆盖的图(backlog):**4** / 66 (#06, #11, #20, #41)
-- 弱覆盖(关键词薄)的图:**18** / 66 (#01, #10, #12, #13, #15, #17, #18, #22, #23, #26, #28, #33, #40, #42, #51, #54, #55, #61)
+- 弱覆盖(关键词薄)的图:**17** / 66 (#01, #10, #12, #13, #15, #17, #18, #22, #23, #26, #28, #33, #40, #42, #51, #54, #55)
 - 新规则覆盖的图:**9** (#06, #18, #20, #28, #33, #40, #41, #42, #54 — `ad_signage_signage_weight_loss_food_claim` 覆盖 #28 + #40 + #54 三条)
 - 空桶(规则已就位, 待补示例图):`finance` / `minor` / `outdoor` / `fake_data`
