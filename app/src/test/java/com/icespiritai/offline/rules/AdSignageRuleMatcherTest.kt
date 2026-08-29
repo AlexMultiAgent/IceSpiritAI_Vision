@@ -2252,4 +2252,81 @@ class AdSignageRuleMatcherTest {
         assertEquals("不二之选", hitsCompound[0].matchedText)
         assertEquals("不二之选", hitsCompound[1].matchedText)
     }
+
+    @Test fun scan_foodFunctionClaim_firesOnFengjiaoAndFengWangjiang() {
+        // 真实 case #19 (66-fixture / audit_gaps.md 描述):
+        //   - 配料表含「蜂王浆冻干粉 + 蜂胶 + 蜂蜜」,宣传语含「改善营养 补充脑力」
+        //   - 旧 keywords 没有 "蜂胶" / "蜂王浆" / "灵芝孢子" → 即使 OCR 识出也命中不了
+        // 修复:food_function_claim keywords 加 蜂胶 / 蜂王浆 / 灵芝孢子。覆盖 #19 + 类似
+        // 蜂产品/保健食品 fixture。
+        val fn = AdSignageRule(
+            id = "ad_signage_signage_food_function_claim",
+            category = "signage",
+            regulation = "广告法 §17 + §18 + §58",
+            // 模拟扩 keyword 后的 food_function_claim 完整 keywords 子集
+            keywords = listOf("蜂胶", "蜂王浆", "灵芝孢子", "提高人体免疫力", "改善营养"),
+            severity = Severity.Violation,
+        )
+        val m = AdSignageRuleMatcher(listOf(fn))
+
+        // (a) "蜂胶" 单独出现 — 配料表场景
+        val hitsFengjiao = m.scan("本品含蜂胶成分,适用人群广")
+        assertEquals("'蜂胶' 必须命中 food_function_claim(#19 配料表关键词)", 1, hitsFengjiao.size)
+        assertEquals("蜂胶", hitsFengjiao[0].matchedText)
+
+        // (b) "蜂王浆冻干粉" — #19 audit 描述实际 OCR 文本形式
+        val hitsFwj = m.scan("配料:蜂王浆冻干粉、蜂胶、蜂蜜")
+        val ruleIds = hitsFwj.map { it.ruleId }.toSet()
+        assertTrue(
+            "复合配料表文本应至少命中 food_function_claim",
+            "ad_signage_signage_food_function_claim" in ruleIds,
+        )
+        // 应至少命中 蜂胶 + 蜂王浆 两次(去重后 2 个 unique keyword)
+        assertEquals(
+            "复合文本应命中蜂胶 + 蜂王浆 两条 keyword(去重 2)",
+            2, hitsFwj.size,
+        )
+
+        // (c) "灵芝孢子" — 保健品场景
+        val hitsLz = m.scan("破壁灵芝孢子粉 增强免疫")
+        assertEquals("'灵芝孢子' 必须命中 food_function_claim", 1, hitsLz.size)
+        assertEquals("灵芝孢子", hitsLz[0].matchedText)
+    }
+
+    @Test fun scan_diseasePrevention_firesOnJiangXueTangAndJiangSanGao() {
+        // 真实 case #48 (66-fixture / audit_gaps.md GT 标注):
+        //   - GT 第 2 条规则 = ad_signage_signage_disease_prevention
+        //   - audit 期望此规则命中「降三高/降血糖/降血脂/降血压」类具体疾病治疗承诺
+        //   - 旧 keywords 没有这 4 个具体承诺 → matcher 命中不到 disease_prevention
+        // 修复:disease_prevention keywords 加 降血糖 / 降三高 / 降血压 / 降血脂。
+        val dp = AdSignageRule(
+            id = "ad_signage_signage_disease_prevention",
+            category = "signage",
+            regulation = "广告法 §17 + §58",
+            // 模拟扩 keyword 后的 disease_prevention 完整 keywords 子集
+            keywords = listOf("降血糖", "降三高", "降血压", "降血脂", "治疗", "治愈"),
+            severity = Severity.Warning,
+        )
+        val m = AdSignageRuleMatcher(listOf(dp))
+
+        // (a) 单独 keyword 命中
+        assertEquals(1, m.scan("本品可降血糖 适用三高人群").size)
+        assertEquals(1, m.scan("降三高保健品 调节血脂血压").size)
+        assertEquals(1, m.scan("高血压人群可降血压").size)
+        assertEquals(1, m.scan("降血脂 软化血管").size)
+
+        // (b) #48 fixture 风格的复合文本
+        //   OCR 文本可能为「...血压血糖血脂降下去...」(audit 描述) 或含「降三高」等
+        val hitsCompound = m.scan("本品降三高 适合血压血糖血脂降下去人群")
+        assertEquals(
+            "复合文本应命中 disease_prevention(降三高 + 降血糖 + 降血压 + 降血脂 多 keyword)",
+            hitsCompound.size >= 1, true,
+        )
+        val ruleIds = hitsCompound.map { it.ruleId }.toSet()
+        assertEquals(
+            "至少包含 disease_prevention",
+            setOf("ad_signage_signage_disease_prevention"),
+            ruleIds,
+        )
+    }
 }
