@@ -204,16 +204,21 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
     3. POST 重写后的 JSON
   - 客户端 cert-pin gate 不变(`signerCertSha256: 4a21f4...3043`),只是 APK 下载路径绕过 broken 路由
   - 源码 `app/build/outputs/apk/release/vision-latest.json` 仍含原 `releases/download/...` URL(`generateVisionLatestJson` 的 hardcoded 模板),下一版构建会重生成,无需手动维护
-- **Gitea 1.22.x 全面 broken(`releases/download/<tag>/<filename>` 对 `.json` 也 404,cascade delete attachment) — 2026-08-29 v0.1.37 release smoke 实证**: v0.1.31 那次的"只 .apk 404 + .json 200"假设已失效。当前 Gitea 实例:
-  - **`releases/download/<tag>/<filename>` 对 .apk 和 .json 都 404**(v0.1.31 时 .json 还能 200,2026-08-29 实测已经 broken)
-  - **release-attached `/attachments/<uuid>` 404**(orphaned 状态才 200 OK)
-  - **DELETE release 会 cascade 物理删除 attachment**(所以 v0.1.31 那种"删 release 让 attachment orphaned"的 workaround 在本实例已失效)
-  - **`/raw/branch/...`、`/media/branch/...`、`/src/branch/...` 全 404**(Gitea raw service 在本实例被关)
-  - **`/api/v1/.../git/blobs/<sha>` 200 但需 Bearer token**(client 无 token 路径)
-  - **GitHub PAT 401 Bad credentials**(无法 mirror 到 GitHub Releases)
-  - **客户端影响**: in-app update **完全暂停** — JSON 拉不到 → version check Failed → 不推送。APK attachment `c06d767b-...` (orphaned) 200 OK 可用户手动下载
-  - **临时方案**: v0.1.37 release commit `c48ea95` + git tag `v0.1.37` + ref `refs/tags/latest` 已 force-push 双远端,APK 实质可用。in-app update 推送等 server bug 修复或 nginx reverse proxy rewrite(候选路径见 [docs/knowledge/gitea-1.22x-release-route-broken.md](docs/knowledge/gitea-1.22x-release-route-broken.md) §4)
-  - **本仓库代码无需改** — 等服务端 reverse proxy 改写 `/releases/download/<tag>/<filename>` → `/attachments/<uuid>` 后,client `BuildConfig.UPDATE_JSON_URL` URL 模板不变,自动恢复
+- **Gitea 1.22.x `releases/download/<tag>/<filename>` 对 `.apk` 文件名 404**:
+  - 症状:`releases/download/latest/icespiritai-vision.apk` 一直返 `HTTP 404`,但同 release tag 下 `releases/download/latest/vision-latest.json` 正常 200。改文件名(`xxx.zip` / `xxx-update.apk`)同样 404 → 不是 filename pattern 问题,是 Gitea 服务端路由 bug,触发表决于 release tag (`latest` 字面量也可能参与)。底层 attachment `GET /attachments/<uuid>` 200 OK,Content-Length / Disposition 完全正确
+  - 客户端影响: in-app update 拉 JSON 时看到新版本 → 点下载按钮 → APK URL 404 → 下载失败。原因与 v0.1.30 imageSize 透传修复无关,纯 Gitea 服务端行为
+  - **修复路径**(`app/build.gradle.kts` 的 `uploadVisionReleaseToGitea` 3a/3b/3c 步):
+    1. POST APK, 从 response `{"id":260,...,"uuid":"39c59ab3-..."}` 抓出 attachment UUID
+    2. 把 staged `vision-latest.json` 的 `apkUrl` 从 `releases/download/latest/icespiritai-vision.apk` 改成 `http://125.211.45.14:3000/attachments/<uuid>`
+    3. POST 重写后的 JSON
+  - 客户端 cert-pin gate 不变(`signerCertSha256: 4a21f4...3043`),只是 APK 下载路径绕过 broken 路由
+  - 源码 `app/build/outputs/apk/release/vision-latest.json` 仍含原 `releases/download/...` URL(`generateVisionLatestJson` 的 hardcoded 模板),下一版构建会重生成,无需手动维护
+- **两个 Gitea repo,功能分离(2026-08-29 误诊修正)**:之前误把代码仓库当发布仓库,导致误诊"vision-latest.json download 404"。真相:
+  - **代码仓库** `giteaadmin/IceSpiritAI_Vision`(git remote gitea) — release route **broken**(`/releases/download/<tag>/` 对 .apk + .json 都 404),但客户端从不上这里下载,**不影响 in-app update**
+  - **发布仓库** `giteaadmin/vision-app`(`app/build.gradle.kts:460 giteaRepo = "giteaadmin/vision-app"` + `BuildConfig.UPDATE_JSON_URL`)— **完全健康**,release id=187 + 3 assets 全 200 OK。**client in-app update 完全工作**
+  - 验证(2026-08-29):`curl http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/vision-latest.json` → 200 + versionCode=37 + signerCertSha256=4a21f4...3043 ✓
+  - 验证(2026-08-29):`curl http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/icespiritai-vision.apk` → 200 + Content-Length=59124492(与本地 APK size 完全一致) ✓
+  - 详细证据 + nginx reverse proxy 候选配置见 [docs/knowledge/gitea-1.22x-release-route-broken.md](docs/knowledge/gitea-1.22x-release-route-broken.md)(候选配置在 §5,当前**不需要部署**,因为发布仓库健康)
 
 ## 文档索引
 

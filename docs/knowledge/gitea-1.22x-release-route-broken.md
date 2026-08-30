@@ -1,88 +1,133 @@
-# Gitea 1.22.x Release Route 全面 Broken — 2026-08-29
+# Gitea 1.22.x Release Route Broken — 2026-08-29 (v0.1.37)
 
 > **Date**: 2026-08-29 (v0.1.37 release smoke 实证)
-> **Affected**: in-app update JSON 下载路径 (`releases/download/<tag>/<filename>` 对 `.json` 也 404)
-> **Workaround (APK-only)**: 已知 `/attachments/<uuid>` 对 orphaned attachment 200 OK(详 CLAUDE.md §Gitea 1.22.x `releases/download/<tag>/<filename>` 段)
-> **JSON workaround**: **无** — 当前 Gitea 1.22.x 实例下,vision-latest.json 无任何客户端无 token 可访问的 download path
+> **Affected repo**: `giteaadmin/IceSpiritAI_Vision`(代码仓库) — `/releases/download/<tag>/<filename>` 对 .apk + .json 都 404
+> **Client 发布目标(repo)**: `giteaadmin/vision-app` — **完全健康**,200 OK,client in-app update 链路 **正常工作**
+> **结论**: client in-app update 链路不受影响,这次误诊的根本原因是把代码仓库当成发布仓库了
+> **状态**: v0.1.37 release **完全 ready 推送**
 
-## §1 症状
+## §1 真相:两个 Gitea repo,功能分离
 
-### §1.1 v0.1.37 release smoke 实测路径
+| Repo | 用途 | URL | 状态 |
+|---|---|---|---|
+| `giteaadmin/IceSpiritAI_Vision` | **代码仓库**(git remote gitea) | `http://125.211.45.14:3000/giteaadmin/IceSpiritAI_Vision` | `releases/download/<tag>/<filename>` 路由 404 |
+| `giteaadmin/vision-app` | **发布仓库**(client in-app update 终点,build.gradle.kts `giteaRepo` hardcoded) | `http://125.211.45.14:3000/giteaadmin/vision-app` | 完全健康,release 187 + 3 assets 全 200 |
 
-| 路径 | 状态 | 说明 |
-|---|---|---|
-| `/releases/download/latest/vision-latest.json` | **404 Not Found** | 客户端 in-app update 拉 JSON 的路径,完全 broken |
-| `/releases/download/latest/icespiritai-vision.apk` | 404 Not Found | v0.1.31 已知的 APK broken route(同 bug)|
-| `/releases/download/v0.1.37/vision-latest.json` | 404 Not Found | 用真实 tag 也不行 |
-| `/attachments/<uuid>` (orphaned, c06d767b APK) | **200 OK** | v0.1.31 workaround,只有 orphaned attachment 服务 |
-| `/attachments/<uuid>` (release-attached, ac186e7d JSON) | **404 Not Found** | release 还存在时,这个路径不服务(新建 attachment 验证)|
-| `/api/v1/repos/.../git/blobs/<sha>` | 200 OK,但**需 Bearer token** | 无法让 client 无凭据拉取 |
-| `/api/v1/repos/.../contents/<path>?ref=<branch>` | 200 OK + JSON (含 base64 content + download_url),但需 token | 同上 |
-| `/<user>/<repo>/raw/branch/<branch>/<path>` | 404 | Gitea raw service 在此实例被关 |
-| `/<user>/<repo>/media/branch/<branch>/<path>` | 404 | 同 raw |
-| `/<user>/<repo>/raw/<branch>/<path>` | 404 | 同 raw |
-| `/<user>/<repo>/src/branch/<branch>/<path>` | 404 | 同 raw |
+`app/build.gradle.kts:459-460`:
+```kotlin
+val giteaBaseUrl = "http://125.211.45.14:3000"
+val giteaRepo = "giteaadmin/vision-app"   // ← 发布仓库,不是 IceSpiritAI_Vision
+```
 
-### §1.2 Gitea attachment 服务的隐藏机制(实证推断)
+`app/build.gradle.kts:87-88` (BuildConfig,client hardcoded):
+```kotlin
+buildConfigField("String", "UPDATE_JSON_URL",
+    "\"http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/vision-latest.json\"")
+```
 
-实测 release-attached attachment 行为:
+**所以 client in-app update 走的是 vision-app**,不走 IceSpiritAI_Vision。IceSpiritAI_Vision broken 不影响客户端。
 
-1. **release 存在 + attachment 上传成功**: `GET /attachments/<uuid>` → **404**;`GET /releases/download/<tag>/<filename>` → **404**
-2. **release 删除 (DELETE /api/.../releases/{id})** → **cascade delete 物理删除 attachment**(`/attachments/<uuid>` 后续永远 404)
-3. **orphaned attachment(从更早某个已被清理的 release 留下)**: `/attachments/<uuid>` → **200 OK**
+## §2 v0.1.37 release 端到端 smoke (2026-08-29)
 
-这意味着 v0.1.31 的"orphaned attachment workaround"只对**更早期 release 删除时未 cascade 删 attachment 的实例**有效。本实例 Gitea 1.22.x 已经 cascade,所以**没有任何当前 release-attached asset 可被客户端通过 HTTP GET 拉取**。
+### §2.1 客户端 UPDATE_JSON_URL — 200 OK ✓
 
-### §1.3 影响
+```bash
+$ curl -s http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/vision-latest.json
+{
+  "versionCode": 37,
+  "versionName": "0.1.37",
+  "apkUrl": "http://125.211.45.14:3000/attachments/c06d767b-7d21-4a46-a916-612d3815141f",
+  "apkSize": 59124492,
+  "apkSha256": "16cabdc7de69e8b3...",
+  "signerCertSha256": "4a21f417782d561dccd31ff0a10e4d64...",
+  ...
+}
+```
 
-- **APK 下载**: 仍可走 `c06d767b` (orphaned),这是上一轮 build task 上传留下的;**这次新建的 attachment 都 broken**
-- **vision-latest.json 下载**: **完全 broken** — 客户端 in-app update 触发后 GET 拿不到 JSON,version check 视为 Failed.NoNetwork / ServerError,不会推送 update
-- **当前 client 行为**: 用户能看到 APK build 完成 + 资产 staged 到 Gitea + git tag pushed,但 in-app update **暂停推送** 直到 server bug 修
+### §2.2 APK 下载 — 200 OK,Content-Length 匹配 ✓
 
-## §2 已尝试的 workaround 路径(全部失败)
+```bash
+$ curl -sI http://125.211.45.14:3000/attachments/c06d767b-7d21-4a46-a916-612d3815141f
+HTTP/1.1 200 OK
+Content-Length: 59124492
+Content-Disposition: inline; filename="icespiritai-vision.apk"
+```
 
-| 尝试 | 步骤 | 结果 |
-|---|---|---|
-| 重建 release 并上传 JSON | POST release id=288, POST vision-latest.json 拿 uuid=ac186e7d | `/attachments/ac186e7d` 404(就算 release 存在)|
-| Delete release 触发 cascade orphan | DELETE /releases/288 | attachment **被物理删除**(cascade delete),`/attachments/ac186e7d` 永远 404 |
-| 用真实 tag (v0.1.37) 而非 latest | `releases/download/v0.1.37/vision-latest.json` | 同样 404(说明 broken 是 release download 路由整体,不是 latest 字面量)|
-| 让 JSON 走 git raw | commit JSON 到 main 分支 + `raw/branch/main/<path>` | Gitea raw service 在此实例 **关掉**,所有 raw path 返 404 |
-| 让 JSON 走 GitHub releases | GitHub PAT 已存在,但 401 Bad credentials(GitHub token 失效)| 无法发布到 GitHub |
-| 让 client 走 Gitea API + inline token | `URL(jsonUrl).openConnection()` + `?access_token=...` | token 暴露在 APK,unzip 即可提取,**不可接受** |
+local APK size = 59124492 bytes,remote Content-Length = 59124492 bytes,**完全一致**。
 
-## §3 临时方案 (v0.1.37)
+### §2.3 Gitea release 187 assets 列表(vision-app repo)
 
-**接受 v0.1.37 in-app update 推送暂停**:
+| Asset | Size | UUID | Browser URL | 状态 |
+|---|---:|---|---|---|
+| `icespiritai-vision.apk` | 59124492 | c06d767b-... | `releases/download/latest/icespiritai-vision.apk` (或 `/attachments/<uuid>`) | 200 OK ✓ |
+| `vision-latest.json` | 4086 | e7d69bec-... | `releases/download/latest/vision-latest.json` | 200 OK ✓ |
+| `icespiritai-vision-update.apk` | 16919936 | 23a672c7-... | (旧版本残留) | (历史) |
 
-- ✅ v0.1.37 APK 已 build + signed + 59124492 bytes + sha256 16cabdc7
-- ✅ APK asset: `http://125.211.45.14:3000/attachments/c06d767b-7d21-4a46-a916-612d3815141f` (200 OK,孤儿 attachment)
-- ✅ Gitea git tag `v0.1.37` + ref `refs/tags/latest` 已 force-push 到 c48ea95 commit
-- ✅ 双远端(gitea + github)git history 对齐
-- ❌ **客户端 in-app update JSON 下载路径 broken** — 用户不会收到 v0.1.37 自动推送
-- ⚠️ 用户可手动从 Gitea 网页(`http://125.211.45.14:3000/giteaadmin/IceSpiritAI_Vision/releases/tag/v0.1.37` 或 `latest`)点击附件按钮下载 APK
+## §3 之前误诊的原因
 
-## §4 永久修复路径 (服务端,非本仓库)
+之前的诊断(commit `8920b4a` 包含的 `docs/knowledge/gitea-1.22x-release-route-broken.md` 初版)错误地把代码仓库 `IceSpiritAI_Vision` 的 broken 状态当作发布仓库的 broken:
 
-Gitea 服务端 1.22.x bug,本仓库代码无法规避。3 个候选路径:
+- curl `GET /api/v1/repos/giteaadmin/IceSpiritAI_Vision/releases/187` → 404(因为 vision-app repo 的 release id=187 不在 IceSpiritAI_Vision repo)
+- curl `GET /releases/download/latest/vision-latest.json` 用 IceSpiritAI_Vision repo path → 404
+- DELETE release 288(在 IceSpiritAI_Vision repo 创建的临时 release) → cascade delete attachment
 
-1. **升级 Gitea 到 ≥1.23.x**(假设 upstream 已修 release route)
-2. **改用 GitHub Releases 作为主要分发**(需有效 GitHub PAT + main 仓库设成 public)
-3. **写一个 reverse proxy**(nginx / caddy)在 `/releases/download/...` 上 rewrite 到 `/attachments/<uuid>`,这样客户端 `releases/download/<tag>/<filename>` URL 模式不变,proxy 后端走附件 uuid
+**正确做法**:发布仓库是 vision-app,所有 client-facing URL 都用 `/giteaadmin/vision-app/...` 路径。
 
-候选 3 最稳:不依赖上游版本,不改 client URL 模板。但需要 server admin 介入。
+## §4 修复
 
-## §5 客户端修复路径 (本仓库,等 server 修好后再做)
+### §4.1 代码仓库 broken(可忽略)
 
-如果服务端采用方案 3 (reverse proxy 改写),本仓库**无需改**: client `BuildConfig.UPDATE_JSON_URL` 保持 `releases/download/latest/vision-latest.json`,reverse proxy 转写到 `/attachments/<uuid>`。
+IceSpiritAI_Vision repo release download 路由 broken 是 Gitea server bug,**不影响 client in-app update**。不修。
 
-如果服务端采用方案 1 (Gitea 升级),同样无需改 client。
+如果未来需要修复 IceSpiritAI_Vision repo 路由(比如做代码 release 用),候选路径:
+- nginx reverse proxy rewrite(详 §5)
+- 或等服务端 Gitea 升级
 
-如果服务端采用方案 2 (GitHub Releases),需改:
-- `app/build.gradle.kts:87-88` `UPDATE_JSON_URL` 改成 GitHub release download URL 模式
-- 重 build + 重 release APK + 重 push git tag
+### §4.2 已修的诊断错误
+
+- `docs/knowledge/gitea-1.22x-release-route-broken.md`(本文) — 改写,说明 vision-app repo 健康
+- `CLAUDE.md §发布流水线踩坑` — caveat 段重写,说明 broken repo 是 IceSpiritAI_Vision(代码),不影响 client(vision-app)
+- `memory/followup-gitea-1.22x-route-broken.md` — 同步更新
+
+## §5 nginx reverse proxy 候选(给未来)
+
+如果想修复 IceSpiritAI_Vision repo(代码仓库)的 release route(可选,例如未来需要从代码仓库直接 serve release):
+
+```nginx
+# /etc/nginx/conf.d/gitea-icevision-reverse-proxy.conf
+map $request_uri $attachment_uuid {
+    default "";
+    include /etc/nginx/icevision-release-map.conf;
+}
+
+server {
+    listen 80;
+    server_name 125.211.45.14;
+
+    location ~ ^/giteaadmin/IceSpiritAI_Vision/releases/download/(?<tag>[^/]+)/(?<filename>[^/]+)$ {
+        set $uuid $attachment_uuid;
+        if ($uuid = "") {
+            return 502 "release map not configured for $filename";
+        }
+        proxy_pass http://125.211.45.14:3000/attachments/$uuid;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location / {
+        proxy_pass http://125.211.45.14:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+**当前不需要部署此 proxy**,因为 client in-app update 完全工作(vision-app repo 健康)。
 
 ## §6 Hygiene
 
-- 本文档**不动 client 代码**,只记录 Gitea 服务端 broken 行为 + workaround 边界
-- v0.1.37 release commit `c48ea95` 已包含完整 P0-P3 改动(GitHub #2 同 commit)
-- 当前 APK / git tag / knowledge doc 状态自洽,v0.1.37 实质可发版(用户手动安装),只是 in-app update 推送链路暂时断
+- v0.1.37 release **完全 ready 推送**
+- in-app update 链路完全工作
+- 误诊修正文档已 commit(后续 commit)
+- 无 nginx 反代部署需求
+- 双远端(gitea + github)git history 对齐,v0.1.37 tag 在 vision-app repo release assets 上对应 c48ea95 commit 的 APK + JSON
