@@ -27,18 +27,18 @@
 |---|---|
 | UI tab 渲染 | [RuleTabBar.kt](app/src/main/java/com/icespiritai/offline/ui/home/RuleTabBar.kt) 内部 `visibleTabs = listOf(RuleTab.AdSignage)`,`TabRow` 只渲染一项;`RuleTab.FoodLabeling` enum 项保留 |
 | ViewModel 路由 | [IceSpiritVisionViewModel.kt](app/src/main/java/com/icespiritai/offline/IceSpiritVisionViewModel.kt) `matcherFor(tab)` 双分支保留,`FoodLabelRuleMatcher` 仍可路由;UI 不暴露入口即可 |
-| 规则 + 加载器 | `AdSignageRuleLoader` + `FoodLabelRuleLoader` 双装载入口保留;`food_label_rules.json`(66 条 / v4)+ `ad_signage_rules.json`(118 条 / v5)均随 APK 出 |
+| 规则 + 加载器 | `AdSignageRuleLoader` + `FoodLabelRuleLoader` 双装载入口保留;`food_label_rules.json`(66 条 / v4)+ `ad_signage_rules.json`(120 条 / v5)均随 APK 出 |
 | 知识库 | [知识库/](知识库/) 双域 markdown 完整保留;`广告业务/` 是当前打磨中的成熟参考,`食品标识/` 是待后续套用的对象 |
 | 测试 | [FoodLabelRuleMatcherTest.kt](app/src/test/java/com/icespiritai/offline/rules/FoodLabelRuleMatcherTest.kt) + [IceSpiritVisionViewModelTabTest.kt](app/src/test/java/com/icespiritai/offline/IceSpiritVisionViewModelTabTest.kt) 双 tab 路由断言保留 |
 | 打磨策略 | ad_signage_rules.json 关键词命中 / 严重度分级 / category 显示 / 证据包导出全部以"可复制到下一个视觉判别域"为标尺优化,达标后再以同样模式启用 FoodLabeling tab |
 
 **为什么保留 FoodLabeling 代码路径不删**:FoodLabeling 是「广告招牌模式 → 其他视觉判别域」的可复制模板,把 `FoodLabelRuleMatcher` + domain 字段 + 知识库 + 类别显示一并删除等于砍掉这条扩展路。`RuleTabBar.kt` 顶部注释明示"恢复时把 `visibleTabs` 改回 `RuleTab.entries.toList()` 即可"。
 
-### Tab → 初始页功能规范(待实现,2026-08-26 立项)
+### Tab → 初始页功能规范(✅ 已实现,7d5485c,2026-08-29)
 
 **用户场景**:识别完一张图片后(state = `Complete`,ResultPanel + 高亮叠加显示中),用户想「从头再来一次」(换张图 / 再拍一张),目前必须手动点右下角的相机/相册按钮。期望:**再次点击「广告招牌」tab**(已经是选中态)直接回到 Idle 初始页**(清空 pendingUri + state 清成 Idle,无需用户再去点拍照/选图按钮之外的"返回"入口)。
 
-**目前行为**(2026-08-26):`IceSpiritVisionViewModel.setTab(tab)` 在 tab 没变时返回 `false`,即"已是当前 tab 不动作"。`HomeScreen` 见到 false 也不调 `reset()`,所以「识别完成 → 再点 tab」是空响应。要落地得改 setTab 行为:
+**实现行为**(2026-08-29 落地,3-state 契约):
 
 - 当 `selectedTab == tab` **且** `state !is Loading` 时,`setTab` 视为「回到初始」调用 `reset()`(等于把 selectedTab 复位不变,但 state 走回 Idle)
 - 当 `selectedTab == tab` **且** `state is Loading` 时,保持原 no-op(防误触打断正在跑的 OCR / 规则扫描)
@@ -46,7 +46,7 @@
 
 **为什么不绑去拍照/相册按钮**:相机/相册按钮本身有"开始新一次分析"的语义(自动调 `setPendingUri + startAnalysis`),不适合复用为"回到初始"。Tab 点击是更纯净的「清空」入口。
 
-**测试锚点**:`IceSpiritVisionViewModelTabTest.kt` 加一组 `setTab` 行为契约 — (a) tab 不变 + state=Complete → reset();(b) tab 不变 + state=Loading → no-op;(c) tab 切换 → 老路径(若 FoodLabeling 解锁后启用)。
+**测试锚点**:`IceSpiritVisionViewModelTabTest.kt` 已落 3 个 setTab 契约测试 — (a) `setTab_sameTab_nonLoadingState_resetsToIdle`;(b) `setTab_sameTab_loadingState_isNoOp`;(c) `setTab_tabSwitch_doesNotReset`。Loading 路径用反射设 `_state=Loading` 验证不被误清,稳定。
 
 ## modelProfile 系统
 
@@ -55,7 +55,7 @@ Gradle property `modelProfile` 控制当前构建启用哪个模型配置:
 | Profile | 状态 | 含义 |
 | --- | --- | --- |
 | `shell` | **默认 / 首版** | 仅展示骨架;UI 可跑,Fake OCR + slim rules,APK 不带模型 |
-| `ice_ocr_rules` | Phase 1(shipped) | **PP-OCRv6_small**(2026-08-20 升级,rec dict 18708 条)经 PaddleOCR v3.7.0 SDK(走 ONNX Runtime + OpenCV)+ AdSignageRuleMatcher + FoodLabelRuleMatcher 已接入;rules JSON 从 `assets/rules/ad_signage_rules.json`(广告招牌 121 条 / v5,含 2026-08-27 新增 `ad_signage_signage_food_safety_implication` 暗示安全性规则)与 `assets/rules/food_label_rules.json`(食品标识 66 条 / v4)出;ONNX 模型(bundled in APK)在 `assets/models/{det,rec}/inference.onnx` + `inference.yml` |
+| `ice_ocr_rules` | Phase 1(shipped) | **PP-OCRv6_small**(2026-08-20 升级,rec dict 18708 条)经 PaddleOCR v3.7.0 SDK(走 ONNX Runtime + OpenCV)+ AdSignageRuleMatcher + FoodLabelRuleMatcher 已接入;rules JSON 从 `assets/rules/ad_signage_rules.json`(广告招牌 120 条 / v5,含 2026-08-27 新增 `ad_signage_signage_food_safety_implication` 暗示安全性规则)与 `assets/rules/food_label_rules.json`(食品标识 66 条 / v4)出;ONNX 模型(bundled in APK)在 `assets/models/{det,rec}/inference.onnx` + `inference.yml` |
 | `ice_vision` | 未来 | 多标签 + 法规依据的端侧 VLM |
 
 切换方式:`./gradlew assembleDebug -PmodelProfile=<name>`
@@ -101,7 +101,7 @@ Phase 1 走 OCR + 规则库路线(**PP-OCRv6_small** + PaddleOCR 官方 SDK v3.7
 # 默认(骨架 APK,Fake OCR + slim rules)
 ./gradlew.bat assembleDebug -PmodelProfile=shell
 
-# Phase 1 shipped(PP-OCRv6_small + PaddleOCR v3.7.0 + 广告招牌 121 条 / 食品标识 66 条 + ONNX 模型)
+# Phase 1 shipped(PP-OCRv6_small + PaddleOCR v3.7.0 + 广告招牌 120 条 / 食品标识 66 条 + ONNX 模型)
 ./gradlew.bat assembleDebug -PmodelProfile=ice_ocr_rules
 
 # 单元测试 / Lint
@@ -195,15 +195,6 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 - **2026-08-26 v0.1.31 — Gitea 1.22.x `releases/download/latest/<file>.apk` 返 404**:JSON 200 但 APK URL 404,改名也不解决。workaround:从 POST response 抓 `uuid`,把 `apkUrl` 改成 `http://125.211.45.14:3000/attachments/<uuid>`,cert-pin gate 不变。详 → `icevision-release` "Gitea 1.22.x APK 404 workaround"段
 - **Cert-pin 锚点**:`signerCertSha256` 必须 = `4a21f4...3043`。release 凭据在 `~/.gradle/gradle.properties`(gitignored),Gitea PAT 在 `gradle.token.properties`(gitignored,见 `.token.properties.example` 模板)。stage 路径:`build/generated/release-staging/`(per memory `feedback-no-release-history-archive.md`,已不再写 `发布版历史存档/`)
 
-- **Gitea 1.22.x `releases/download/<tag>/<filename>` 对 `.apk` 文件名 404**:
-  - 症状:`releases/download/latest/icespiritai-vision.apk` 一直返 `HTTP 404`,但同 release tag 下 `releases/download/latest/vision-latest.json` 正常 200。改文件名(`xxx.zip` / `xxx-update.apk`)同样 404 → 不是 filename pattern 问题,是 Gitea 服务端路由 bug,触发表决于 release tag (`latest` 字面量也可能参与)。底层 attachment `GET /attachments/<uuid>` 200 OK,Content-Length / Disposition 完全正确
-  - 客户端影响: in-app update 拉 JSON 时看到新版本 → 点下载按钮 → APK URL 404 → 下载失败。原因与 v0.1.30 imageSize 透传修复无关,纯 Gitea 服务端行为
-  - **修复路径**(`app/build.gradle.kts` 的 `uploadVisionReleaseToGitea` 3a/3b/3c 步):
-    1. POST APK, 从 response `{"id":260,...,"uuid":"39c59ab3-..."}` 抓出 attachment UUID
-    2. 把 staged `vision-latest.json` 的 `apkUrl` 从 `releases/download/latest/icespiritai-vision.apk` 改成 `http://125.211.45.14:3000/attachments/<uuid>`
-    3. POST 重写后的 JSON
-  - 客户端 cert-pin gate 不变(`signerCertSha256: 4a21f4...3043`),只是 APK 下载路径绕过 broken 路由
-  - 源码 `app/build/outputs/apk/release/vision-latest.json` 仍含原 `releases/download/...` URL(`generateVisionLatestJson` 的 hardcoded 模板),下一版构建会重生成,无需手动维护
 - **Gitea 1.22.x `releases/download/<tag>/<filename>` 对 `.apk` 文件名 404**:
   - 症状:`releases/download/latest/icespiritai-vision.apk` 一直返 `HTTP 404`,但同 release tag 下 `releases/download/latest/vision-latest.json` 正常 200。改文件名(`xxx.zip` / `xxx-update.apk`)同样 404 → 不是 filename pattern 问题,是 Gitea 服务端路由 bug,触发表决于 release tag (`latest` 字面量也可能参与)。底层 attachment `GET /attachments/<uuid>` 200 OK,Content-Length / Disposition 完全正确
   - 客户端影响: in-app update 拉 JSON 时看到新版本 → 点下载按钮 → APK URL 404 → 下载失败。原因与 v0.1.30 imageSize 透传修复无关,纯 Gitea 服务端行为
