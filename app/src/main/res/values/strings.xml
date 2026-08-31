@@ -48,7 +48,7 @@
     <string name="status_error_banner">分析失败</string>
     <string name="ocr_text_label">识别文字: %1$s</string>
 
-    <string name="action_export">导出取证包</string>
+    <string name="action_export">导出</string>
 
     <string name="settings_title">设置</string>
     <string name="settings_appearance">外观</string>
@@ -68,6 +68,7 @@
 
     <string name="image_preview_desc">待分析图片</string>
     <string name="capture_button_desc">拍照</string>
+    <string name="export_button_desc">导出取证包</string>
     <string name="select_image_button_desc">从相册选图</string>
     <string name="settings_button_desc">设置</string>
     <string name="tab_switch_desc">切换业务模式</string>

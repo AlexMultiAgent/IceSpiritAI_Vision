@@ -2,6 +2,7 @@ package com.icespiritai.offline.ui.home
 
 import com.icespiritai.offline.domain.RuleHit
 import com.icespiritai.offline.domain.Severity
+import com.icespiritai.offline.domain.severityRank
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull

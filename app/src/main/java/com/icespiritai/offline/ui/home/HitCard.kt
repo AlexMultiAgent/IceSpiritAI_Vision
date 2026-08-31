@@ -89,7 +89,12 @@ fun HitCard(hit: RuleHit, modifier: Modifier = Modifier) {
             ) {
                 Text(
                     text = "\"${hit.matchedText}\"",
-                    style = MaterialTheme.typography.headlineSmall,
+                    // v0.1.41: titleLarge (was headlineSmall). The matched
+                    // text was visually overpowering the rest of the card —
+                    // titleLarge still reads slightly larger than the
+                    // "广告招牌" tab label (titleMedium) but stops
+                    // competing with the regulation line.
+                    style = MaterialTheme.typography.titleLarge,
                     color = onContainer,
                     modifier = Modifier.weight(1f, fill = true),
                 )

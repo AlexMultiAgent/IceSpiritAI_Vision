@@ -1,5 +1,19 @@
 # 用户更新日志
 
+## v0.1.41 · 2026-08-31
+
+- **UI 微调(广告招牌 tab,用户反馈 6 点 v0.1.40 复盘)**:
+  - **① KPI bar 提示由长按改为点击**: `StatusBanner` 3 个 KpiCell 的 `TooltipBox` 默认行为是长按,大部分用户试不到。改用 `Modifier.clickable { tooltipState.show()/dismiss() }` 显式点击切换,persistent tooltip(用户不点不会自己消失,便于读完再点掉)。3 个桶语义(违规 = 广告法明文禁止的违规内容 / 警告 = 需结合语境判断的可疑话术或缺失披露 / 信息 = 广告含有合规资质 / 未成年相关等关键词需另行核实)现在点击即可弹出
+  - **② 导出取证包按钮搬到选图 + 拍照中间**: `CaptureBar` 由 2 按钮(选图 / 拍照)改为按命中数动态 2 / 3 按钮:无命中 = 选图 + 拍照各占半宽;有命中 = 选图 / 导出 / 拍照三等分(`Modifier.weight(1f)` 各 1/3)。3 按钮并排更紧凑,「导出」靠近拍照按钮也符合主操作流(识别完顺手导出)。当 `state is Loading` 时 `enabled = false` 同步禁掉拍照与导出,避免半路点导出踩到 `Complete.report == null`
+  - **③ 按钮文字由「导出取证包」缩为「导出」**: 用户反馈「取证包」在 1/3 宽 + 图标 + 中文环境下显挤。visible label 改 2 字 `导出`,图标保留 `Icons.Default.Save`(存盘语义);TalkBack 描述走单独 a11y string `export_button_desc = "导出取证包"`(`Modifier.semantics { contentDescription = ... }`),无障碍读全词不变
+  - **④ 导出按钮仅在有命中时显示**: 与②联动 —— `CaptureBar(hasHits: Boolean)`,`hasHits = hits.isNotEmpty()`。0 命中时整个 export 中间槽位消失,不显示禁用的灰按钮、不留空位,布局干净
+  - **⑤ 命中卡片字号降一档**: 用户反馈 v0.1.40 `HitCard` matched text `"增强免疫力"` 用 `headlineSmall`(24sp)偏大、压住下面的法规依据。改 `titleLarge`(22sp),仍略大于「广告招牌」tab 标签(`titleMedium` 16sp),不再与法规行抢戏
+  - **⑥ Viewer 文字列表命中行 + 命中子串高亮**: 双击图片进入 Viewer 后,底部 OCR 文字列表每行若命中规则 → **整行背景染上该行最严重桶的 container color**(与图片红/琥珀/蓝框对应),行内**命中子串**再用 `SpanStyle(background = sev.container(severity))` 在原文字上打底色,直接告诉用户「是哪几个字触发规则」。`worstSeverityForLine` 走 `severityRank`(domain 层 helper,Violation > Warning > Info,Positive 永远不进 rank)与 `TextNormalizer.forMatching` 全文包含检查,与 `HighlightOverlay` 的图片红框**完全对齐**(同一份 hits、同一个严重度排序)—— 不存在「图上框在 A 行 / 列表染色在 B 行」的 drift
+- **代码整理**:
+  - `severityRank` 从 `ui/home/HomeScreen.kt` 移到 `domain/AnalysisState.kt`(top-level function),`ui/viewer/ViewerTextList.kt` 与 `ui/home/HomeScreen.kt` 都从 domain 引用,避免 ui.home → ui.viewer 反向依赖。`HomeScreenSeverityRankingTest` 同步更新 import,契约(pin Violation=3 / Warning=2 / Info=1 / Positive=0)不变
+  - `ViewerTextList` 增加 `hits: List<RuleHit>` 参数(`ViewerScreen` 调用点同步更新),`hitsCount` 仍走单独参数(避免每次都 `hits.size` 多算一遍)
+- **测试覆盖**: `testDebugUnitTest -PmodelProfile=shell` 全绿(下文),新增 / 调整 8 个测试:CaptureBar 拆分 `hasHits=true / false` 两套 2 按钮与 3 按钮断言(原 4 个 2-button-only 测试改用新签名 + 新增 3 个 hasHits 切换断言);ViewerTextList 新增 6 个(`worstSeverityForLine` 严重度排序 / Positive 屏蔽 / 无命中 / 子串映射回原 offset / 多 occurrence 不重叠 / 含 hits 渲染不崩)
+
 ## v0.1.40 · 2026-08-31
 
 - **UI 重大调整(广告招牌 tab,Phase 3.5 — 4 项联动)**:

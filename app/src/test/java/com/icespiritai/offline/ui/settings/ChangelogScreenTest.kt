@@ -71,7 +71,7 @@ class ChangelogScreenTest {
         assertTrue(
             "bundled user-changelog.md must list the shipping version as its first " +
                 "section (got first version=${entries.firstOrNull()?.version})",
-        entries.firstOrNull()?.version == "v0.1.40",
+        entries.firstOrNull()?.version == "v0.1.41",
         )
     }
 }

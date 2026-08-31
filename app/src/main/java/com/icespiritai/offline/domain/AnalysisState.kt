@@ -109,6 +109,27 @@ data class RuleHit(
  */
 enum class Severity { Violation, Warning, Info, Positive }
 
+/**
+ * Explicit rank used to pick the **worst** severity across a list of hits.
+ *
+ * Why not enum.ordinal: the enum ordering `[Violation, Warning, Info, Positive]`
+ * is a presentation detail (Positive is intentionally trailing so any
+ * accidental fallback to ordinal ranking would still pick Violation over it,
+ * but `maxOfOrNull { it.severity }` would otherwise surface Positive as
+ * "worst" once a Positive-emit rule ships). Pinning the policy in code keeps
+ * the worst-hit selection independent of enum reorderings.
+ *
+ * Higher number = worse. Positive is 0 — Positive hits must NEVER escalate a
+ * "worst" pick; they're surfaced through a separate KPI bucket if/when one
+ * ships, not by hijacking the banner / row tint.
+ */
+fun severityRank(severity: Severity): Int = when (severity) {
+    Severity.Violation -> 3
+    Severity.Warning -> 2
+    Severity.Info -> 1
+    Severity.Positive -> 0
+}
+
 data class ViolationReport(
     val imageUri: Uri,
     val ocrText: String,

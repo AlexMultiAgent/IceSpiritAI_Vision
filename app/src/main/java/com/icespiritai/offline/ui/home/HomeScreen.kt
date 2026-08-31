@@ -39,6 +39,7 @@ import com.icespiritai.offline.domain.AnalysisState
 import com.icespiritai.offline.domain.ErrorCode
 import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.domain.ViolationReport
+import com.icespiritai.offline.domain.severityRank
 import com.icespiritai.offline.export.ExportAction
 import java.io.File
 
@@ -148,6 +149,15 @@ fun HomeScreen(
     val hits = completeReport?.hits ?: emptyList()
     val showLineBoxes = (state is AnalysisState.OcrDone) || completeReport != null
     val imageSize: IntSize? = imageSizeForState(ocrResult, completeReport)
+    // v0.1.41: export is gated on (Complete + hasHits). The CaptureBar
+    // hides its middle button when hasHits=false, so we don't even render
+    // a no-op export affordance when the analyzer found nothing.
+    val hasHits = hits.isNotEmpty()
+    val canExport = (state is AnalysisState.Complete) && hasHits
+    fun onExport() {
+        val s = state as? AnalysisState.Complete ?: return
+        ExportAction.share(context, s.report, BuildConfig.VERSION_NAME)
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         HomeTopBar(
@@ -208,22 +218,15 @@ fun HomeScreen(
             else -> { /* OcrDone / RuleScanned bridge — transient */ }
         }
 
-        when (val s = state) {
-            is AnalysisState.Complete -> {
-                Button(
-                    onClick = { ExportAction.share(context, s.report, BuildConfig.VERSION_NAME) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 16.dp),
-                ) {
-                    Text(stringResource(R.string.action_export))
-                }
-            }
-            else -> {}
-        }
+        // v0.1.41: export button moved into CaptureBar (3rd middle slot
+        // when hasHits=true). The standalone export Button above the
+        // CaptureBar is gone — keeps the bar visually balanced and makes
+        // "导出" discoverable next to the other primary actions.
         CaptureBar(
             onCapture = ::launchCapture,
             onPick = ::pickFromGallery,
+            onExport = ::onExport,
+            hasHits = hasHits,
             enabled = state !is AnalysisState.Loading,
         )
     }
@@ -317,7 +320,13 @@ internal fun HomeScreenBare(onCapture: () -> Unit, onPick: () -> Unit) {
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(16.dp),
         )
-        CaptureBar(onCapture = onCapture, onPick = onPick)
+        // Bare preview never has hits → export button hidden by CaptureBar.
+        CaptureBar(
+            onCapture = onCapture,
+            onPick = onPick,
+            onExport = {},
+            hasHits = false,
+        )
     }
 }
 
@@ -349,28 +358,4 @@ internal fun imageSizeForState(
     completeReport != null && completeReport.imageWidth > 0 && completeReport.imageHeight > 0 ->
         IntSize(completeReport.imageWidth, completeReport.imageHeight)
     else -> null
-}
-
-/**
- * Explicit rank used to pick the WORST non-Positive hit for the status banner.
- *
- * Why not enum.ordinal: enum order is a presentation detail (the enum is
- * declared `[Violation, Warning, Info, Positive]` so Positive sits at the
- * END as a guard against ordinal-based ranking accidentally surfacing
- * Positive as "worst"). `severityRank` instead pins the policy in code:
- * Violation > Warning > Info, with Positive deliberately excluded from the
- * rank (Positive hits must NEVER escalate the banner — they're surfaced
- * separately if/when Phase 3.3 ships a Positive KPI bucket).
- *
- * Higher number = worse. The function is `internal` + `@VisibleForTesting`
- * so `StatusBannerRankingTest` can pin the contract.
- */
-@VisibleForTesting
-internal fun severityRank(severity: Severity): Int = when (severity) {
-    Severity.Violation -> 3
-    Severity.Warning -> 2
-    Severity.Info -> 1
-    // Positive is intentionally not ranked — callers that want Positive
-    // surfaced must filter for it explicitly (see [StatusBannerFor]).
-    Severity.Positive -> 0
 }

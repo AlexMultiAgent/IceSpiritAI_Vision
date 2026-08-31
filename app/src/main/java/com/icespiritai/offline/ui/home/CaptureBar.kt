@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -22,53 +23,54 @@ import androidx.compose.ui.unit.dp
 import com.icespiritai.offline.R
 
 /**
- * Material 3 [BottomAppBar] housing the two primary home-screen affordances:
- * a small **text-then-icon** [ExtendedFloatingActionButton] (选图) on the left
- * and the **icon-then-text** [CaptureButton] Extended FAB (拍照) on the right
- * (stretched to fill its half via `Modifier.fillMaxWidth()`).
+ * Material 3 [BottomAppBar] housing the home-screen affordances.
  *
- * v0.1.31 layout (user request 2026-08-26):
- *  - Left pick FAB: per user spec "icon左边加上「选图」", label `选图` sits
- *    to the LEFT of the PhotoLibrary icon (text-then-icon order). The icon
- *    slot is intentionally empty — the text slot hosts `Row { Text; Spacer;
- *    Icon }` so the order is preserved without fighting the FAB's internal
- *    icon→text padding.
- *  - Right capture FAB: same Extended FAB component as before (icon-then-text
- *    "拍照"), but stretched with `Modifier.fillMaxWidth()` to fill its half
- *    of the bar so the buttons read asymmetrically: left compact, right
- *    longer (the capture action is the primary affordance during a real
- *    on-site inspection).
+ * **v0.1.41 (2026-08-31) layout** — user feedback after v0.1.40:
+ *  - **3 buttons when [hasHits] is true**: pick (left), export (center), capture
+ *    (right). Each gets `Modifier.weight(1f)` so widths are equal thirds.
+ *  - **2 buttons when [hasHits] is false**: the export button is hidden
+ *    entirely (no empty slot, no disabled state). Pick + capture take half-width
+ *    each.
+ *  - **Export button is rename to "导出"** (was "导出取证包" in v0.1.40). The
+ *    visible label is the shorter verb; the accessibility
+ *    `export_button_desc` keeps the full "导出取证包" so TalkBack still
+ *    announces the action verb ("export evidence package") rather than the
+ *    ambiguous "导出".
+ *
+ * Earlier (v0.1.31 → v0.1.40) layout, kept intact:
+ *  - Pick FAB: text-then-icon. Empty icon slot + Row in text slot gives us
+ *    "选图 → PhotoLibrary" without inheriting the icon→text padding the FAB
+ *    would normally insert.
+ *  - Capture FAB: Extended FAB (icon-then-text "拍照"), stretched to fill
+ *    its half of the bar in the 2-button case.
  *
  * `enabled = false` is intentionally only forwarded to the capture FAB — the
  * pick-from-gallery action stays clickable during Loading as an escape hatch.
- *
- * Robolectric / Compose UI test note: each FAB carries its contentDescription
- * on the outer modifier, which Compose UI test's merged tree collapses onto
- * the Surface node (TalkBack-style). To assert against the inner [Icon] or
- * [Text], target the merged node via `onNodeWithContentDescription` for click
- * assertions, or use `useUnmergedTree = true` for text assertions.
+ * The export FAB inherits the same `enabled` flag (we don't want to call
+ * ExportAction during Loading, when the report isn't ready).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CaptureBar(
     onCapture: () -> Unit,
     onPick: () -> Unit,
+    onExport: () -> Unit,
+    hasHits: Boolean,
     enabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val pickA11y = stringResource(R.string.pick_image_fab_desc)
+    val exportA11y = stringResource(R.string.export_button_desc)
     BottomAppBar(
         modifier = modifier.fillMaxWidth(),
         containerColor = Color.Transparent,
         tonalElevation = 0.dp,
     ) {
+        // Pick — left slot. Always present.
         Box(
             modifier = Modifier.weight(1f),
             contentAlignment = Alignment.CenterStart,
         ) {
-            // Pick FAB: text-then-icon. Empty icon slot + Row in text slot
-            // gives us "选图 → PhotoLibrary" without inheriting the
-            // icon→text padding the FAB would normally insert.
             ExtendedFloatingActionButton(
                 onClick = onPick,
                 expanded = true,
@@ -88,6 +90,36 @@ fun CaptureBar(
                 modifier = Modifier.semantics { contentDescription = pickA11y },
             )
         }
+
+        // Export — middle slot. Only when there are hits. With `enabled`
+        // mirroring the capture FAB so it can't fire during Loading.
+        if (hasHits) {
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.Center,
+            ) {
+                ExtendedFloatingActionButton(
+                    onClick = onExport,
+                    expanded = true,
+                    icon = { /* empty — see text slot below */ },
+                    text = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(text = stringResource(R.string.action_export))
+                            Icon(
+                                imageVector = Icons.Default.Save,
+                                contentDescription = null,
+                            )
+                        }
+                    },
+                    modifier = Modifier.semantics { contentDescription = exportA11y },
+                )
+            }
+        }
+
+        // Capture — right slot. Always present.
         Box(
             modifier = Modifier.weight(1f),
             contentAlignment = Alignment.CenterEnd,
@@ -95,9 +127,10 @@ fun CaptureBar(
             CaptureButton(
                 onClick = onCapture,
                 enabled = enabled,
-                // Stretch the capture FAB to fill its half of the bar —
-                // makes the right button noticeably longer than the left
-                // pick button (per user spec 2026-08-26).
+                // 2-button layout: stretch the capture FAB to fill its half
+                // of the bar (per v0.1.31 user spec). 3-button layout: weight
+                // 1f above already bounds it; fillMaxWidth stays correct
+                // because both weights are equal.
                 modifier = Modifier.fillMaxWidth(),
             )
         }

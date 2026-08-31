@@ -66,6 +66,7 @@ fun ViewerScreen(
                 )
                 ViewerTextList(
                     lineBoxes = lineBoxes,
+                    hits = hits,
                     hitsCount = hitsCount,
                     modifier = Modifier.weight(1f),
                 )

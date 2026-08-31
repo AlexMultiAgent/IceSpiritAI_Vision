@@ -7,6 +7,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -27,6 +28,7 @@ import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -37,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.icespiritai.offline.R
 import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.ui.theme.iceSpiritSeverityColors
+import kotlinx.coroutines.launch
 
 /** Public kinds — keeps backwards compat for any external callers. */
 enum class StatusBannerKind { Idle, Loading, Success, Warning, Violation }
@@ -195,9 +198,15 @@ private fun KpiRow(
 
 /**
  * Single-line KPI cell (Phase 3.5): [icon] [count] [label] on one Row.
- * Wrapped in a [TooltipBox] so long-press reveals a one-sentence
- * explanation of what the bucket means. Tooltip wrapping is kept lightweight
- * — no positioning hacks, just the default plain tooltip position provider.
+ * Wrapped in a [TooltipBox] so **clicking the cell** reveals a one-sentence
+ * explanation of what the bucket means. Tooltip is persistent
+ * (`isPersistent = true`) so it stays visible until the user taps it again
+ * or taps outside — long-press alone was not discoverable enough for users
+ * who didn't know to try it.
+ *
+ * Click toggle: `tooltipState.show()` if hidden, `tooltipState.dismiss()`
+ * if already visible. Tap-anywhere-outside is handled by Material3's
+ * persistent-tooltip default dismissal.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -209,7 +218,8 @@ private fun KpiCell(
     tooltipText: String,
     icon: @Composable () -> Unit,
 ) {
-    val tooltipState = rememberTooltipState(isPersistent = false)
+    val tooltipState = rememberTooltipState(isPersistent = true)
+    val coroutineScope = rememberCoroutineScope()
     TooltipBox(
         positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
         tooltip = {
@@ -223,6 +233,17 @@ private fun KpiCell(
         state = tooltipState,
     ) {
         Row(
+            modifier = Modifier.clickable {
+                // show()/dismiss() are suspend — must launch from a
+                // coroutineScope. The toggle pattern: hide if visible,
+                // otherwise show. Persistent tooltip stays until user
+                // taps again or taps outside (Material3 default).
+                if (tooltipState.isVisible) {
+                    coroutineScope.launch { tooltipState.dismiss() }
+                } else {
+                    coroutineScope.launch { tooltipState.show() }
+                }
+            },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {

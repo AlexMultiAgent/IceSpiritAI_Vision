@@ -17,10 +17,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.unit.dp
 import com.icespiritai.offline.R
+import com.icespiritai.offline.domain.RuleHit
+import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.domain.TextLine
+import com.icespiritai.offline.domain.TextNormalizer
+import com.icespiritai.offline.domain.severityRank
+import com.icespiritai.offline.ui.theme.iceSpiritSeverityColors
 
 /**
  * Bottom half of [ViewerScreen]. Renders one scrollable row per OCR
@@ -31,13 +40,31 @@ import com.icespiritai.offline.domain.TextLine
  * only when there's a result; the empty case is a defensive guard for
  * nav-graph edges where lineBoxes may be cleared between transitions).
  *
+ * v0.1.41 (2026-08-31) — user feedback after v0.1.40:
+ *  - Each row that contains a hit is **tinted with the worst (non-Positive)
+ *    severity's container color** (violation = red, warning = amber, info =
+ *    blue) so the row visually maps to the box overlay on the image above.
+ *  - **Matched substrings within the row are highlighted** with the
+ *    matching hit's severity container color so the user can see which
+ *    words/phrases actually triggered the rule — not just which line
+ *    they're on.
+ *  - Containment check runs on [TextNormalizer.forMatching] so full-width
+ *    vs ASCII / whitespace differences are tolerated, matching the rule
+ *    engine's Aho-Corasick containment check.
+ *  - Lines with no hits render with the plain surface color and no inline
+ *    highlights — keeps the (typically) majority of OCR output visually
+ *    quiet.
+ *
  * @param lineBoxes per-line OCR output; one row per item
- * @param hitsCount number of rule hits for the header (drives
- *   "命中 %1$d 处" text). Pass `0` when the analyze result is clean.
+ * @param hits rule hits; drives both row tint and substring highlight.
+ *   `emptyList()` is fine when there are no matches.
+ * @param hitsCount pre-computed count for the header text. Convenience —
+ *   pass `hits.size` if you don't already have a count.
  */
 @Composable
 fun ViewerTextList(
     lineBoxes: List<TextLine>,
+    hits: List<RuleHit>,
     hitsCount: Int,
     modifier: Modifier = Modifier,
 ) {
@@ -92,27 +119,167 @@ fun ViewerTextList(
                     items = lineBoxes,
                     key = { index, _ -> index },
                 ) { _, line ->
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        tonalElevation = 1.dp,
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text(
-                                text = line.text,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                text = "%.0f%%".format(line.confidence * 100f),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
+                    val rowSeverity = worstSeverityForLine(line, hits)
+                    ViewerTextRow(
+                        line = line,
+                        hits = hits,
+                        rowSeverity = rowSeverity,
+                    )
                 }
             }
         }
     }
+}
+
+@Composable
+private fun ViewerTextRow(
+    line: TextLine,
+    hits: List<RuleHit>,
+    rowSeverity: Severity?,
+) {
+    // Defer reading `iceSpiritSeverityColors` until a row actually has a
+    // hit — tests that wrap ViewerTextList in plain MaterialTheme (without
+    // IceSpiritVisionTheme) still compose cleanly when `hits = emptyList()`.
+    val bg: Color
+    val onBg: Color
+    if (rowSeverity != null) {
+        val sev = iceSpiritSeverityColors
+        bg = sev.container(rowSeverity)
+        onBg = sev.onContainer(rowSeverity)
+    } else {
+        bg = MaterialTheme.colorScheme.surface
+        onBg = MaterialTheme.colorScheme.onSurface
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        color = bg,
+        tonalElevation = if (rowSeverity != null) 0.dp else 1.dp,
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = buildLineAnnotatedString(line, hits),
+                style = MaterialTheme.typography.bodyMedium,
+                color = onBg,
+            )
+            Text(
+                text = "%.0f%%".format(line.confidence * 100f),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (rowSeverity != null) {
+                    onBg.copy(alpha = 0.7f)
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun buildLineAnnotatedString(line: TextLine, hits: List<RuleHit>): AnnotatedString {
+    val matches = highlightMatchedSubstrings(line, hits)
+    if (matches.isEmpty()) return AnnotatedString(line.text)
+    // Match list is non-empty — safe to read the severity-color CompositionLocal.
+    val sev = iceSpiritSeverityColors
+    return buildAnnotatedString {
+        append(line.text)
+        matches.forEach { (range, severity) ->
+            addStyle(
+                style = SpanStyle(background = sev.container(severity)),
+                start = range.first,
+                end = range.last + 1,
+            )
+        }
+    }
+}
+
+/**
+ * Worst (non-Positive) severity that matches this line, or `null` if no
+ * hit applies. Positive hits are filtered out so they cannot escalate the
+ * row tint (Positive hits surface through a separate KPI bucket if/when
+ * one ships).
+ *
+ * Containment runs on [TextNormalizer.forMatching] output so whitespace /
+ * case / full-width differences are tolerated, matching the rule engine.
+ */
+internal fun worstSeverityForLine(line: TextLine, hits: List<RuleHit>): Severity? {
+    if (hits.isEmpty()) return null
+    val normLine = TextNormalizer.forMatching(line.text)
+    if (normLine.isEmpty()) return null
+    return hits
+        .asSequence()
+        .filter { it.severity != Severity.Positive }
+        .filter { normLine.contains(TextNormalizer.forMatching(it.matchedText)) }
+        .maxByOrNull { severityRank(it.severity) }
+        ?.severity
+}
+
+/**
+ * Every hit whose normalized matchedText appears in the line, paired with
+ * each occurrence's original-text range. Empty list means no hits matched
+ * the line. Matches do not overlap — each `from` advances past the previous
+ * match so the same hit can't double-paint a substring.
+ */
+internal fun highlightMatchedSubstrings(
+    line: TextLine,
+    hits: List<RuleHit>,
+): List<Pair<IntRange, Severity>> {
+    if (hits.isEmpty()) return emptyList()
+    val normLine = TextNormalizer.forMatching(line.text)
+    if (normLine.isEmpty()) return emptyList()
+    val out = mutableListOf<Pair<IntRange, Severity>>()
+    hits.forEach { hit ->
+        val normHit = TextNormalizer.forMatching(hit.matchedText)
+        if (normHit.isEmpty()) return@forEach
+        var from = 0
+        while (from <= normLine.length - normHit.length) {
+            val idx = normLine.indexOf(normHit, from)
+            if (idx < 0) break
+            val range = mapNormRangeToOriginal(line.text, idx, normHit.length)
+            if (range != null) {
+                out.add(range to hit.severity)
+            }
+            from = idx + normHit.length
+        }
+    }
+    return out
+}
+
+/**
+ * Map a `[normStart, normStart + normLength)` range in the normalized text
+ * back to the corresponding range in [original]. Returns `null` when the
+ * range can't be mapped (out of bounds, degenerate inputs, etc.).
+ *
+ * `TextNormalizer.forMatching` strips only whitespace chars (the NFKC +
+ * lowercasing passes preserve character count), so an index `N` in the
+ * normalized string corresponds to original index = `N + (whitespace chars
+ * before that index in original)`. We walk once and stop at the end boundary.
+ */
+internal fun mapNormRangeToOriginal(
+    original: String,
+    normStart: Int,
+    normLength: Int,
+): IntRange? {
+    if (normStart < 0 || normLength < 0) return null
+    if (normLength == 0) return null
+    val normEndExclusive = normStart + normLength
+    var origStart = -1
+    var origEndExclusive = -1
+    var normIdx = 0
+    var origIdx = 0
+    while (origIdx < original.length) {
+        if (!original[origIdx].isWhitespace()) {
+            if (origStart < 0 && normIdx == normStart) {
+                origStart = origIdx
+            }
+            normIdx++
+            if (normIdx == normEndExclusive) {
+                origEndExclusive = origIdx + 1
+                break
+            }
+        }
+        origIdx++
+    }
+    if (origStart < 0 || origEndExclusive < 0) return null
+    return origStart until origEndExclusive
 }
