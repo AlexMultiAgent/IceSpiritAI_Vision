@@ -4,7 +4,9 @@
 
 ## 状态
 
-**v0.1.37** — 离线 OCR + 规则库判违已接入(`modelProfile="ice_ocr_rules"`) + Tab → 初始页 reset。
+**v0.1.41** — UI 严重度感知 + KPI 点击提示 + Viewer 命中子串高亮 + Tab → 初始页 reset + 离线 OCR/规则库判违(`ice_ocr_rules` profile)。
+
+(历史发版见 [app/src/main/assets/user-changelog.md](app/src/main/assets/user-changelog.md))
 
 | Profile | 状态 | 含义 |
 | --- | --- | --- |

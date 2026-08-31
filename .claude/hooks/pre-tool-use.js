@@ -33,8 +33,15 @@ process.stdin.on('end', () => {
 
   if (!cmd) process.exit(0);
 
-  // Rule 1: `git add -A` / `git add .` (with optional trailing whitespace)
-  if (/git\s+add\s+(-A|\.)\s*(\/\/.*)?$/im.test(cmd)) {
+  // Rule 1: `git add -A` / `git add .` (must catch shell continuations like
+  //   `git add -A; echo done`, `git add . && git status`, etc.)
+  // Bypass the original regex would miss:
+  //   - shell continuations (`;`, `&&`, `||`, `|` separator followed by `git add -A`)
+  //   - commands embedded after leading whitespace
+  // Strategy: require a shell separator or string start BEFORE `git`, then
+  // match the bare `-A` token (with word boundary) OR the bare `.` token
+  // (followed by EOL/space/separator). `--all`, `-Ap`, `-Al` pass through.
+  if (/(?:^|;|\s|\|\||&&|\|)\s*git\s+add\s+(?:-A\b|\.(?=\s|$|;|\|\||&&|\|))/m.test(cmd)) {
     console.error(
       'BLOCKED by IceSpiritAI_Vision PreToolUse hook:\n' +
       '  CLAUDE.md requires explicit file paths in `git add`, not `git add -A` or `git add .`.\n' +

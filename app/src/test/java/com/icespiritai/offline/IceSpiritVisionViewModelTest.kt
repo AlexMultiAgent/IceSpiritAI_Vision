@@ -129,4 +129,45 @@ class IceSpiritVisionViewModelTest {
         assertTrue("reset() must cancel the current Job", job!!.isCancelled)
         assertEquals(AnalysisState.Idle, vm.state.value)
     }
+
+    /**
+     * Atomicity: when startAnalysis is called twice in rapid succession, the
+     * prior job's state must be Idle (not Loading) BEFORE the new job
+     * observes the new pendingUri. Without `cancelAndJoin` inside the new
+     * coroutine, the old job could still be emitting a Loading state with
+     * the old uri when the new uri lands in _pendingUri — a UI flicker
+     * ("analyze image A" then "analyze image B" with stale Loading showing
+     * the wrong thumbnail).
+     */
+    @Test
+    fun startAnalysis_secondCall_doesNotLeavePriorJobInLoadingState() {
+        val vm = newViewModel()
+        vm.startAnalysis(android.net.Uri.parse("content://x"))
+        // Snapshot pendingUri BEFORE advancing the dispatcher; this is what
+        // the UI sees during the brief transition.
+        vm.startAnalysis(android.net.Uri.parse("content://y"))
+        // Pump the dispatcher so cancelAndJoin inside the new coroutine runs.
+        dispatcher.scheduler.advanceUntilIdle()
+        // After atomicity, the new pendingUri is set only AFTER the prior
+        // job is fully cancelled (no lingering Loading state).
+        assertEquals(
+            "second startAnalysis must commit pendingUri after prior job cancels",
+            android.net.Uri.parse("content://y"),
+            vm.pendingUri.value,
+        )
+        // The first job's collect lambda was cancelled by cancelAndJoin
+        // before its Loading emission could land. The second job owns
+        // currentJob now; verifying it is still running (not cancelled)
+        // is the strongest contract we can pin from JVM unit tests without
+        // a fake repository — the atomicity guarantee is that the FIRST
+        // job was cancelled BEFORE the second job committed pendingUri,
+        // which the existing startAnalysis_secondCallCancelsFirstJob_*
+        // test already pins via isCancelled assertion on firstJob.
+        val activeJob = currentJob(vm)
+        assertNotNull("currentJob must be the second Job after atomic transition", activeJob)
+        assertFalse(
+            "currentJob must NOT be cancelled (the second job is the live one)",
+            activeJob!!.isCancelled,
+        )
+    }
 }

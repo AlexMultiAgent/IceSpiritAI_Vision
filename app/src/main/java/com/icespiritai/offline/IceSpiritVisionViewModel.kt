@@ -16,6 +16,7 @@ import com.icespiritai.offline.rules.FoodLabelRuleMatcher
 import com.icespiritai.offline.rules.RuleMatcher
 import com.icespiritai.offline.ui.home.RuleTab
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -120,11 +121,30 @@ class IceSpiritVisionViewModel(application: Application) : AndroidViewModel(appl
         return false
     }
 
+    /**
+     * Start analysis for [uri]. Atomic w.r.t. any in-flight job:
+     *
+     * 1. Capture the currently-running job into [prior] and replace
+     *    [currentJob] with the new launch synchronously (the UI can see the
+     *    new Job the instant `startAnalysis` returns).
+     * 2. Inside the new coroutine, `cancelAndJoin` on [prior] so the old job
+     *    fully unwinds before we touch any state — preventing a brief window
+     *    where the old job is still emitting a `Loading` state with the old
+     *    `_pendingUri`, while the UI already sees a different
+     *    `_pendingUri` from a rapid double-tap.
+     * 3. Set `_pendingUri`, clear `_state` to [Idle], then start collecting.
+     *
+     * Callers do not need to wrap this in a coroutine; [viewModelScope] is
+     * the parent scope.
+     */
     fun startAnalysis(uri: Uri) {
-        _pendingUri.value = uri
-        currentJob?.cancel()
         val matcher = matcherFor(_currentTab.value)
+        val prior = currentJob
+        prior?.cancel()
         currentJob = viewModelScope.launch {
+            prior?.cancelAndJoin()
+            _pendingUri.value = uri
+            _state.value = Idle
             repository.analyze(uri, matcher).collect { _state.value = it }
         }
     }

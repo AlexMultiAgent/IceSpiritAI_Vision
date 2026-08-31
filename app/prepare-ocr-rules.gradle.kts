@@ -112,7 +112,7 @@ val prepareOcrRulesAssets = tasks.register("prepareOcrRulesAssets") {
 
 val copyOcrModelsAssets = tasks.register<Copy>("copyOcrModelsAssets") {
     group = "build"
-    description = "Copy ONNX model assets into build/generated/assets/models/ when modelProfile == ice_ocr_rules"
+    description = "Copy ONNX model assets into build/generated/assets/models/ when modelProfile == ice_ocr_rules; clean otherwise"
 
     val activeProfile = modelProfileValue
     val modelSrcDir = file("src/main/assets/models")
@@ -120,18 +120,29 @@ val copyOcrModelsAssets = tasks.register<Copy>("copyOcrModelsAssets") {
 
     // Cache invalidation: switching -PmodelProfile must re-evaluate even if the
     // source files haven't changed. Without this, a "shell" build (which
-    // skipped this task) might still be cached as UP-TO-DATE when switching to
-    // "ice_ocr_rules" — leading to a missing-models APK.
+    // produces an empty outDir) might still be cached as UP-TO-DATE when
+    // switching to "ice_ocr_rules" — leading to a missing-models APK.
     inputs.property("modelProfile", activeProfile)
     outputs.dir(outDir)
 
-    // Skip entirely when profile != ice_ocr_rules.
-    onlyIf { activeProfile == "ice_ocr_rules" }
+    // Wipe the destination before each run so a stale `ice_ocr_rules` build
+    // (which populated this dir with .onnx files) can't leak into a
+    // subsequent `shell` APK. Without this deleteRecursively(), the Copy
+    // task only ADDS files; a switch-back from `ice_ocr_rules` to `shell`
+    // would ship a ~30 MB ONNX APK by accident.
+    doFirst {
+        outDir.get().asFile.deleteRecursively()
+    }
 
     from(modelSrcDir) {
-        include("**/*.onnx")
-        include("**/*.yml")
-        // Also drop the .gitkeep placeholder so it doesn't leak into the APK.
+        // Profile-gated include filter: when not ice_ocr_rules, the include
+        // set is empty so Copy has nothing to copy — combined with the
+        // doFirst delete, outDir ends empty for the shell APK path.
+        if (activeProfile == "ice_ocr_rules") {
+            include("**/*.onnx")
+            include("**/*.yml")
+        }
+        // Drop the .gitkeep placeholder so it doesn't leak into the APK.
         exclude("**/.gitkeep")
     }
     into(outDir)
@@ -139,6 +150,17 @@ val copyOcrModelsAssets = tasks.register<Copy>("copyOcrModelsAssets") {
     doLast {
         val dir = outDir.get().asFile
         val fileCount = if (dir.exists()) dir.walkTopDown().count { it.isFile } else 0
+        if (activeProfile == "ice_ocr_rules") {
+            // Sanity assertion: a missing-model APK would silently fail OCR
+            // at runtime (no PaddleOCR exception — just empty results). Fail
+            // the build loudly here so the user sees it during ./gradlew
+            // assembleRelease rather than after installing the APK.
+            check(fileCount > 0) {
+                "[copyOcrModelsAssets] profile=$activeProfile but $dir is empty — " +
+                    "did tools/download-ppocr-models.sh run? " +
+                    "Expected det/rec inference.onnx + inference.yml under $modelSrcDir."
+            }
+        }
         logger.lifecycle(
             "[copyOcrModelsAssets] profile=$activeProfile copied $fileCount model files to $dir"
         )

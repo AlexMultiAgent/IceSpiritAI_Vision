@@ -1,5 +1,7 @@
 # 冰灵锐目 (IceSpiritAI_Vision) — 初始骨架设计
 
+> ⚠ **STALE — 2026-08-31 audit**:本规范描述 init 时的初始 baseline(AGP 8.5.2 / Kotlin 1.9.24 / Gradle 8.10.2 / compileSdk 35)。当前 shipped baseline 见 [CLAUDE.md §命名一致性](../../CLAUDE.md)。Model profile 路线:`ice_ocr_rules` 已 shipped(PP-OCRv6_small + PaddleOCR v3.7.0 + HankCS AC 1.2.3),`ice_vision` 待 Phase 2+。本规范作为历史溯源保留 — **仅 §3.1 modelProfile table 与 §4 baseline 表的"骨架/命名空间/目录布局"部分仍生效**,其余技术细节以 CLAUDE.md 为准。
+
 **日期**：2026-08-13
 **状态**：Approved — 按此设计搭建
 **目标**：建立可编译的 Android 离线视觉 App 骨架,首版 `modelProfile="shell"` 仅产出空 Activity;为后续接入视觉模型判断现场照片违规违法预留架构。

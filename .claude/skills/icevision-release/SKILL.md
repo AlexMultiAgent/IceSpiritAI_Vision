@@ -54,19 +54,20 @@ keytool -list -v -keystore ~/.gradle/release.jks -alias icespiritai -storepass "
 | Step | Gradle task | Purpose | Known footgun |
 |---|---|---|---|
 | 1 | `assembleRelease` | Build signed APK | R8 + Lint + native may OOM the daemon. Use ≥8 GiB. |
-| 2 | `generateVisionLatestJson` | Write `app/build/outputs/apk/release/vision-latest.json` with `apkUrl` / `versionCode` / `signerCertSha256` | URL is hardcoded to `releases/download/latest/icespiritai-vision.apk` — **broken route on Gitea 1.22.x** |
+| 2 | `generateVisionLatestJson` | Write `app/build/outputs/apk/release/vision-latest.json` with `apkUrl` / `versionCode` / `signerCertSha256` | URL is hardcoded to `releases/download/latest/icespiritai-vision.apk`; rewrite happens in step 4 |
 | 3 | `archiveVisionRelease` | Stage to `build/generated/release-staging/` (per memory: never write to `发布版历史存档/`) | — |
-| 4 | `uploadVisionReleaseToGitea` | POST APK + JSON to Gitea, with cert-pin verify | Large-file POST sometimes returns HTTP 100 and stalls. Mitigation: POST JSON first (small, ~1s), then APK with `--max-time 900` |
+| 4 | `uploadVisionReleaseToGitea` | POST APK + JSON to Gitea, with cert-pin verify, rewrite `apkUrl` to `/attachments/<uuid>` | Large-file POST sometimes returns HTTP 100 and stalls. Mitigation: POST APK first (capture uuid for url rewrite), then JSON with `--max-time 900` |
 
 ## The Gitea 1.22.x APK 404 workaround (CRITICAL)
 
-Per CLAUDE.md (v0.1.31 release footgun), `releases/download/latest/icespiritai-vision.apk`
-returns HTTP 404 even though `releases/download/latest/vision-latest.json` returns 200.
-The upload task already handles this by:
-
-1. POSTing the APK to Gitea and extracting the `uuid` from the response:
-   ```json
-   { "id": 260, "uuid": "39c59ab3-..." }
+**2026-08-29 re-verification**: the **publishing** repo `giteaadmin/vision-app` is **healthy**
+(`/releases/download/latest/*.apk` and `*.json` both return 200). The 404 was confirmed on
+the **code** repo `giteaadmin/IceSpiritAI_Vision` in v0.1.31 (2026-08-26), where the
+`releases/download/<tag>/` route returned 404 for `.apk` filenames but 200 for `.json`.
+Since the in-app update client downloads from whichever URL is in `vision-latest.json`,
+we still rewrite `apkUrl` to the just-uploaded APK's `/attachments/<uuid>` URL as
+defense-in-depth — cost is one extra POST + 80-char URL replace per release, and it
+prevents recurrence if the publishing repo ever hits the same Gitea 1.22.x bug.
    ```
 2. Rewriting `apkUrl` in `vision-latest.json` to:
    ```
@@ -85,16 +86,17 @@ curl -sI http://125.211.45.14:3000/attachments/<uuid> | grep -E "HTTP|Content-Le
 If `uploadVisionReleaseToGitea` hangs (HTTP 100, no final status):
 
 - DO NOT roll back code. The cert-pin already passed locally.
-- Manually POST in this order:
-  1. `vision-latest.json` (1.4 KB, ~1 s, no timeout risk)
-  2. `icespiritai-vision.apk` with `--max-time 900` (was 600 — too tight for 70 MB+ AAR-bundled APK)
+- Manually POST in this order (must match `uploadVisionReleaseToGitea`'s
+  APK-first design — APK captures the `uuid` we need for `apkUrl` rewrite):
+  1. `icespiritai-vision.apk` with `--max-time 900` (was 600 — too tight for 70 MB+ AAR-bundled APK); capture the `uuid` from the response body
+  2. `vision-latest.json` with the rewritten `apkUrl` set to `http://125.211.45.14:3000/attachments/<uuid>` (1.4 KB, ~1 s, no timeout risk)
   3. DELETE any duplicate asset ids (curl may leave half-uploaded records).
 
 ## Post-release smoke (must verify)
 
 ```bash
 # 1. JSON metadata is reachable + has correct versionCode + cert SHA256
-curl -s http://125.211.45.14:3000/releases/download/latest/vision-latest.json | python3 -c "
+curl -s http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/vision-latest.json | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
 assert d['versionCode'] >= 14, f'stale versionCode: {d[\"versionCode\"]}'

@@ -73,7 +73,11 @@ object ApkDownloader {
             }
 
             val code = conn.responseCode
-            val partialBodyLen = conn.contentLengthLong
+            // HttpURLConnection returns -1 when the server omits Content-Length
+            // (chunked transfer, RFC 7230 §3.3.2). Clamp to 0 so the progress
+            // UI can branch on a "total unknown" sentinel without accidentally
+            // computing negative remaining-byte values downstream.
+            val partialBodyLen = maxOf(0L, conn.contentLengthLong)
             val totalBytes = if (code == 206 && resumeFrom != null) resumeFrom + partialBodyLen
                              else partialBodyLen
             val respEtag = conn.getHeaderField("ETag")

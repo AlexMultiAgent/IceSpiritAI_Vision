@@ -73,8 +73,8 @@ android {
         applicationId = "com.icespiritai.vision"
         minSdk = 26
         targetSdk = 37
-        versionCode = 41
-        versionName = "0.1.41"
+        versionCode = 42
+        versionName = "0.1.42"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -626,6 +626,13 @@ tasks.register("uploadVisionReleaseToGitea") {
     // and the resulting "input file does not exist" error is opaque.
     // We do the existence + content check inside doLast with a clear
     // error message pointing to the .example template.
+    //
+    // The uploaded JSON's apkUrl is rewritten to the just-uploaded APK's
+    // `/attachments/<uuid>` URL and written to a task-local temp file —
+    // NOT back to `uploadStagingDir` — because that dir is `outputs.dir`
+    // of `archiveVisionRelease` and mutating it would silently invalidate
+    // that task's up-to-date check.
+    dependsOn("archiveVisionRelease")
     outputs.upToDateWhen { false }
 
     doLast {
@@ -669,7 +676,7 @@ tasks.register("uploadVisionReleaseToGitea") {
         fun curl(extraArgs: List<String>): String {
             val cmd = listOf("curl.exe", "-sS", "-w", "\n%{http_code}",
                 "--http1.1", "--expect100-timeout", "60",
-                "--connect-timeout", "30", "--max-time", "600",
+                "--connect-timeout", "30", "--max-time", "900",
                 "-H", authHeader) + extraArgs
             val pb = ProcessBuilder(cmd)
             pb.redirectError(ProcessBuilder.Redirect.PIPE)
@@ -755,13 +762,14 @@ tasks.register("uploadVisionReleaseToGitea") {
         }
 
         // 3a. Upload the APK and capture its attachment UUID. The
-        // `releases/download/<tag>/<filename>` route on this Gitea 1.22.x
-        // instance returns 404 for any `.apk` filename (verified 2026-08-26
-        // with a fresh v0.1.31 push — same APK works at
-        // `/attachments/<uuid>` with HTTP 200, so the upload itself landed,
-        // only the route is broken). The in-app update client downloads from
-        // whatever URL is in vision-latest.json, so we point apkUrl at the
-        // attachment UUID and bypass the broken route.
+        // `releases/download/<tag>/` route is preserved as a
+        // defense-in-depth: even though the **publishing** repo
+        // `giteaadmin/vision-app` is healthy (verified 2026-08-29 in
+        // v0.1.37), the **code** repo `giteaadmin/IceSpiritAI_Vision`
+        // returned 404 on that route for `.apk` files (verified 2026-08-26
+        // in v0.1.31). Rewriting apkUrl to the just-uploaded attachment
+        // UUID bypasses that broken route for both repos at cost of one
+        // POST + 80-char URL replace per release.
         val (apkUpBody, apkUpCode) = splitStatus(curl(listOf(
             "-X", "POST", "-F", "attachment=@${stagedApk.absolutePath}",
             "$api/$releaseId/assets")))
@@ -783,30 +791,45 @@ tasks.register("uploadVisionReleaseToGitea") {
         // The source JSON at outputs/apk/release/vision-latest.json is left
         // alone — it's the as-built snapshot from generateVisionLatestJson
         // (hardcoded `releases/download/...` URL baked in) and gets
-        // regenerated on every build. Only the staged copy that goes to
-        // Gitea needs the live attachment URL.
-        val apkUrlOld = "$giteaBaseUrl/giteaadmin/vision-app/releases/download/latest/icespiritai-vision.apk"
+        // regenerated on every build.
+        //
+        // We write the rewritten JSON to a task-local temp file under
+        // `build/generated/upload-staging/`, NOT back to `uploadStagingDir`,
+        // because that dir is declared as `archiveVisionRelease`'s
+        // `outputs.dir` — mutating it would silently invalidate the
+        // upstream task's up-to-date check on subsequent runs.
+        //
+        // Use a regex on the JSON's `apkUrl` field rather than a literal
+        // placeholder match, so the rewrite survives URL drift in
+        // `generateVisionLatestJson` (e.g. if the publishing repo path
+        // changes, we still match by field name, not by string equality).
+        val uploadLocalDir = layout.buildDirectory.dir("generated/upload-staging")
+            .get().asFile.also { it.mkdirs() }
+        val rewrittenJsonFile = uploadLocalDir.resolve("vision-latest.json")
         val originalJson = stagedJson.readText(Charsets.UTF_8)
-        require(originalJson.contains(apkUrlOld)) {
-            "uploadVisionReleaseToGitea: staged JSON did not contain expected apkUrl placeholder " +
-                "$apkUrlOld — generateVisionLatestJson's hardcoded URL drifted; update both ends"
+        val apkUrlFieldRegex = Regex(""""apkUrl"\s*:\s*"([^"]+)"""")
+        val apkUrlFieldReplacement = "\"apkUrl\": \"$apkAttachmentUrl\""
+        val rewrittenJson = apkUrlFieldRegex.replace(originalJson, apkUrlFieldReplacement)
+        require(rewrittenJson !== originalJson) {
+            "uploadVisionReleaseToGitea: staged JSON had no `apkUrl` field to rewrite " +
+                "(regex \"apkUrl\\\"\\\\s*:\\\\s*\\\"([^\\\"]+)\\\"\" matched nothing in ${stagedJson.absolutePath})"
         }
-        val rewrittenJson = originalJson.replace(apkUrlOld, apkAttachmentUrl)
-        stagedJson.writeText(rewrittenJson, Charsets.UTF_8)
+        rewrittenJsonFile.writeText(rewrittenJson, Charsets.UTF_8)
         logger.lifecycle(
-            "uploadVisionReleaseToGitea: rewrote staged JSON apkUrl → $apkAttachmentUrl"
+            "uploadVisionReleaseToGitea: rewrote staged JSON apkUrl → $apkAttachmentUrl " +
+                "(in task-local ${rewrittenJsonFile.absolutePath}; uploadStagingDir left intact)"
         )
 
-        // 3c. Upload the rewritten JSON.
+        // 3c. Upload the rewritten JSON from the task-local copy.
         val (jsonUpBody, jsonUpCode) = splitStatus(curl(listOf(
-            "-X", "POST", "-F", "attachment=@${stagedJson.absolutePath}",
+            "-X", "POST", "-F", "attachment=@${rewrittenJsonFile.absolutePath}",
             "$api/$releaseId/assets")))
         require(jsonUpCode == "201") {
-            "uploadVisionReleaseToGitea: upload ${stagedJson.name} returned HTTP $jsonUpCode: $jsonUpBody"
+            "uploadVisionReleaseToGitea: upload ${rewrittenJsonFile.name} returned HTTP $jsonUpCode: $jsonUpBody"
         }
         logger.lifecycle(
-            "uploadVisionReleaseToGitea: uploaded ${stagedJson.name} " +
-                "(${stagedJson.length()} bytes)"
+            "uploadVisionReleaseToGitea: uploaded ${rewrittenJsonFile.name} " +
+                "(${rewrittenJsonFile.length()} bytes)"
         )
         logger.lifecycle(
             "uploadVisionReleaseToGitea: pushed 2 assets to tag $tag " +
@@ -822,8 +845,10 @@ afterEvaluate {
     }
     // Chain uploadVisionReleaseToGitea after archiveVisionRelease so a
     // single ./gradlew assembleRelease produces APK + JSON + pushes to
-    // Gitea. uploadVisionReleaseToGitea has outputs.upToDateWhen { false }
-    // so it always re-runs even when its inputs haven't changed.
+    // Gitea. The task also declares explicit `dependsOn("archiveVisionRelease")`
+    // so `uploadVisionReleaseToGitea` runs even when invoked standalone
+    // (e.g. from /icevision-release skill). outputs.upToDateWhen { false }
+    // ensures it always re-runs even when its inputs haven't changed.
     tasks.named("archiveVisionRelease").configure {
         finalizedBy("uploadVisionReleaseToGitea")
     }
@@ -877,6 +902,9 @@ dependencies {
     // AGP's `processJavaResources` pipeline extracts it into the APK at
     // `META-INF/services/...` — exactly where ServiceLoader looks.
     runtimeOnly(files(layout.buildDirectory.dir("generated/services-jar/ocr-engine-services.jar").get().asFile))
+    // buildProfileServicesJar must run BEFORE this JAR is consumed; without
+    // an explicit dependsOn declaration, clean builds race and the APK
+    // ends up without the META-INF/services file.
 
     // Unit tests
     testImplementation(libs.junit)

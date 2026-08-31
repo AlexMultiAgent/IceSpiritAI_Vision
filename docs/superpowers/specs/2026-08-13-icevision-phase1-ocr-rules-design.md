@@ -1,5 +1,7 @@
 # 冰灵锐目 Phase 1 设计规范 — OCR + 规则库文字审核
 
+> ⚠ **SUPERSEDED — 2026-08-31 audit**:实际 Phase 1 走 **PaddleOCR 官方 SDK v3.7.0(ONNX Runtime 1.21.1 + OpenCV 4.10.0)+ HankCS `aho-corasick-double-array-trie` 1.2.3**,APK 实测 ~59 MB。原始 spec 描述的 **RapidOCR + HankCS 0.1.4 + APK<25MB** 路线**未**采用 — 详见 [CLAUDE.md §视觉/OCR 模型路线](../../CLAUDE.md) + [docs/knowledge/ppocrv6_vs_v5_a_b_test.md](../../knowledge/ppocrv6_vs_v5_a_b_test.md)。本规范作为设计溯源保留 — **§5 OCR 流水线 / §6 规则引擎 数据契约 / §7 法规引用清单** 仍可作 OCR + 规则库形态的端到端契约参考,但 SDK 选择与体积预算已过时。
+
 | 项 | 值 |
 |---|---|
 | 文档版本 | v0.1.0 |

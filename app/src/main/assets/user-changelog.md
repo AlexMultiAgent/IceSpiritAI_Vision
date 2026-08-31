@@ -1,5 +1,32 @@
 # 用户更新日志
 
+## v0.1.42 · 2026-08-31
+
+- **全面审计修复(19 项 / 6 维度扫描 + 对抗验证)**:
+  - **关键路径硬化**:
+    - `IceSpiritVisionViewModel.startAnalysis` 加 `cancelAndJoin`,快速连点拍照 / 选图时,旧 job 的 `Loading(OcrRunning)` 一定在新 job 写 `_pendingUri` 之前完全收尾,消除「图 A 的 Loading + 图 B 的 pendingUri」短暂错位(单测 `startAnalysis_secondCall_doesNotLeavePriorJobInLoadingState` 覆盖)
+    - `PaddleOcrEngine.recognize` 包 try/finally,`bitmap.recycle()` 在 `OcrResult` 组装后立即调用,长会话 ONNX Mat 内存不再累积
+    - `ApkSignatureVerifier.parseFirstCertificate` 改用 `generateCertificates(...).firstOrNull()`,与构建侧 `extractApkCertificateSha256` 对齐同一份 cert chain API;部分 JDK 上 cert-pin 返回 DER 与 build 不一致会导致合法更新被拒,改完统一
+  - **发布流水线硬化**:
+    - `uploadVisionReleaseToGitea` 反转 POST 顺序 — 先 POST APK 抓 `uuid`,然后用 regex 按 `"apkUrl" : "<old>"` 字段替换写到 task-local 临时 JSON,再 POST JSON。中途崩溃保留旧 release 完整可用;`apkUrl` 改写为 `/attachments/<uuid>` 防御 Gitea 1.22.x release route 偶发 404(发布仓库 `giteaadmin/vision-app` 实测健康,rewrite 作为 defense-in-depth)
+    - task 新增 `dependsOn("archiveVisionRelease")` 显式 producer→consumer 边,避免 archive 未跑就 POST
+    - `--max-time 600` → `900` 对齐 SKILL.md 文档(大 APK POST 余量)
+  - **构建侧杂项**:
+    - `copyOcrModelsAssets` 删 `onlyIf { activeProfile == "ice_ocr_rules" }`,改为无条件 `deleteRecursively()` + profile-gated include filter + ONNX count assert,杜绝 `shell` profile APK 被残留 ONNX 污染
+    - `runtimeOnly(files(...))` 加 KDoc 说明为何不用 `builtBy`(DSL overload 不接受 config action);producer-consumer 关系改由 `dependsOn("archiveVisionRelease")` 显式声明
+    - `gradle.properties` 删 `org.gradle.java.installations.auto-download=true` + `auto-detect=true` 两行惰性 flag(无 foojay resolver plugin,flag 不生效,留之只是噪音);CLAUDE.md §开发环境 已要求必须 manual `export JAVA_HOME`
+    - `buildSrc/build.gradle.kts` 加 Tencent / Huawei 镜像 + `mavenCentral()` fallback,断 Aliyun 时构建不至于 fail-fast
+    - `ApkDownloader` 改 `maxOf(0L, contentLengthLong)`,server 缺 `Content-Length`(返 -1)时 UI 走 "unknown total" 分支而非显示负字节数
+  - **文档 / Spec 对齐**:
+    - `compileSdk / targetSdk` 36 → 37 sweep(CLAUDE.md / `docs/knowledge/build-stack-2026-08.md` 7 处)
+    - `init-design.md` 顶部加 `⚠ STALE` banner(初版 baseline 已过时),`phase1-ocr-rules-design.md` 顶部加 `⚠ SUPERSEDED` banner(实际走 PaddleOCR 官方 SDK,与 RapidOCR 草案无关)
+    - `README.md` v0.1.37 → v0.1.41 头部声明,与 `user-changelog.md` 交叉引用
+    - `icevision-release` skill:URL 补 `/giteaadmin/vision-app/` 段;`Gitea 1.22.x 404 workaround` 段更新为「代码仓库 broken / 发布仓库 healthy」的 defense-in-depth 叙事
+  - **Dev hygiene**:
+    - PreToolUse hook rule 1 regex 加固,拦截 `git add -A` / `git add .` 在 shell continuation(`;` / `&&` / `||` / `|` / leading whitespace)下的所有 bypass 路径(15 个 case 自测覆盖)
+    - CLAUDE.md 加 §"CI 仅跑 shell profile"标注 + §"历史 Co-Authored-By trailer grandfather 例外"说明(2026-08-21 前 commit 保留 trailer,live gate 是新 commit pre-flight,避免 force-rewrite 破坏 `tag SHA ↔ APK SHA ↔ JSON SHA` 对齐)
+  - **测试覆盖**: 617 tests / 0 failures / 100% successful(`testDebugUnitTest -PmodelProfile=shell`,新增 1:startAnalysis atomicity + cancelAndJoin 契约 pin)
+
 ## v0.1.41 · 2026-08-31
 
 - **UI 微调(广告招牌 tab,用户反馈 6 点 v0.1.40 复盘)**:

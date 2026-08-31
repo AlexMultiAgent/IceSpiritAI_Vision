@@ -159,50 +159,61 @@ class PaddleOcrEngine(
                 ?: throw OcrFailed("Failed to decode image: $uri")
             val bitmap = loaded.bitmap
 
-            val runResult = try {
-                ocr.recognize(bitmap)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: OCRError) {
-                throw when (e) {
-                    is OCRError.ModelLoadFailed ->
-                        OcrEngineUnavailable("OCR model load failed: ${e.message}", e)
-                    is OCRError.ModelNotFound ->
-                        OcrEngineUnavailable("OCR model missing in assets: ${e.message}", e)
-                    is OCRError.ConfigParseFailed ->
-                        OcrEngineUnavailable("OCR config parse failed: ${e.message}", e)
-                    is OCRError.InvalidImage ->
-                        OcrFailed("Invalid image", e)
-                    is OCRError.DecodeError ->
-                        OcrFailed("OCR decode failed: ${e.message}", e)
-                    is OCRError.InferenceFailed ->
-                        OcrFailed("OCR inference failed: ${e.message}", e)
+            val result: OcrResult
+            try {
+                val runResult = try {
+                    ocr.recognize(bitmap)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: OCRError) {
+                    throw when (e) {
+                        is OCRError.ModelLoadFailed ->
+                            OcrEngineUnavailable("OCR model load failed: ${e.message}", e)
+                        is OCRError.ModelNotFound ->
+                            OcrEngineUnavailable("OCR model missing in assets: ${e.message}", e)
+                        is OCRError.ConfigParseFailed ->
+                            OcrEngineUnavailable("OCR config parse failed: ${e.message}", e)
+                        is OCRError.InvalidImage ->
+                            OcrFailed("Invalid image", e)
+                        is OCRError.DecodeError ->
+                            OcrFailed("OCR decode failed: ${e.message}", e)
+                        is OCRError.InferenceFailed ->
+                            OcrFailed("OCR inference failed: ${e.message}", e)
+                    }
+                } catch (e: Exception) {
+                    throw OcrFailed("OCR runtime error: ${e.message}", e)
                 }
-            } catch (e: Exception) {
-                throw OcrFailed("OCR runtime error: ${e.message}", e)
-            }
 
-            OcrResult(
-                fullText = runResult.results.joinToString("\n") { it.text },
-                lineBoxes = runResult.results.map { it.toTextLine(loaded.sampleSize) },
-                avgConfidence = if (runResult.results.isEmpty()) 0f
-                else runResult.results.map { it.confidence }.average().toFloat(),
-                // Display-oriented dimensions of the FULL bitmap (post-EXIF
-                // rotation, full resolution). [loaded.bitmap] is the DOWNSAMPLED
-                // display-oriented bitmap (inSampleSize applied), so its
-                // width/height are in the *downsampled* coord space — NOT the
-                // space the boxes above live in. Boxes were multiplied by
-                // loaded.sampleSize in [OCRBox.toBoundingRect] to recover the
-                // full-resolution display-oriented space, so we must multiply
-                // the bitmap dims by sampleSize here too, or
-                // [ImagePreview.computeFitTransform] will compute a transform
-                // whose refW/refH is smaller than the actual box coord space
-                // (boxes drift toward the canvas's right/bottom letterbox —
-                // see the 2026-08-26 smoke-test repro on a 4032×3024 bus
-                // photo: red box landed in the upper-right empty area).
-                imageWidth = bitmap.width * loaded.sampleSize,
-                imageHeight = bitmap.height * loaded.sampleSize,
-            )
+                result = OcrResult(
+                    fullText = runResult.results.joinToString("\n") { it.text },
+                    lineBoxes = runResult.results.map { it.toTextLine(loaded.sampleSize) },
+                    avgConfidence = if (runResult.results.isEmpty()) 0f
+                    else runResult.results.map { it.confidence }.average().toFloat(),
+                    // Display-oriented dimensions of the FULL bitmap (post-EXIF
+                    // rotation, full resolution). [loaded.bitmap] is the DOWNSAMPLED
+                    // display-oriented bitmap (inSampleSize applied), so its
+                    // width/height are in the *downsampled* coord space — NOT the
+                    // space the boxes above live in. Boxes were multiplied by
+                    // loaded.sampleSize in [OCRBox.toBoundingRect] to recover the
+                    // full-resolution display-oriented space, so we must multiply
+                    // the bitmap dims by sampleSize here too, or
+                    // [ImagePreview.computeFitTransform] will compute a transform
+                    // whose refW/refH is smaller than the actual box coord space
+                    // (boxes drift toward the canvas's right/bottom letterbox —
+                    // see the 2026-08-26 smoke-test repro on a 4032×3024 bus
+                    // photo: red box landed in the upper-right empty area).
+                    imageWidth = bitmap.width * loaded.sampleSize,
+                    imageHeight = bitmap.height * loaded.sampleSize,
+                )
+            } finally {
+                // Release the native pixel storage as soon as the result is
+                // built. PaddleOCR keeps an internal copy of the recognition
+                // output, so recycling the source bitmap is safe post-recognize.
+                // Without this, repeated analyze() calls accumulate bitmaps
+                // (~10–30 MB each for 4032×3024 photos) until GC kicks in.
+                if (!bitmap.isRecycled) bitmap.recycle()
+            }
+            result
         }
     }
 

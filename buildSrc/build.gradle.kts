@@ -20,9 +20,15 @@ plugins {
 }
 
 repositories {
+    // CN mirrors first (Aliyun -> Tencent -> Huawei) per project CLAUDE.md
+    // §构建命令; mavenCentral as fallback so an upstream-only artifact
+    // (e.g. JUnit 4) still resolves when mirrors are down or don't carry it.
     maven(url = "https://maven.aliyun.com/repository/google")
     maven(url = "https://maven.aliyun.com/repository/public")
     maven(url = "https://maven.aliyun.com/repository/gradle-plugin")
+    maven(url = "https://mirrors.tencent.com/nexus/repository/maven-public/")
+    maven(url = "https://repo.huaweicloud.com/repository/maven/")
+    mavenCentral()
 }
 
 dependencies {

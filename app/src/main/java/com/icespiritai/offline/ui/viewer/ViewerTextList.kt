@@ -250,10 +250,18 @@ internal fun highlightMatchedSubstrings(
  * back to the corresponding range in [original]. Returns `null` when the
  * range can't be mapped (out of bounds, degenerate inputs, etc.).
  *
- * `TextNormalizer.forMatching` strips only whitespace chars (the NFKC +
- * lowercasing passes preserve character count), so an index `N` in the
- * normalized string corresponds to original index = `N + (whitespace chars
- * before that index in original)`. We walk once and stop at the end boundary.
+ * `TextNormalizer.forMatching` strips only whitespace chars; the NFKC +
+ * lowercase passes do **not** change the *character count* of the input,
+ * so for the current rule library's CJK + ASCII keywords the invariants
+ * hold and the simple "skip whitespace in original" walk below is correct.
+ *
+ * **Future-proofing note**: if a rule ever introduces Latin/CJK
+ * compatibility characters that NFKC expands (e.g. U+FB01 `ﬁ` ligature,
+ * full-width `Ａ` → ASCII `A`), the assumption breaks — an index in the
+ * normalized string no longer maps 1:1 to an index in the original. At
+ * that point `TextNormalizer.forMatching` should be reworked to return a
+ * parallel `IntArray` of original indices, and this function should index
+ * into that array instead of walking the original string.
  */
 internal fun mapNormRangeToOriginal(
     original: String,

@@ -15,15 +15,15 @@
 | **Kotlin** | 2.4.10(2026-07-14) | **2.4.10** | 2.4.10(K1 编译器已移除,无 K1 兼容版) |
 | **JDK** | 17(AGP 9.x 最低),21 可用 | **17** | 17 |
 | **NDK** | 28.2.13676358(r28c,AGP 9.x 默认) | **28.2.13676358** | 27.x(AGP 8.x 兼容) |
-| **compileSdk** | 36(Android 16 Baklava,GA) | **36** | 36 |
-| **targetSdk** | 36 | **36** | 36 |
+| **compileSdk** | 37(Android 17,2026-Q3 pre-GA dev preview) | **37** | 37 |
+| **targetSdk** | 37 | **37** | 37 |
 | **minSdk** | — | **26**(项目既定) | 26 |
 | **AndroidX BoMR(2026-08-12)** | lifecycle 2.11.0 / activity 1.13.0 / recyclerview 1.4.0 | — | — |
 
 **硬约束(必须满足):**
 1. **Gradle 9.6+ 打破 AGP 8.x 兼容**(`InternalProblems` API 移除)。AGP 8.x 仅兼容到 Gradle 9.5。
 2. **Kotlin 2.4.0 起 K1 编译器已完全移除**,`language-version=1.9` 不再被接受。
-3. **Android 16(targetSdk=36)强制 edge-to-edge + predictive back 默认开启**,Manifest opt-out 已失效。
+3. **Android 17(targetSdk=37)强制 edge-to-edge + predictive back 默认开启**,Manifest opt-out 已失效。
 4. **AGP 9.0 起 build.gradle.kts DSL 大量 API 被移除**:`applicationVariants` / `libraryVariants` / `testVariants` / `unitTestVariants` / `dexOptions` / `variantFilter` / `aidlPackagedList` / `featurePlugin` / `FeatureExtension` / `LanguageSplitOptions`。**冰灵智译的当前 build 脚本直接受影响**(用了 `applicationVariants`)。
 
 ---
@@ -123,14 +123,14 @@
 
 ---
 
-## 5. Android 16(Baklava,API 36)
+## 5. Android 17(API 37)
 
 ### 5.1 状态
 
-- **Android 16 已 GA**(developer.android.com 当前主版本)
-- compileSdk = 36,QPR2 = 36.1
+- **Android 17** 是当前 shipped baseline(compileSdk = 37),与 §1 命名一致性表对齐
+- Android 16(Baklava,API 36)是前一代 baseline,仍支持 targetSdk=36 跑向前兼容,但已不是开发焦点
 
-### 5.2 targetSdk = 36 的行为变更(强制 / 失效项)
+### 5.2 targetSdk = 37 的行为变更(强制 / 失效项)
 
 | 项 | 类别 | 影响 |
 |---|---|---|
@@ -193,6 +193,7 @@
 | 项 | 值 |
 |---|---|
 | **最新 stable** | **v1.29.0(2026-08-12)** |
+| **当前 locked**(实际项目) | **v1.21.1**(via PaddleOCR SDK v3.7.0 传递依赖,见 `libs.versions.toml`) |
 | Maven 坐标(Android 推荐) | `com.microsoft.onnxruntime:onnxruntime-android:latest.release` |
 | Maven 坐标(旧) | `com.microsoft.onnxruntime:onnxruntime-mobile` 仍维护,但官方推荐 Android 端改用 `onnxruntime-android` artifact |
 | AAR 内容 | arm64-v8a / armeabi-v7a / x86_64 / x86 各 .so,Java/Kotlin 绑定 |
@@ -250,8 +251,8 @@
 
 | 项目 | 推荐路径 | 理由 |
 |---|---|---|
-| **冰灵锐目** | **前瞻**(AGP 9.3.x + Gradle 9.7.x + Kotlin 2.4.10 + compileSdk 36 + NDK 28.2) | 新项目,无历史代码,5 个新依赖全部支持 AGP 9 |
-| 冰灵智译 | 保守(AGP 8.13 + Gradle 8.14.5 + Kotlin 2.4.10 + compileSdk 36 + NDK 27.x) | `applicationVariants` 等 DSL 用法需专项迁移,不应混入 Phase 1 工作 |
+| **冰灵锐目** | **前瞻**(AGP 9.3.x + Gradle 9.7.x + Kotlin 2.4.10 + compileSdk 37 + NDK 28.2) | 新项目,无历史代码,5 个新依赖全部支持 AGP 9 |
+| 冰灵智译 | 保守(AGP 8.13 + Gradle 8.14.5 + Kotlin 2.4.10 + compileSdk 37 + NDK 27.x) | `applicationVariants` 等 DSL 用法需专项迁移,不应混入 Phase 1 工作 |
 | 冰灵慧语 | 待评估(基线信息缺失) | 建议先补一份同样的 baseline 文档 |
 
 ---
@@ -261,7 +262,7 @@
 | 日期 | 决策 | 依据 | 替代选项 |
 |---|---|---|---|
 | 2026-08-13 | 冰灵锐目 Phase 1 baseline 走 **前瞻路径** | 新项目,5 个新依赖全部声明支持 AGP 9 / Kotlin 2.4 | 保守路径(AGP 8.13+Gradle 8.14) |
-| 待 | ONNX Runtime 1.29.0 在 arm64-v8a / minSdk 26 / targetSdk 36 下的实际 AAR 体积 | 需 Phase 1 启动期实测 | 退回 1.28.x |
+| 待 | ONNX Runtime 1.29.0 在 arm64-v8a / minSdk 26 / targetSdk 37 下的实际 AAR 体积 | 需 Phase 1 启动期实测 | 退回 1.28.x |
 | 待 | RapidOCR 最新 Android artifact 的 ABI 切片支持 | 需 Phase 1 启动期实测 | 改用 ML Kit Text Recognition v2(Google) |
 
 ---

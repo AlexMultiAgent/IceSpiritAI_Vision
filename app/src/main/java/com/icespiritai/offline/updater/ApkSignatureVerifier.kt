@@ -129,18 +129,21 @@ object ApkSignatureVerifier {
      * blob and return the first inner X.509 certificate (DER-encoded).
      *
      * The CERT.* entry on disk is a PKCS#7 SignedData wrapper, but
-     * `CertificateFactory.generateCertificate(InputStream)` transparently
-     * walks past the wrapper and yields the inner X.509 certificate. We
+     * `CertificateFactory.generateCertificates(InputStream)` transparently
+     * walks past the wrapper and yields the inner X.509 certificates. We
      * feed the **entire** stream (no ASN.1 envelope stripping) so that this
      * runtime path produces byte-for-byte the same `Certificate.encoded`
      * DER as the build-time `extractApkCertificateSha256` helper, which
      * also calls `generateCertificates(bytes.inputStream())`. Both ends
-     * must apply the SAME parsing for SHA-256 to match across the
-     * build/runtime boundary.
+     * MUST apply the SAME parsing — `generateCertificate` (singular) and
+     * `generateCertificates` (plural) produce DIFFERENT DER on some JDKs
+     * for the same PKCS#7 stream, so a mismatch silently rejects every
+     * legitimate in-app update.
      */
     private fun parseFirstCertificate(bytes: ByteArray): java.security.cert.Certificate? = try {
         CertificateFactory.getInstance("X.509")
-            .generateCertificate(ByteArrayInputStream(bytes))
+            .generateCertificates(ByteArrayInputStream(bytes))
+            ?.firstOrNull()
     } catch (_: Exception) {
         null
     }

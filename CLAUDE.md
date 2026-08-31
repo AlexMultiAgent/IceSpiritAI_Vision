@@ -142,6 +142,8 @@ Phase 1 走 OCR + 规则库路线(**PP-OCRv6_small** + PaddleOCR 官方 SDK v3.7
 ./gradlew.bat clean
 ```
 
+**CI 仅跑 `shell` profile** — 仓库 .github/workflows 不会构建 `ice_ocr_rules`(避免拉 70 MB AAR + 30 MB ONNX + 跑 5 步 pre-flight + 真机烟测)。`ice_ocr_rules` profile 的端侧回归由 [`/icevision-release`](.claude/skills/icevision-release/SKILL.md) skill 的 5 步 pre-flight + 真机烟测覆盖(local-only,见 [docs/smoke/](docs/smoke/))。本地构建任一 profile 都需要先 export `JAVA_HOME` 到 JDK 17(`§开发环境`)。
+
 ## Lint vital/analyze 已禁用(AGP 9.3 + Kotlin 2.4.10 FIR 崩)
 
 `lint*Analyze*` 与 `lint*Vital*` 任务在 [`app/build.gradle.kts`](app/build.gradle.kts) 中通过
@@ -202,6 +204,7 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 ## Commit 策略(必读)
 
 - 所有 commit 作者必须是 `AlexMultiAgent`(仓库 git config 已锁)。**绝不要** 加 `Co-Authored-By: Claude` trailer——也包括 `Co-Authored-By: AlexMultiAgent <noreply@anthropic.com>` 这种把 `user.name` 替换成 `AlexMultiAgent` 但保留 anthropic 邮箱的隐性 AI agent trailer(2026-08-20 audit 发现历史 commit 全部命中此形式)。提交前 `git log -1 --format='%B' | grep -i 'Co-Authored-By'` 应为空。
+  - **例外**:2026-08-21 之前的历史 commit 保留 trailer。**不** force-rewrite 是因为会破坏已发布版本的 `tag SHA ↔ APK SHA ↔ JSON SHA` 对齐(vision 自 2026-08-14 起有 in-app update 链路强依赖);live gate 是新 commit 的 pre-flight。
 - `gradle.token.properties`(Gitea PAT)、`~/.gradle/gradle.properties`(release signing)已在 `.gitignore`,不要尝试 commit 它们。
 - 提交前 `git status` 检查是否包含敏感文件;`git add` 用具体路径,避免 `git add -A`。
 
@@ -236,7 +239,7 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 | 文档 | 用途 |
 |---|---|
 | [`README.md`](README.md) | 仓库入口说明 |
-| [`docs/superpowers/specs/2026-08-13-icevision-phase1-ocr-rules-design.md`](docs/superpowers/specs/2026-08-13-icevision-phase1-ocr-rules-design.md) | **Phase 1 实际规范**(OCR + 规则库),取代 init spec 的 §6 视觉二分类与 §4 工具链基线 |
+| [`docs/superpowers/specs/2026-08-13-icevision-phase1-ocr-rules-design.md`](docs/superpowers/specs/2026-08-13-icevision-phase1-ocr-rules-design.md) | **Phase 1 草案(SUPERSEDED,PaddleOCR 路径取代 RapidOCR)** — §5/§6/§7 仍作 OCR + 规则库端到端契约参考 |
 | [`docs/superpowers/specs/2026-08-13-icespirit-vision-init-design.md`](docs/superpowers/specs/2026-08-13-icespirit-vision-init-design.md) | 初版 init 规范,仅骨架 / 命名空间 / 目录布局仍生效 |
 | [`docs/superpowers/specs/2026-08-14-icevision-phase2-hardening-design.md`](docs/superpowers/specs/2026-08-14-icevision-phase2-hardening-design.md) | Phase 2 硬化设计 |
 | [`docs/superpowers/specs/2026-08-15-icevision-ui-design.md`](docs/superpowers/specs/2026-08-15-icevision-ui-design.md) | UI 设计稿 |
