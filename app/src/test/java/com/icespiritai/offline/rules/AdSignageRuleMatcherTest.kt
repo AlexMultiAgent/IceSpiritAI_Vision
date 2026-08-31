@@ -1206,7 +1206,13 @@ class AdSignageRuleMatcherTest {
             Severity.Warning,
         )
         val hits = AdSignageRuleMatcher(listOf(r)).scan("加微信 + 扫码进群 + 直播带单 + 快手直播带单 + 群内带单")
-        assertEquals(5, hits.size)
+        // Phase 2.5 (2026-08-31): "直播带单" (4) 是 "快手直播带单" (6) 的子串,
+        // 同 ruleId 内被吸收。5 个独立关键词压成 4 个最长命中。
+        assertEquals(4, hits.size)
+        assertTrue(hits.any { it.matchedText == "加微信" })
+        assertTrue(hits.any { it.matchedText == "扫码进群" })
+        assertTrue(hits.any { it.matchedText == "快手直播带单" })
+        assertTrue(hits.any { it.matchedText == "群内带单" })
     }
 
     @Test
@@ -1232,7 +1238,14 @@ class AdSignageRuleMatcherTest {
             Severity.Warning,
         )
         val hits = AdSignageRuleMatcher(listOf(r)).scan("首席经济学家推荐 + 首席分析师 + 经济学家推荐 + 基金经理推荐")
-        assertEquals(4, hits.size)
+        // Phase 2.5 (2026-08-31): "经济学家推荐" (6) 是 "首席经济学家推荐" (8)
+        // 的子串,同 ruleId 内被更长命中吸收,所以 4 个独立关键词压成 3 个。
+        // 已知 trade-off:用户从 "首席经济学家推荐" 即可看出存在 "经济学家推荐"
+        // 类 endorsement claim(OCR 文本自身保留全文,ResultPanel 上原文可见)。
+        assertEquals(3, hits.size)
+        assertTrue("首席经济学家推荐 必须命中", hits.any { it.matchedText == "首席经济学家推荐" })
+        assertTrue("首席分析师 必须命中", hits.any { it.matchedText == "首席分析师" })
+        assertTrue("基金经理推荐 必须命中", hits.any { it.matchedText == "基金经理推荐" })
     }
 
     @Test
@@ -1492,9 +1505,17 @@ class AdSignageRuleMatcherTest {
         val hits = AdSignageRuleMatcher(listOf(r)).scan(
             "本品是糖尿病患者 + 高血压患者 + 冠心病患者的安心选择 + 远离癌症 + 预防中风 + 心脑血管疾病人群适用"
         )
-        assertTrue(hits.size >= 6)
+        // Phase 2.5 (2026-08-31): "糖尿病" (3) 被 "糖尿病患者" (5) 吸收,
+        // "高血压" (3) 被 "高血压患者" (5) 吸收,"冠心病" (3) 被 "冠心病患者" (5) 吸收;
+        // "癌症" 在 OCR 中无 "癌症患者" 配对,存活。共 6 个最长命中。
+        // 已知 trade-off:OCR 文本自身保留全文(糖尿病患者/高血压患者/...),
+        // 用户能从 ResultPanel 原文看到所有提及,dedup 只影响 RuleHit 列表去重。
+        assertEquals(6, hits.size)
         assertTrue(hits.any { it.matchedText == "糖尿病患者" })
-        assertTrue(hits.any { it.matchedText == "糖尿病" })
+        assertTrue(hits.any { it.matchedText == "高血压患者" })
+        assertTrue(hits.any { it.matchedText == "冠心病患者" })
+        assertTrue(hits.any { it.matchedText == "癌症" })
+        assertTrue(hits.any { it.matchedText == "中风" })
         assertTrue(hits.any { it.matchedText == "心脑血管" })
         assertEquals(Severity.Violation, hits[0].severity)
     }
@@ -2328,5 +2349,133 @@ class AdSignageRuleMatcherTest {
             setOf("ad_signage_signage_disease_prevention"),
             ruleIds,
         )
+    }
+
+    // --- Phase 2.5 substring dedup(2026-08-31 落地,见 AdSignageRuleMatcher.kt KDoc)
+    // 同 ruleId 内,一条 hit 的 matchedText 是另一条更长 hit 的子串 → 丢弃较短。
+    // 解决 3 种重叠模式:
+    //   1. 关键词子串(如 "增强免疫" + "增强免疫力" 两条独立关键词都注册)
+    //   2. 变体误中("护心血管" 是 "呵护心血管" 的 1-char-deletion 变体,substring
+    //      匹配到另一独立关键词 "保护心血管")
+    //   3. 相邻 claim 短语("控糖" + "稳血糖" + "控糖稳血糖" 同规则同短语)
+    // 跨 ruleId 不去重(不同法源应各自保留)。
+
+    @Test fun scan_phase2_5_dropsKeywordSubstringOverlap() {
+        // 模式 1: "增强免疫" + "增强免疫力" 都是同规则独立关键词
+        val r = AdSignageRule(
+            id = "test-fn-claim",
+            category = "signage",
+            regulation = "广告法 §17 + §58",
+            keywords = listOf("增强免疫", "增强免疫力"),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本品增强免疫力,适合三高人群")
+        assertEquals(
+            "Phase 2.5: '增强免疫' 应被 '增强免疫力' 吸收,只保留后者",
+            1, hits.size,
+        )
+        assertEquals("增强免疫力", hits[0].matchedText)
+        assertEquals("test-fn-claim", hits[0].ruleId)
+    }
+
+    @Test fun scan_phase2_5_dropsVariantInducedFalsePositive() {
+        // 模式 2: "呵护心血管"(5 字,length>=5 → 自动生成变体 "护心血管"),
+        // 变体 substring 匹配另一独立关键词 "保护心血管"。Phase 2 把变体折叠回
+        // "呵护心血管",但不同 (ruleId, originalKeyword) → Phase 2.5 再按子串丢弃。
+        val r = AdSignageRule(
+            id = "test-fn-heart",
+            category = "signage",
+            regulation = "广告法 §17 + §58",
+            keywords = listOf("呵护心血管", "保护心血管"),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("保护心血管,适合中老年")
+        assertEquals(
+            "Phase 2.5: '呵护心血管' 的变体 '护心血管' 应被 '保护心血管' 吸收",
+            1, hits.size,
+        )
+        assertEquals("保护心血管", hits[0].matchedText)
+    }
+
+    @Test fun scan_phase2_5_dropsAdjacentClaimPhrasing() {
+        // 模式 3: "控糖" + "稳血糖" + "控糖稳血糖" 同规则同短语 → 仅保留最长
+        val r = AdSignageRule(
+            id = "test-fn-sugar",
+            category = "signage",
+            regulation = "广告法 §17 + §58",
+            keywords = listOf("控糖", "稳血糖", "控糖稳血糖"),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本品控糖稳血糖,适合糖尿病人群")
+        assertEquals(
+            "Phase 2.5: '控糖'/'稳血糖' 应被 '控糖稳血糖' 吸收,只保留后者",
+            1, hits.size,
+        )
+        assertEquals("控糖稳血糖", hits[0].matchedText)
+    }
+
+    @Test fun scan_phase2_5_keepsCrossRuleIdSubstringOverlap() {
+        // 跨规则 substring 不去重:"心血管" 在 rule A,"保护心血管" 在 rule B
+        val ruleA = AdSignageRule(
+            id = "rule-blood-pressure",
+            category = "medical",
+            regulation = "广告法 §16(二)",
+            keywords = listOf("心血管"),
+            severity = Severity.Warning,
+        )
+        val ruleB = AdSignageRule(
+            id = "rule-food-fn",
+            category = "signage",
+            regulation = "广告法 §17 + §58",
+            keywords = listOf("保护心血管"),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(ruleA, ruleB)).scan("保护心血管,适合心血管疾病人群")
+        // 两条不同 ruleId, 都应保留
+        assertEquals("跨规则子串不应去重,两条都活下来", 2, hits.size)
+        val ruleIds = hits.map { it.ruleId }.toSet()
+        assertTrue("rule-blood-pressure 必须保留", "rule-blood-pressure" in ruleIds)
+        assertTrue("rule-food-fn 必须保留", "rule-food-fn" in ruleIds)
+    }
+
+    @Test fun scan_phase2_5_keepsSameLengthNonSubstringOverlap() {
+        // 同长度但互不包含:"护眼"(2) + "护胃"(2) 同规则,都不是对方的子串 → 都保留
+        val r = AdSignageRule(
+            id = "test-fn-eyes-stomach",
+            category = "signage",
+            regulation = "广告法 §17 + §58",
+            keywords = listOf("护眼", "护胃"),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本品护眼护胃,适合学生与中老年")
+        assertEquals(
+            "同长度互不包含(护眼 vs 护胃)两条都活",
+            2, hits.size,
+        )
+        val matched = hits.map { it.matchedText }.toSet()
+        assertTrue("护眼 必须保留", "护眼" in matched)
+        assertTrue("护胃 必须保留", "护胃" in matched)
+    }
+
+    @Test fun scan_phase2_5_keepsBothWhenShorterIsStandaloneElsewhere() {
+        // 当短 keyword 在文本其它位置独立出现时(如广告说 "增强免疫" 又说 "增强免疫力"),
+        // Phase 2.5 仍会丢弃 — 这是已知 trade-off:同一规则下短串总是被长串吞并。
+        // 用户能通过最长的 "增强免疫力" 推断出 "增强免疫" 也在场。pin 这个行为以
+        // 防后续优化意外改回去。
+        val r = AdSignageRule(
+            id = "test-fn-immune",
+            category = "signage",
+            regulation = "广告法 §17 + §58",
+            keywords = listOf("增强免疫", "增强免疫力"),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "本品增强免疫,科学配方;另含增强免疫力成分,适合亚健康"
+        )
+        assertEquals(
+            "同规则内子串 dedup 无视位置,只保留最长匹配",
+            1, hits.size,
+        )
+        assertEquals("增强免疫力", hits[0].matchedText)
     }
 }

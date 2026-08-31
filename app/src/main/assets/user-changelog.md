@@ -1,5 +1,16 @@
 # 用户更新日志
 
+## v0.1.38 · 2026-08-31
+
+- **规则改进(广告招牌 tab):Phase 2.5 同 ruleId 子串去重**(`AdSignageRuleMatcher`):在原 Phase 2 (ruleId + originalKeyword 维度,折叠 1-char-deletion 变体) 与 Phase 3 (absence rule 维度) 之间插入子串合并阶段 — 同 ruleId 内,若一条 hit 的 `matchedText` 是另一条更长 hit 的子串,**双向**:`case A` 较短候选是已 kept 较长条目的子串 → 丢弃;`case B` 较长候选包含已 kept 较短条目 → 反向删除较短条目,保留较长。LinkedHashMap 插入序非长度序,必须 case B 兜底。覆盖 3 类重叠模式:
+  - **关键词子串**(同规则 keywords 列表里有 `增强免疫`(4) + `增强免疫力`(5)两条独立关键词,OCR 仅 `增强免疫力` 一处时原先生成 2 个 hit,现在合并成 1)
+  - **变体误中**(`呵护心血管`(5) → 1-char-deletion 变体 `护心血管`(4) substring 匹配另一独立关键词 `保护心血管`(5),原 Phase 2 折叠变体后两条仍共存,Phase 2.5 再按子串丢短)
+  - **相邻 claim 短语**(同规则 `控糖`(2) + `稳血糖`(3) + `控糖稳血糖`(5) 共存于一段 OCR,只留最长)
+- **跨 ruleId 子串不去重**(守护):不同法源即便词条互含(如 medical 类规则的 `心血管` 与 food_function_claim 的 `保护心血管`)各自保留;**已知 trade-off**:同 ruleId 内即便短 keyword 在文本其它位置独立出现(如 `增强免疫` 独立 + `增强免疫力` 独立)仍按子串去重 → 用户从 ResultPanel OCR 原文即可看到短表述,RuleHit 列表只保留最长。配 6 unit test pin 契约(3 类覆盖模式 + 跨 ruleId 守护 + 同长度互不包含 + 短 keyword 独立出现仍去重)
+- **4 条旧测试适配**:同 ruleId 内把"每个独立关键词各记 1 hit"语义换成"子串去重只保留最长",相应放宽断言。涉及 `finance_art25_endorsement_reinforced`(经济学家推荐 ⊂ 首席经济学家推荐)/ `signage_food_disease_target`(糖尿病 ⊂ 糖尿病患者等 4 对)/ `finance_316_art3_internet`(直播带单 ⊂ 快手直播带单)/ `mentorReview_crabMall`(全国第一 同时 ⊂ 销量全国第一 / 连锁门店数量全国第一)。每条加 `Phase 2.5 (2026-08-31)` 注释,详细 dedup 模式见 `AdSignageRuleMatcher.kt` Phase 2.5 KDoc
+- **UI 调整(广告招牌 tab)**: 顶部标题 `冰灵⚡锐目` 三段 `headlineSmall` → `titleLarge`(小一号,降低顶部占用);KPI bar(`10 违规 / 0 警告 / 0 信息` 数字 + 标签)vertical padding 12.dp → 6.dp + 数字字号 `headlineMedium` → `headlineSmall`(整体压矮,数字 + 标签紧凑);ResultPanel weight 1f → 1.6f(图文区高度比从 1:1 改为 1:1.6,文字区更高更易读);导出取证包按钮 padding 微调(top 0→8.dp,底 16.dp 保留)从 ResultPanel 滑出。**图片区高度不变**(仍 weight 1f)
+- **测试覆盖**: 599 tests / 0 failures / 100% successful(`testDebugUnitTest -PmodelProfile=shell`,569 → 599,新增 6 Phase 2.5 子串去重契约 + 4 条旧测试放宽断言)
+
 ## v0.1.37 · 2026-08-29
 
 - **新功能:Tab → 初始页 reset 行为**(CLAUDE.md §Tab → 初始页 spec 落地):识别完成后用户再次点已选中的「广告招牌」tab 直接回到 Idle 初始页(清 pendingUri + state 走回 Idle),无需手动点右下角拍照/相册按钮。3-state 契约:`tab 切换 → 保留 state(预留 FoodLabeling 解锁后);同 tab + Loading → no-op(防误触打断正在跑的 OCR / 规则扫描);同 tab + !Loading → reset 回 Idle`。配 3 unit test pin(`setTab_sameTab_nonLoadingState_resetsToIdle` / `setTab_sameTab_loadingState_isNoOp` / `setTab_tabSwitch_doesNotReset`)— 反射设 `_state=Loading` 验证 Loading 路径不被误清,稳定

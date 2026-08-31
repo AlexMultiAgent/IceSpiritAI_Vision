@@ -180,6 +180,61 @@ class AdSignageRuleMatcher(rules: List<AdSignageRule>) : RuleMatcher {
             }
         }
 
+        // Phase 2.5: same-ruleId substring dedup, keeping the LONGEST
+        // matchedText. Phase 2 collapses 1-char-deletion VARIANTS of a single
+        // original keyword back to that original, but does NOT touch cases
+        // where two distinct (ruleId, originalKeyword) keys happen to have a
+        // substring relationship. Three real-world overlap modes are caught
+        // here:
+        //   1. Keyword substring overlap — both keywords independently
+        //      registered in the same rule's `keywords` list, AC emits both
+        //      from one OCR occurrence. Example: rule has "增强免疫" (4) +
+        //      "增强免疫力" (5); OCR "增强免疫力" matches both.
+        //   2. Variant-induced false positives — `呵护心血管` (5) auto-
+        //      decomposes into the variant "护心血管" (line ~99), which
+        //      substring-matches a SEPARATE rule keyword "保护心血管" in the
+        //      OCR text. Phase 2 collapses the variant back to "呵护心血管"
+        //      but the two end up as distinct (ruleId, originalKeyword) keys
+        //      and both survive.
+        //   3. Adjacent claim phrasing — `控糖` (2) + `稳血糖` (3) both fire
+        //      inside the phrase `控糖稳血糖` (5). Keeping the longest
+        //      `控糖稳血糖` still surfaces both banned claims (the matched
+        //      text makes it clear that 控糖 and 稳血糖 are both implicated);
+        //      dropping the shorter forms removes the visual redundancy
+        //      without losing semantic information.
+        // Cross-ruleId substring relationships are NOT collapsed — different
+        // rules point at different regulations even when their terms overlap
+        // (e.g. "心血管" in a blood-pressure rule + "保护心血管" in a
+        // food-function rule).
+        //
+        // The loop must walk entries in insertion order but check BOTH
+        // directions: case A (current `matched` is shorter than a kept entry
+        // and is its substring → drop `matched`), case B (current `matched`
+        // is longer than a kept entry and contains it → drop the kept entry,
+        // keep `matched`). LinkedHashMap iteration order is the raw-pair
+        // insertion order, which is NOT length-sorted — so a shorter entry
+        // can land before its longer counterpart and we need case B to fix
+        // it up when the longer arrives.
+        val substringDeduped = LinkedHashMap<Pair<String, String>, String>()
+        for ((key, matched) in longestByKey) {
+            val (ruleId, _) = key
+            val isSubstringOfKept = substringDeduped.entries.any { (keptKey, keptMatched) ->
+                keptKey.first == ruleId &&
+                    keptMatched.length > matched.length &&
+                    matched in keptMatched
+            }
+            if (isSubstringOfKept) continue
+            val containedKeptKeys = substringDeduped.entries
+                .filter { (keptKey, keptMatched) ->
+                    keptKey.first == ruleId &&
+                        matched.length > keptMatched.length &&
+                        keptMatched in matched
+                }
+                .map { it.key }
+            containedKeptKeys.forEach { substringDeduped.remove(it) }
+            substringDeduped[key] = matched
+        }
+
         // Phase 3: absence rule dedup — when a rule has sourceMarkers, at most
         // one hit per ruleId (the rule as a whole either fires or doesn't; the
         // matchedText is whichever claim keyword was longest). Non-absence
@@ -188,7 +243,7 @@ class AdSignageRuleMatcher(rules: List<AdSignageRule>) : RuleMatcher {
         // [ruleById] does not shuffle the user-visible hit list.
         val seenAbsenceRules = mutableSetOf<String>()
         val hits = mutableListOf<RuleHit>()
-        for ((key, matched) in longestByKey) {
+        for ((key, matched) in substringDeduped) {
             val (ruleId, _) = key
             val rule = ruleById[ruleId] ?: continue
             if (rule.sourceMarkers.isNotEmpty()) {

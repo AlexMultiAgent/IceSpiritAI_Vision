@@ -193,7 +193,7 @@ fun HomeScreen(
                 ResultPanel(
                     report = s.report,
                     modifier = Modifier
-                        .weight(1f)
+                        .weight(1.6f)
                         .fillMaxWidth(),
                 )
             }
@@ -214,7 +214,7 @@ fun HomeScreen(
                     onClick = { ExportAction.share(context, s.report, BuildConfig.VERSION_NAME) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
                 ) {
                     Text(stringResource(R.string.action_export))
                 }

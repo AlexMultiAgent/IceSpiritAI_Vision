@@ -92,7 +92,7 @@ fun StatusBanner(
         modifier = modifier
             .fillMaxWidth()
             .background(bg)
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(horizontal = 16.dp, vertical = 6.dp)
             .semantics { contentDescription = statusBannerA11y(kind, violationCount, warningCount, infoCount) },
     ) {
         when (kind) {
@@ -200,7 +200,7 @@ private fun KpiCell(
         ) { v ->
             Text(
                 text = "$v",
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.headlineSmall,
                 color = onBg,
             )
         }

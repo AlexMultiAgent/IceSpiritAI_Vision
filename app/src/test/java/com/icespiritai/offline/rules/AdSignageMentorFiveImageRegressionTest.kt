@@ -150,8 +150,11 @@ class AdSignageMentorFiveImageRegressionTest {
         val ids = hits.map { it.ruleId }.toSet()
         val texts = hits.map { it.matchedText }.toSet()
 
-        // 至少 7 个命中(原本 0 个):保健功能 + 疾病指向 + 极限词
-        assertTrue("紫玉米应至少 7 个命中,实际 ${hits.size}", hits.size >= 7)
+        // 至少 6 个命中(原本 0 个):同规则内子串去重后,`增强免疫`/`护心血管`/
+        // `控糖`/`稳血糖` 被 `增强免疫力`/`保护心血管`/`控糖稳血糖` 吸收,剩余
+        // 5 个 food_function_claim + 1 个 food_disease_target = 6。
+        // (Phase 2.5 substring dedup,2026-08-31 加入)
+        assertTrue("紫玉米应至少 6 个命中,实际 ${hits.size}", hits.size >= 6)
 
         // 必须命中 v5 新增 2 条规则
         assertTrue(
@@ -200,10 +203,13 @@ class AdSignageMentorFiveImageRegressionTest {
             "veterinary" !in categories,
         )
 
-        // 必须命中 "全国第一" / "销量全国第一"(实际 OCR 为 "累计销量全国第一",
-        // 关键词中放了 "全国第一" + "销量全国第一" 两个独立 hit)
-        assertTrue("蟹都汇应命中 '全国第一': $texts", "全国第一" in texts)
+        // 必须命中 "销量全国第一" / "连锁门店数量全国第一"(实际 OCR 为
+        // "累计销量全国第一" + "连锁门店数量全国第一";art28b_fake_data 关键词中
+        // 同时放 "全国第一" + "销量全国第一" + "连锁门店数量全国第一" — Phase 2.5
+        // 2026-08-31 同 ruleId 子串去重把 "全国第一" 吸收到两条更长命中里,
+        // 但 "连锁门店数量全国第一" 与 "销量全国第一" 互不包含,各自保留。)
         assertTrue("蟹都汇应命中 '销量全国第一': $texts", "销量全国第一" in texts)
+        assertTrue("蟹都汇应命中 '连锁门店数量全国第一': $texts", "连锁门店数量全国第一" in texts)
 
         // 必须命中 "领导品牌"(扩展后的极限词)
         assertTrue("蟹都汇应命中 '领导品牌': $texts", "领导品牌" in texts)

@@ -81,17 +81,17 @@ fun HomeTopBar(
                 ) {
                     Text(
                         text = stringResource(R.string.app_name_prefix),
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.titleLarge,
                     )
                     Text(
                         text = stringResource(R.string.app_name_bolt),
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier.padding(horizontal = 4.dp),
                     )
                     Text(
                         text = stringResource(R.string.app_name_suffix),
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.titleLarge,
                     )
                 }
                 val a11ySettings = stringResource(R.string.settings_button_desc)
