@@ -18,12 +18,15 @@ import org.robolectric.annotation.Config
  * Compose UI test for [HitCard] — the per-rule card rendered in the result
  * panel for each [RuleHit].
  *
- * Pins:
+ * Phase 3.5 (2026-08-31) pins:
  *  - matchedText renders as the card title (quoted in headlineSmall)
- *  - the localized "分类: X" and "依据: X" lines render
- *  - the severity is reflected in the merged Card contentDescription
- *    (Violation → "违规"); the inline left color bar carries the same
- *    info visually (not asserted here — would need screenshot golden)
+ *  - the **rule-category line is dropped** — replaced by a severity chip
+ *    ("违规" / "警告" / "信息") that sits in the card's top-right. Tests
+ *    no longer assert `分类: X` (the old rule-category line).
+ *  - the regulation (`依据: X`) line still renders (legal evidence per hit).
+ *  - severity is reflected in the merged Card contentDescription
+ *    (Violation → "违规"); the background color carries the same info
+ *    visually (not asserted here — would need screenshot golden).
  *  - when `lawText` is blank, the 查看法条原文 button is hidden
  *  - when `lawText` is non-blank, the 查看法条原文 button toggles the
  *    lawText visibility on click
@@ -32,7 +35,7 @@ import org.robolectric.annotation.Config
  * maxSdk=34.
  *
  * All tests wrap [HitCard] in [IceSpiritVisionTheme] so that
- * [iceSpiritSeverityColors] (read by the card for its 6dp left color bar
+ * [iceSpiritSeverityColors] (read by the card for its background tint
  * + onContainer headlineSmall color) resolves the
  * [LocalSeverityColors] composition local.
  */
@@ -49,14 +52,14 @@ class HitCardTest {
     ) = RuleHit(
         ruleId = "AD_LAW_007",
         matchedText = "100% 有效",
-        category = "绝对化用语",
+        category = "absolute",
         regulation = "《广告法》第 9 条",
         severity = severity,
         lawText = lawText,
     )
 
     @Test
-    fun `renders matchedText, category, regulation, severity`() {
+    fun `renders matchedText, regulation, severity chip`() {
         val hit = sampleHit()
         composeRule.setContent {
             IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
@@ -64,36 +67,54 @@ class HitCardTest {
             }
         }
         composeRule.onNodeWithText("\"100% 有效\"").assertExists()
-        composeRule.onNodeWithText("分类: 绝对化用语").assertExists()
         composeRule.onNodeWithText("依据: 《广告法》第 9 条").assertExists()
+        // Phase 3.5: severity chip on the card replaces the rule-category line.
+        // The chip text is the localized severity label.
+        composeRule.onNodeWithText("违规").assertExists()
         // Severity is reflected in the merged Card contentDescription
-        // (the left color bar carries it visually).
+        // (the colored background carries it visually).
         composeRule.onNodeWithContentDescription(
-            "100% 有效, 违规, 绝对化用语",
+            "100% 有效, 违规",
         ).assertExists()
     }
 
     @Test
-    fun `warning severity renders warning label`() {
+    fun `rule-category line is NOT rendered`() {
+        // Phase 3.5 dropped "分类: X" — the user wants the cards categorized
+        // by severity (违规/警告/信息), not by rule category. Assert the old
+        // line is gone so future refactors don't sneak it back in.
+        composeRule.setContent {
+            IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
+                HitCard(hit = sampleHit())
+            }
+        }
+        composeRule.onNodeWithText("分类: 绝对化用语").assertDoesNotExist()
+        composeRule.onNodeWithText("分类: absolute").assertDoesNotExist()
+    }
+
+    @Test
+    fun `warning severity renders warning chip`() {
         composeRule.setContent {
             IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
                 HitCard(hit = sampleHit(severity = Severity.Warning))
             }
         }
+        composeRule.onNodeWithText("警告").assertExists()
         composeRule.onNodeWithContentDescription(
-            "100% 有效, 警告, 绝对化用语",
+            "100% 有效, 警告",
         ).assertExists()
     }
 
     @Test
-    fun `info severity renders info label`() {
+    fun `info severity renders info chip`() {
         composeRule.setContent {
             IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
                 HitCard(hit = sampleHit(severity = Severity.Info))
             }
         }
+        composeRule.onNodeWithText("信息").assertExists()
         composeRule.onNodeWithContentDescription(
-            "100% 有效, 信息, 绝对化用语",
+            "100% 有效, 信息",
         ).assertExists()
     }
 

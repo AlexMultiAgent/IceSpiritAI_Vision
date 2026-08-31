@@ -1,20 +1,16 @@
 package com.icespiritai.offline.export
 
-import com.icespiritai.offline.domain.ViolationReport
 import com.icespiritai.offline.domain.CategoryDisplay
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
+import com.icespiritai.offline.domain.ViolationReport
 import java.io.ByteArrayOutputStream
 import java.io.OutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 object EvidencePackageBuilder {
-
-    private val json = Json { prettyPrint = true; encodeDefaults = true }
 
     fun build(
         report: ViolationReport,
@@ -27,37 +23,8 @@ object EvidencePackageBuilder {
             zip.write(imageProvider.open(report.imageUri))
             zip.closeEntry()
 
-            zip.putNextEntry(ZipEntry("report.json"))
-            val payload = buildJsonObject {
-                put("timestampMs", JsonPrimitive(report.timestampMs))
-                put("ocrText", JsonPrimitive(report.ocrText))
-                put("hits", buildJsonArray {
-                    report.hits.forEach { hit ->
-                        add(buildJsonObject {
-                            put("ruleId", JsonPrimitive(hit.ruleId))
-                            put("matchedText", JsonPrimitive(hit.matchedText))
-                            put("domain", JsonPrimitive(hit.domain))
-                            put("category", JsonPrimitive(hit.category))
-                            put("categoryLabel", JsonPrimitive(CategoryDisplay.displayName(hit.domain, hit.category)))
-                            put("regulation", JsonPrimitive(hit.regulation))
-                            put("lawText", JsonPrimitive(hit.lawText))
-                            put("severity", JsonPrimitive(hit.severity.name))
-                        })
-                    }
-                })
-            }
-            zip.write(json.encodeToString(JsonElement.serializer(), payload).toByteArray(Charsets.UTF_8))
-            zip.closeEntry()
-
-            zip.putNextEntry(ZipEntry("manifest.txt"))
-            zip.write(
-                """
-                IceSpiritAI_Vision evidence package
-                Generated: ${report.timestampMs}
-                AppVersion: $appVersion
-                HitCount: ${report.hits.size}
-                """.trimIndent().toByteArray(Charsets.UTF_8),
-            )
+            zip.putNextEntry(ZipEntry("report.txt"))
+            zip.write(renderReport(report, appVersion).toByteArray(Charsets.UTF_8))
             zip.closeEntry()
         }
     }
@@ -70,5 +37,56 @@ object EvidencePackageBuilder {
         val buf = ByteArrayOutputStream()
         build(report, imageProvider, buf, appVersion)
         return buf.toByteArray()
+    }
+
+    /**
+     * Human-readable report rendering. Phase 3.5 (2026-08-31) replaced the
+     * machine-oriented `report.json` (pretty-printed JSON the user couldn't
+     * open on a phone without a JSON viewer) with `report.txt`. The
+     * structure is intentionally plain so it can be opened in any text app
+     * preinstalled on Android (Files / WPS / 记事本 etc.) and skim-read by
+     * a regulator or business owner.
+     *
+     * Sections, in order:
+     *   - 头部 metadata (timestamp / app version / hit count)
+     *   - OCR 全文(规则引擎扫的就是这份文本)
+     *   - 命中详情(每个 hit 一段,含 ruleId / matchedText / 类别 / 严重度 / 法规 / 法条原文)
+     */
+    @JvmStatic
+    fun renderReport(report: ViolationReport, appVersion: String): String {
+        val ts = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.CHINA)
+            .format(Date(report.timestampMs))
+        val sb = StringBuilder()
+        sb.appendLine("冰灵锐目 取证报告")
+        sb.appendLine("================================================")
+        sb.appendLine("生成时间: $ts")
+        sb.appendLine("App 版本: $appVersion")
+        sb.appendLine("命中数量: ${report.hits.size}")
+        sb.appendLine()
+
+        sb.appendLine("OCR 文本")
+        sb.appendLine("================================================")
+        sb.appendLine(report.ocrText)
+        sb.appendLine()
+
+        sb.appendLine("命中详情")
+        sb.appendLine("================================================")
+        if (report.hits.isEmpty()) {
+            sb.appendLine("(无命中)")
+        } else {
+            report.hits.forEachIndexed { idx, hit ->
+                sb.appendLine("[${idx + 1}] ${hit.matchedText}")
+                sb.appendLine("    规则 ID:   ${hit.ruleId}")
+                sb.appendLine(
+                    "    类别:     ${CategoryDisplay.displayName(hit.domain, hit.category)} " +
+                        "(${hit.domain}/${hit.category})",
+                )
+                sb.appendLine("    严重度:   ${hit.severity.name}")
+                sb.appendLine("    法规依据: ${hit.regulation}")
+                sb.appendLine("    法条原文: ${hit.lawText}")
+                sb.appendLine()
+            }
+        }
+        return sb.toString()
     }
 }

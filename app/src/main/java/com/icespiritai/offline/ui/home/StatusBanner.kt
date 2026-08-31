@@ -9,7 +9,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -19,9 +18,14 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,10 +45,17 @@ enum class StatusBannerKind { Idle, Loading, Success, Warning, Violation }
 enum class StatusBannerStage { LoadingOcr, LoadingRuleScanning }
 
 /**
- * Modernized status banner (Phase 3.2): four-segment KPI horizontal bar.
+ * Modernized status banner (Phase 3.2, refined in 3.5): four-segment KPI
+ * horizontal bar.
  * Idle shows the empty hint; Loading shows spinner + phase text; numeric
  * kinds (Violation/Warning/Success) show the three counters via
  * AnimatedContent so a hit landing after Idle triggers a slide-in.
+ *
+ * Phase 3.5 (2026-08-31) adds **long-press tooltips** on each KPI cell that
+ * explain what the severity bucket means — short, single-sentence, fitting
+ * the popup width. The 3 KPIs collapse to a single Row so users can long-
+ * press each cell to learn the meaning of 违规 / 警告 / 信息 without leaving
+ * the screen.
  */
 @Composable
 fun StatusBanner(
@@ -160,6 +171,7 @@ private fun KpiRow(
             label = stringResource(R.string.kpi_violation_label),
             accent = accent,
             onBg = onBg,
+            tooltipText = stringResource(R.string.kpi_tooltip_violation),
             icon = { Icon(Icons.Default.WarningAmber, contentDescription = null, tint = accent) },
         )
         KpiCell(
@@ -167,6 +179,7 @@ private fun KpiRow(
             label = stringResource(R.string.kpi_warning_label),
             accent = accent,
             onBg = onBg,
+            tooltipText = stringResource(R.string.kpi_tooltip_warning),
             icon = { Icon(Icons.Default.WarningAmber, contentDescription = null, tint = accent) },
         )
         KpiCell(
@@ -174,44 +187,62 @@ private fun KpiRow(
             label = stringResource(R.string.kpi_info_label),
             accent = accent,
             onBg = onBg,
+            tooltipText = stringResource(R.string.kpi_tooltip_info),
             icon = { Icon(Icons.Default.Info, contentDescription = null, tint = accent) },
         )
     }
 }
 
+/**
+ * Single-line KPI cell (Phase 3.5): [icon] [count] [label] on one Row.
+ * Wrapped in a [TooltipBox] so long-press reveals a one-sentence
+ * explanation of what the bucket means. Tooltip wrapping is kept lightweight
+ * — no positioning hacks, just the default plain tooltip position provider.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun KpiCell(
     count: Int,
     label: String,
     accent: Color,
     onBg: Color,
+    tooltipText: String,
     icon: @Composable () -> Unit,
 ) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+    val tooltipState = rememberTooltipState(isPersistent = false)
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = {
+            PlainTooltip {
+                Text(
+                    text = tooltipText,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        },
+        state = tooltipState,
     ) {
-        AnimatedContent(
-            targetState = count,
-            transitionSpec = {
-                (slideInVertically { it } + fadeIn()) togetherWith (slideOutVertically { -it } + fadeOut())
-            },
-            label = "kpiCount",
-        ) { v ->
-            Text(
-                text = "$v",
-                style = MaterialTheme.typography.headlineSmall,
-                color = onBg,
-            )
-        }
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             icon()
+            AnimatedContent(
+                targetState = count,
+                transitionSpec = {
+                    (slideInVertically { it } + fadeIn()) togetherWith (slideOutVertically { -it } + fadeOut())
+                },
+                label = "kpiCount",
+            ) { v ->
+                Text(
+                    text = "$v",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = onBg,
+                )
+            }
             Text(
                 text = label,
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = onBg,
             )
         }

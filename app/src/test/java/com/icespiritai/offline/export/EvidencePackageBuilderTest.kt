@@ -23,7 +23,7 @@ import java.util.zip.ZipInputStream
 class EvidencePackageBuilderTest {
 
     @Test
-    fun `package contains image, report json, manifest`() {
+    fun `package contains image and human-readable report txt`() {
         val rawImage = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47)  // PNG magic
         val imageProvider = StubImageProvider(rawImage)
         val report = ViolationReport(
@@ -33,7 +33,7 @@ class EvidencePackageBuilderTest {
                 RuleHit(
                     ruleId = "AD_LAW_007",
                     matchedText = "100% 有效",
-                    category = "绝对化用语",
+                    category = "absolute",
                     regulation = "《广告法》第 9 条",
                     severity = Severity.Violation,
                     lawText = "第九条 广告不得有下列情形：（三）使用“国家级”、“最高级”、“最佳”等用语。",
@@ -59,26 +59,43 @@ class EvidencePackageBuilderTest {
             }
         }
 
+        // Phase 3.5 (2026-08-31): report.json + manifest.txt collapsed into a
+        // single human-readable report.txt. Phone stock apps (Files / WPS /
+        // 记事本) open it without a JSON viewer. The JSON file is gone.
         assertTrue("image.jpg missing", "image.jpg" in entries)
-        assertTrue("report.json missing", "report.json" in entries)
-        assertTrue("manifest.txt missing", "manifest.txt" in entries)
+        assertTrue("report.txt missing", "report.txt" in entries)
+        assertTrue("manifest.txt should be removed", "manifest.txt" !in entries)
+        assertTrue("report.json should be removed", "report.json" !in entries)
         assertEquals(rawImage.size, entries.getValue("image.jpg").size)
-        assertTrue(
-            "report.json lacks matchedText",
-            String(entries.getValue("report.json")).contains("100% 有效"),
+
+        val reportTxt = String(entries.getValue("report.txt"))
+        assertTrue("report.txt lacks matchedText", reportTxt.contains("100% 有效"))
+        assertTrue("report.txt lacks lawText", reportTxt.contains("第九条 广告不得有下列情形"))
+        assertTrue("report.txt lacks Chinese category label", reportTxt.contains("绝对化用语"))
+        assertTrue("report.txt lacks header", reportTxt.contains("冰灵锐目"))
+        assertTrue("report.txt lacks rule id", reportTxt.contains("AD_LAW_007"))
+        assertTrue("report.txt lacks regulation", reportTxt.contains("《广告法》第 9 条"))
+        assertTrue("report.txt lacks ocr text", reportTxt.contains("本店专治糖尿病"))
+    }
+
+    @Test
+    fun `report txt renders empty hits gracefully`() {
+        val imageProvider = StubImageProvider(byteArrayOf(1, 2, 3))
+        val report = ViolationReport(
+            imageUri = Uri.parse("file:///tmp/empty.jpg"),
+            ocrText = "干净文本无命中",
+            hits = emptyList(),
+            timestampMs = 1_700_000_000_000L,
         )
-        assertTrue(
-            "report.json lacks lawText",
-            String(entries.getValue("report.json")).contains("第九条 广告不得有下列情形"),
-        )
-        assertTrue(
-            "report.json lacks Chinese category label",
-            String(entries.getValue("report.json")).contains("\"categoryLabel\": \"绝对化用语\""),
-        )
-        assertTrue(
-            "manifest.txt lacks version",
-            String(entries.getValue("manifest.txt")).contains("IceSpiritAI_Vision"),
-        )
+
+        val txt = EvidencePackageBuilder.renderReport(report, appVersion = "0.0.0-test")
+
+        // No hits → render an "(无命中)" placeholder rather than dropping
+        // the section entirely. Confirms user sees the report DID run but
+        // found nothing, vs. ambiguous empty body.
+        assertTrue("empty report should not crash", txt.contains("冰灵锐目"))
+        assertTrue("empty report must show placeholder", txt.contains("(无命中)"))
+        assertTrue("empty report must include OCR text", txt.contains("干净文本无命中"))
     }
 
     private class StubImageProvider(private val bytes: ByteArray) : ImageBytesProvider {

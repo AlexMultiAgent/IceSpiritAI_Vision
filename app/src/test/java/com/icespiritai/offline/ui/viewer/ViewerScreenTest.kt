@@ -15,6 +15,8 @@ import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import com.icespiritai.offline.R
 import com.icespiritai.offline.domain.TextLine
+import com.icespiritai.offline.ui.theme.IceSpiritVisionTheme
+import com.icespiritai.offline.ui.theme.ThemeMode
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -44,12 +46,19 @@ class ViewerScreenTest {
     fun `ViewerScreen renders TopBar + image + text list when imageUri is non-null`() {
         var backClicks = 0
         composeTestRule.setContent {
-            MaterialTheme {
+            // Phase 3.5 (2026-08-31): ViewerImage now calls HighlightOverlay
+            // when lineBoxes is non-empty. HighlightOverlay reads
+            // iceSpiritSeverityColors (LocalSeverityColors) for the per-line
+            // box stroke colors, so the test must wrap in IceSpiritVisionTheme
+            // (plain MaterialTheme throws "LocalSeverityColors not provided").
+            IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     ViewerScreen(
                         imageUri = fakeUri,
                         lineBoxes = sampleLines(),
+                        hits = emptyList(),
                         hitsCount = 1,
+                        imageSize = null,
                         onBack = { backClicks++ },
                     )
                 }
@@ -76,12 +85,14 @@ class ViewerScreenTest {
     fun `ViewerScreen back button invokes onBack`() {
         var backClicks = 0
         composeTestRule.setContent {
-            MaterialTheme {
+            IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     ViewerScreen(
                         imageUri = fakeUri,
                         lineBoxes = emptyList(),
+                        hits = emptyList(),
                         hitsCount = 0,
+                        imageSize = null,
                         onBack = { backClicks++ },
                     )
                 }
@@ -95,12 +106,14 @@ class ViewerScreenTest {
     @Test
     fun `ViewerScreen shows ViewerEmpty when imageUri is null`() {
         composeTestRule.setContent {
-            MaterialTheme {
+            IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     ViewerScreen(
                         imageUri = null,
                         lineBoxes = sampleLines(),
+                        hits = emptyList(),
                         hitsCount = 0,
+                        imageSize = null,
                         onBack = {},
                     )
                 }
@@ -115,12 +128,14 @@ class ViewerScreenTest {
     @Test
     fun `ViewerScreen passes hitsCount through to ViewerTextList header`() {
         composeTestRule.setContent {
-            MaterialTheme {
+            IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     ViewerScreen(
                         imageUri = fakeUri,
                         lineBoxes = sampleLines(),
+                        hits = emptyList(),
                         hitsCount = 7,
+                        imageSize = null,
                         onBack = {},
                     )
                 }

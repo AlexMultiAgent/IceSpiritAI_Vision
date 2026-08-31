@@ -87,14 +87,26 @@ fun IceSpiritNavHost(modifier: Modifier = Modifier) {
                 // fall back to the transient OcrDone snapshot if the
                 // user pops in before RuleScanned completes. Both
                 // sources trace back to the same `ocrResult.lineBoxes`.
-                val lineBoxes = (state as? AnalysisState.Complete)?.report?.lineBoxes
+                val completeReport = (state as? AnalysisState.Complete)?.report
+                val lineBoxes = completeReport?.lineBoxes
                     ?: (state as? AnalysisState.OcrDone)?.lineBoxes
                     ?: emptyList()
-                val hitsCount = (state as? AnalysisState.Complete)?.report?.hits?.size ?: 0
+                val hits = completeReport?.hits ?: emptyList()
+                val hitsCount = hits.size
+                // Use the OCR engine's reference dims (full bitmap) for the
+                // ViewerImage HighlightOverlay transform. Falls back to
+                // nothing when the dims weren't populated (idle / shell
+                // profile), in which case the overlay still falls back to
+                // painter.intrinsicSize per computeFitTransform's contract.
+                val imageSize = completeReport
+                    ?.takeIf { it.imageWidth > 0 && it.imageHeight > 0 }
+                    ?.let { androidx.compose.ui.unit.IntSize(it.imageWidth, it.imageHeight) }
                 ViewerScreen(
                     imageUri = pendingUri,
                     lineBoxes = lineBoxes,
+                    hits = hits,
                     hitsCount = hitsCount,
+                    imageSize = imageSize,
                     onBack = { nav.popBackStack() },
                 )
             }

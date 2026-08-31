@@ -1,5 +1,33 @@
 # 用户更新日志
 
+## v0.1.40 · 2026-08-31
+
+- **UI 重大调整(广告招牌 tab,Phase 3.5 — 4 项联动)**:
+  - **① ResultPanel 不再显示识别文字**:OCR-text header `识别文字: ...` 整体删除。识别的原文已完整落入导出取证包 `report.txt`,UI 上只露「违规 / 警告 / 信息」3 个 card,信号更聚焦
+  - **② 按严重度分组,违规 / 警告 / 信息 颜色不同**:`HitCard` 不再走旧的"6.dp 左侧色条 + 分类(广告文案等)"两件套,改为**整张卡片用 severity container color 染色**(红 = 违规 / 琥珀 = 警告 / 蓝 = 信息),卡片右上角挂一个 SeverityChip(`违规` / `警告` / `信息`)标识桶。**规则 category(广告文案 / 绝对化用语等)整条删除**,UI 上不再显示——语义上 category 是引擎内部概念,用户只需要知道严重度。ResultPanel 按 rank(Violation > Warning > Info)分 3 个 section,每个 section 头顶一个 `违规 (N)` / `警告 (N)` / `信息 (N)` 计数条**
+  - **③ KPI bar 加长按提示**:`StatusBanner` 3 个 KpiCell 各包一层 `TooltipBox`(Material3 ExperimentalMaterial3Api),长按弹出单句说明「这个桶是什么意思」——违规 = 广告法明文禁止的违规内容需立即下架整改 / 警告 = 需结合语境判断的可疑话术或缺失披露 / 信息 = 广告含有合规资质 / 未成年相关等关键词需另行核实。无需离开页面学习 3 桶语义
+  - **④ 全屏查看图(双击放大后)也标红框命中位置**:`ViewerImage` 接 `hits` + `imageSize`,在 Telephoto `ZoomableAsyncImage` 上叠 `HighlightOverlay`(同款红/琥珀/蓝染色),与首页 `ImagePreview` 走同一个 `computeFitTransform` 共享 helper。**pinch / pan / 双击 zoom 时框同步缩放**,用户可以放大看「是哪几个字」触发规则
+- **测试覆盖**: 606 tests / 0 failures / 100% successful(`testDebugUnitTest -PmodelProfile=shell`,603 → 606,新增 / 调整 4:HitCard 拆 3 个 severity 的 chip + contentDescription pin + `分类: X` 反向断言;ResultPanel 拆 3 个 section header + 多 severity 分组 + 空 section 不渲染 pin)
+
+## v0.1.39 · 2026-08-31
+
+- **UI 调整(广告招牌 tab,Phase 3.5)**:
+  - **KPI 数字+标签栏 1 行布局**: `StatusBanner` KpiCell 之前 2 行竖排(数字 `headlineSmall` 在上 + `[icon] [label]` 在下)→ 改单行 `Row { icon(); count(`titleLarge`); label(`bodyMedium`) }`,整个 KPI bar 高度 ~80.dp → ~36.dp(约 44.dp 节省)
+  - **图片区高度恢复**(用户反馈 `weight(1.6f)` 把图压扁了): ResultPanel weight `1.6f → 1f`,图片:image-result 比例从 1:1.6 回到 1:1 — 图文各半,图片不再被规则命中详情挤压
+  - **文字区扩高**(承接 KPI 节省的高度): ResultPanel 现拿到更大空间,`LazyColumn` 长 OCR 原文 + 多个 hit card 滚动阅读更舒适
+  - **导出取证包按钮下移**: Button padding top `8.dp → 20.dp`(底部 16.dp 保留),按钮视觉上从 ResultPanel 滑开,触控也更明确不会误点
+- **导出取证包格式:`report.json → report.txt`**(用户反馈手机上 JSON 不好打开): `EvidencePackageBuilder` 不再写机器面向的 `report.json`(需要 JSON viewer 才能看)与 minimal `manifest.txt`,而是直接写一份**人读**的纯文本 `report.txt`,章节按顺序:
+  - **头部 metadata**: 生成时间 / App 版本 / 命中数量
+  - **OCR 文本**: 规则引擎扫的就是这份文本
+  - **命中详情**: 每个 hit 一段,含 ruleId / matchedText / 类别(含中英文 + domain) / 严重度 / 法规依据 / 法条原文
+  手机自带「文件 / WPS / 记事本」类应用直接打开,不需要任何 viewer。`renderReport()` 函数独立 `@JvmStatic`,配 `EvidencePackageBuilderTest` 2 unit test pin(整包结构 + 空命中占位 `(无命中)`)
+- **测试覆盖**: 603 tests / 0 failures / 100% successful(`testDebugUnitTest -PmodelProfile=shell`,599 → 603,新增 4:1 空命中占位 + 3 real-OCR Info 分布审计)
+- **真值 OCR Info 分布审计**(新 `AdSignageInfoDistributionRealOcrTest`):
+  - 走 audit66_ocr/ 仓库里的真实 PP-OCRv6_small OCR 输出(manifest 第 3-6 行注明 `runtime_note: ONNX Runtime CPU (matches Android ice_ocr_rules profile)`),等同 App 真机 OCR 引擎吐出来的文本
+  - **5 张导师图类别(种子 / 蟹都汇 / 杜蕾斯 / 东郊到家 / 紫玉米)在真实 OCR 下 Info 全部 = 0**(Contract pin A)—— 不是 bug 而是设计预期:Info 规则触发面窄,只在医疗 / 化妆品 / 烟酒 / 母婴类广告自报家门时才亮(关键词如「未成年人 / 儿童 / 宝宝 / 三甲专家 / 国械注准 / XK16-108 缺失 / 限期使用日期缺失 / 白酒」),日常广告常态 0
+  - **66 张 audit66 全扫仅 2 张(~3%)真亮 Info**(Contract pin B): #05 五常龙江医院 → `med_art11_qualifications` / #19 蜂胶胶囊整图 → `art10_minor`。即「该亮的广告」在真实 OCR 下仍能亮,守住 Info 桶不会被人为挖空的底线
+  - 与 pin A 成对,防「Info 永亮」与「Info 永灭」两个方向同时收紧
+
 ## v0.1.38 · 2026-08-31
 
 - **规则改进(广告招牌 tab):Phase 2.5 同 ruleId 子串去重**(`AdSignageRuleMatcher`):在原 Phase 2 (ruleId + originalKeyword 维度,折叠 1-char-deletion 变体) 与 Phase 3 (absence rule 维度) 之间插入子串合并阶段 — 同 ruleId 内,若一条 hit 的 `matchedText` 是另一条更长 hit 的子串,**双向**:`case A` 较短候选是已 kept 较长条目的子串 → 丢弃;`case B` 较长候选包含已 kept 较短条目 → 反向删除较短条目,保留较长。LinkedHashMap 插入序非长度序,必须 case B 兜底。覆盖 3 类重叠模式:

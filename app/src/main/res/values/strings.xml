@@ -25,6 +25,16 @@
     <string name="hit_card_regulation">依据: %1$s</string>
     <string name="hit_card_show_law">查看法条原文</string>
     <string name="hit_card_hide_law">收起法条原文</string>
+    <!-- Severity chip on each hit card (replaces the rule-category label as the
+         primary bucket marker, Phase 3.5). -->
+    <string name="hit_card_severity_chip">%1$s</string>
+    <!-- KPI bar tooltips: explain what each severity bucket means. Shown via
+         long-press on the KPI cell. Wording kept short for tooltip popups. -->
+    <string name="kpi_tooltip_violation">广告法明文禁止的违规内容,需立即下架整改</string>
+    <string name="kpi_tooltip_warning">需结合语境判断的可疑话术或缺失披露</string>
+    <string name="kpi_tooltip_info">广告含有合规资质 / 未成年相关等关键词,需另行核实</string>
+    <!-- Severity section header in the result panel: "违规 (3)" / "警告 (2)" / "信息 (1)" -->
+    <string name="result_section_header">%1$s (%2$d)</string>
     <string name="tab_ad_law">广告招牌</string>
     <string name="tab_food_label">食品标识</string>
 

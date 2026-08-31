@@ -45,7 +45,7 @@ class ViewerEmptyAndImageTest {
     @Test
     fun `ViewerImage with null URI renders the load-error text`() {
         composeRule.setContent {
-            ViewerImage(imageUri = null)
+            ViewerImage(imageUri = null, lineBoxes = emptyList(), hits = emptyList(), imageSize = null)
         }
         composeRule.onNodeWithText("图片加载失败").assertExists()
     }
