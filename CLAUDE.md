@@ -48,6 +48,36 @@
 
 **测试锚点**:`IceSpiritVisionViewModelTabTest.kt` 已落 3 个 setTab 契约测试 — (a) `setTab_sameTab_nonLoadingState_resetsToIdle`;(b) `setTab_sameTab_loadingState_isNoOp`;(c) `setTab_tabSwitch_doesNotReset`。Loading 路径用反射设 `_state=Loading` 验证不被误清,稳定。
 
+## UI 严重度模型 + v0.1.41 微调 (Phase 3.5 / v0.1.41)
+
+锁定于 v0.1.36 enum 重排后的 Severity contract,所有 UI 严重度排序都走同一份 domain 层 helper(避免 ui.home → ui.viewer 反向依赖 + 多处 ordinal 误用)。
+
+### 严重度模型 — Severity enum + rank contract
+
+- `enum class Severity { Violation, Warning, Info, Positive }` — Positive 故意放末尾,任何 ordinal-based `maxOfOrNull` 退化路径仍会把 Violation 排在 Positive 前面(深度防御)
+- `fun severityRank(severity: Severity): Int` 在 `domain/AnalysisState.kt` 顶层 function(Violation=3 / Warning=2 / Info=1 / Positive=0)
+- **Positive 必须永远不能升级显示** — 当 Violation 与 Positive 同图共存,filter Positive 后由 Violation 保住「最严重」;`ui.home.StatusBannerFor` 与 `ui.viewer.ViewerTextList.worstSeverityForLine` 都消费同一份 contract
+
+### Phase 3.5 严重度感知 UI (v0.1.40)
+
+四联 UI 调整(广告招牌 tab,首次把 Severity 作为一级分类):
+
+1. **HitCard 全卡片染色** — 整张卡片背景走 `sev.container(hit.severity)`,右上角挂 `SeverityChip`("违规" / "警告" / "信息")做无颜色可读的兜底标识;`rule category`(广告文案 / 绝对化用语等)整条删除 — category 是引擎内部概念,用户只需看严重度;`依据`(regulation)+ 可折叠 `法条原文` 保留
+2. **ResultPanel 按 rank 分组** — 3 个 section(`违规 (N)` / `警告 (N)` / `信息 (N)`),从最严重往下排,空 section 不渲染
+3. **KPI bar 长按提示** — `StatusBanner` KpiCell 包 `TooltipBox` 单句 tooltip(违规 = 广告法明文禁止需立即下架 / 警告 = 需结合语境判断 / 信息 = 合规资质相关需另行核实)
+4. **Viewer 全屏图叠命中框** — `ViewerImage` 走 `HighlightOverlay`(同款红/琥珀/蓝染色)+ Telephoto `ZoomableAsyncImage`,pinch / pan / 双击 zoom 时框同步缩放,与 home `ImagePreview` 共用 `computeFitTransform`
+
+### v0.1.41 用户反馈 6 点微调
+
+| # | 改动 | 文件 / 函数 |
+| --- | --- | --- |
+| 1 | **KPI 提示由长按改为点击** — `rememberCoroutineScope` + `tooltipState.show()/dismiss()` 显式 toggle,persistent tooltip 直到用户再点 | `ui/home/StatusBanner.kt` `KpiCell` |
+| 2 | **CaptureBar 2 / 3 按钮动态布局** — `hasHits=false` 显 2 按钮(选图 + 拍照各半宽),`hasHits=true` 显 3 按钮(三等分 `Modifier.weight(1f)`);`enabled=false` 同步禁掉拍照与导出 | `ui/home/CaptureBar.kt` |
+| 3 | **导出按钮仅在有命中时显示** — 0 命中时整个中间槽位消失,不显禁用灰按钮 / 不留空位 | `ui/home/CaptureBar.kt` `hasHits: Boolean` 参数 |
+| 4 | **导出按钮文字缩为「导出」** — visible label 2 字 + 图标 `Icons.Default.Save`;TalkBack 描述走单独 string `export_button_desc = "导出取证包"`(`Modifier.semantics { contentDescription = ... }`) | `strings.xml` `action_export` + `export_button_desc` |
+| 5 | **HitCard matched text 字号降一档** — `headlineSmall`(24sp) → `titleLarge`(22sp),仍略大于「广告招牌」tab 标签(`titleMedium` 16sp) | `ui/home/HitCard.kt` |
+| 6 | **Viewer 文字列表命中行 + 子串高亮** — 每行若命中 → 整行背景染**最严重桶**的 container color(对应图片红/琥珀/蓝框);行内**命中子串**用 `AnnotatedString + SpanStyle(background = sev.container(severity))` 在原文打底色。`mapNormRangeToOriginal` helper 把归一化字符串索引映射回原始文本偏移,子串 span 与显示文字严格对齐;`worstSeverityForLine` 与 home `HighlightOverlay` 共用 `severityRank` + `TextNormalizer.forMatching`,确保「图上框在 A 行 / 列表染色在 B 行」的 drift 不会发生 | `ui/viewer/ViewerTextList.kt` `worstSeverityForLine` + `highlightMatchedSubstrings` + `mapNormRangeToOriginal` |
+
 ## modelProfile 系统
 
 Gradle property `modelProfile` 控制当前构建启用哪个模型配置:
@@ -195,21 +225,11 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 - **2026-08-26 v0.1.31 — Gitea 1.22.x `releases/download/latest/<file>.apk` 返 404**:JSON 200 但 APK URL 404,改名也不解决。workaround:从 POST response 抓 `uuid`,把 `apkUrl` 改成 `http://125.211.45.14:3000/attachments/<uuid>`,cert-pin gate 不变。详 → `icevision-release` "Gitea 1.22.x APK 404 workaround"段
 - **Cert-pin 锚点**:`signerCertSha256` 必须 = `4a21f4...3043`。release 凭据在 `~/.gradle/gradle.properties`(gitignored),Gitea PAT 在 `gradle.token.properties`(gitignored,见 `.token.properties.example` 模板)。stage 路径:`build/generated/release-staging/`(per memory `feedback-no-release-history-archive.md`,已不再写 `发布版历史存档/`)
 
-- **Gitea 1.22.x `releases/download/<tag>/<filename>` 对 `.apk` 文件名 404**:
-  - 症状:`releases/download/latest/icespiritai-vision.apk` 一直返 `HTTP 404`,但同 release tag 下 `releases/download/latest/vision-latest.json` 正常 200。改文件名(`xxx.zip` / `xxx-update.apk`)同样 404 → 不是 filename pattern 问题,是 Gitea 服务端路由 bug,触发表决于 release tag (`latest` 字面量也可能参与)。底层 attachment `GET /attachments/<uuid>` 200 OK,Content-Length / Disposition 完全正确
-  - 客户端影响: in-app update 拉 JSON 时看到新版本 → 点下载按钮 → APK URL 404 → 下载失败。原因与 v0.1.30 imageSize 透传修复无关,纯 Gitea 服务端行为
-  - **修复路径**(`app/build.gradle.kts` 的 `uploadVisionReleaseToGitea` 3a/3b/3c 步):
-    1. POST APK, 从 response `{"id":260,...,"uuid":"39c59ab3-..."}` 抓出 attachment UUID
-    2. 把 staged `vision-latest.json` 的 `apkUrl` 从 `releases/download/latest/icespiritai-vision.apk` 改成 `http://125.211.45.14:3000/attachments/<uuid>`
-    3. POST 重写后的 JSON
-  - 客户端 cert-pin gate 不变(`signerCertSha256: 4a21f4...3043`),只是 APK 下载路径绕过 broken 路由
-  - 源码 `app/build/outputs/apk/release/vision-latest.json` 仍含原 `releases/download/...` URL(`generateVisionLatestJson` 的 hardcoded 模板),下一版构建会重生成,无需手动维护
-- **两个 Gitea repo,功能分离(2026-08-29 误诊修正)**:之前误把代码仓库当发布仓库,导致误诊"vision-latest.json download 404"。真相:
-  - **代码仓库** `giteaadmin/IceSpiritAI_Vision`(git remote gitea) — release route **broken**(`/releases/download/<tag>/` 对 .apk + .json 都 404),但客户端从不上这里下载,**不影响 in-app update**
-  - **发布仓库** `giteaadmin/vision-app`(`app/build.gradle.kts:460 giteaRepo = "giteaadmin/vision-app"` + `BuildConfig.UPDATE_JSON_URL`)— **完全健康**,release id=187 + 3 assets 全 200 OK。**client in-app update 完全工作**
-  - 验证(2026-08-29):`curl http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/vision-latest.json` → 200 + versionCode=37 + signerCertSha256=4a21f4...3043 ✓
-  - 验证(2026-08-29):`curl http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/icespiritai-vision.apk` → 200 + Content-Length=59124492(与本地 APK size 完全一致) ✓
-  - 详细证据 + nginx reverse proxy 候选配置见 [docs/knowledge/gitea-1.22x-release-route-broken.md](docs/knowledge/gitea-1.22x-release-route-broken.md)(候选配置在 §5,当前**不需要部署**,因为发布仓库健康)
+- **Gitea 1.22.x `releases/download/<tag>/<filename>` 对 `.apk` 文件名 404**(发布仓库 `giteaadmin/vision-app` 实测**健康**,in-app update 完全工作):
+  - **症状**:apk URL `releases/download/latest/icespiritai-vision.apk` 持续 404,但同 tag 下 `vision-latest.json` 200 — 触发取决于 release tag 与 filename,attachment `GET /attachments/<uuid>` 正常
+  - **绕过**:`app/build.gradle.kts` 的 `uploadVisionReleaseToGitea` 3a/3b/3c 步 — POST APK 抓 response `uuid`,把 staged `vision-latest.json` 的 `apkUrl` 改写为 `http://125.211.45.14:3000/attachments/<uuid>` 再 POST,客户端 cert-pin gate 不变
+  - **双 repo 分工**:代码仓库 `giteaadmin/IceSpiritAI_Vision`(git remote `gitea`)— release route **broken**(`/releases/download/<tag>/` 对 .apk + .json 都 404),但客户端从不上这里下载;发布仓库 `giteaadmin/vision-app`(`giteaRepo = "giteaadmin/vision-app"` + `BuildConfig.UPDATE_JSON_URL`)—完全健康
+  - 完整证据 / nginx reverse proxy 候选配置见 [docs/knowledge/gitea-1.22x-release-route-broken.md](docs/knowledge/gitea-1.22x-release-route-broken.md)
 
 ## 文档索引
 
@@ -224,6 +244,7 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 | [`docs/knowledge/cross-project-implications.md`](docs/knowledge/cross-project-implications.md) | 本 baseline 对冰灵慧语 / 智译两个项目的迁移含义 |
 | [`docs/knowledge/launcher-icon-generation.md`](docs/knowledge/launcher-icon-generation.md) | 启动图标裁切 / 重生成 |
 | [`docs/knowledge/lint-vital-fir-crash.md`](docs/knowledge/lint-vital-fir-crash.md) | AGP 9 + Kotlin 2.4.10 + lint 32.3.0 在 `.gradle.kts` 上崩的根因 + 绕过 |
+| [`docs/knowledge/gitea-1.22x-release-route-broken.md`](docs/knowledge/gitea-1.22x-release-route-broken.md) | Gitea 1.22.x `releases/download/<tag>/` 对 .apk + .json 404 的根因 + `/attachments/<uuid>` 绕路 + 双 repo(代码仓库 `giteaadmin/IceSpiritAI_Vision` broken / 发布仓库 `giteaadmin/vision-app` 健康)分工;候选 nginx reverse proxy 配置在 §5 |
 | [`docs/smoke/2026-08-14-phase1-smoke.md`](docs/smoke/2026-08-14-phase1-smoke.md), [`docs/smoke/2026-08-14-phase2-smoke.md`](docs/smoke/2026-08-14-phase2-smoke.md) | 烟测记录 |
 | [`docs/smoke/2026-08-20-icevision-v6-upgrade.md`](docs/smoke/2026-08-20-icevision-v6-upgrade.md) | PP-OCRv5→v6 升级烟测记录(2026-08-20) |
 | [`docs/knowledge/ppocrv6_vs_v5_a_b_test.md`](docs/knowledge/ppocrv6_vs_v5_a_b_test.md) | v6_small vs v5_mobile 在 4 张实拍广告招牌上的 A/B 实测 + 决策依据 |
