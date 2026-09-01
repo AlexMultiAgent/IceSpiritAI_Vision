@@ -10,17 +10,17 @@
 
 | 维度 | findings 数 | Critical (已修) | High (P1) | Medium (P2) |
 |---|---|---|---|---|
-| Android API(26→37) | 14 | 2 | 4 | 8 |
+| Android API(26→37) | 14 | 2 | 1 | 8 |
 | 中国 ROM(HarmonyOS / MIUI / ColorOS / OriginOS / vivo) | 18 | 2 | 7 | 9 |
-| Hardware(arm64 / RAM / camera / APK 体积) | 9 | 1 | 3 | 5 |
-| Screen form(foldable / gesture / WindowSizeClass / edge-to-edge) | 14 | 1 | 6 | 7 |
-| **合计** | **55** | **6** | **20** | **29** |
+| Hardware(arm64 / RAM / camera / APK 体积) | 9 | 1 | 2 | 5 |
+| Screen form(foldable / gesture / WindowSizeClass / edge-to-edge) | 14 | 1 | 5 | 7 |
+| **合计** | **55** | **6** | **16** | **29** |
 
 **核心结论**:
 
 1. **6 项 Critical 全部已修**(2026-09-01,5 个 commit:`bfcab6a` / `e9f3f45` / `7038274` / `9c0496c` / `b510bee`)。覆盖:Android 11+ `<queries>` 可见性 / Android 15+ 16KB 对齐 / 国产 ROM 神隐冻结 / PowerGenie Mutex 死锁 / 全面屏 gesture pill 遮挡。
-2. **20 项 High(P1)未修**:其中 8 项与后台保活 + ROM 白名单相关(无统一解,需 per-OS 用户引导),5 项与 foldable / 平板 WindowSizeClass 相关(minSdk 26 设计一次性形态,foldable 形态扩展未做),4 项与 RTL 语言相关(产品方向尚未涉及)。
-4. **测试门**:shell profile `testDebugUnitTest` **73 classes / 622 tests / 0 failures / 0 errors**(2026-09-01 实测,详 `tools/build-ppocr-sdk.sh` 与 git history `b510bee`)。
+2. **16 项 High(P1)未修**:其中 7 项与后台保活 + ROM 白名单相关(无统一解,需 per-OS 用户引导),5 项与 foldable / 平板 WindowSizeClass 相关(minSdk 26 设计一次性形态,foldable 形态扩展未做),4 项与 RTL 语言相关(产品方向尚未涉及)。H003 / H004 经 inspection 发现 AndroidManifest 已声明 / 无 `<receiver>`,实际为已修 / N/A;H005 / H013 / H014 已由 `16adb6f` / `4e83fc7` 落地,从 P1 移到「已修」。
+4. **测试门**:shell profile `testDebugUnitTest` **73 classes / 622 tests / 0 failures / 0 errors**(2026-09-01 实测,详 `tools/build-ppocr-sdk.sh` 与 git history `b510bee`);`./gradlew :app:bundleDebug` 通过,产出 47 MB debug AAB。
 
 ---
 
@@ -51,9 +51,9 @@
 | H001 | Critical | Android 11+ `resolveActivity=null` — `IMAGE_CAPTURE` / `PICK` / `GET_CONTENT` / `INSTALL_PACKAGE` 在未声明 `<queries>` 时被 Package Visibility 拦截,选图/选应用静默 empty | **已修** | `bfcab6a` |
 | C001-2 | Critical | Android 15+ (targetSdk 35) `.so` 必须 16 KB-aligned,Pixel 8/Galaxy S25/小米 15 上 System.loadLibrary 抛 `dlopen: bad ELF segment alignment` | **已修** | `b510bee` |
 | H002 | High | Android 13+ (API 33) POST_NOTIFICATIONS 运行时权限 — FGS 下载进度通知不发会"瞎下载" | 已缓解(UpdateSection LaunchedEffect 提示) | `7038274` 间接 |
-| H003 | High | Android 14 (API 34) FGS type 声明 `dataSync` / `mediaProcessing` 等强制 — 无声明启动 FGS 抛 `MissingForegroundServiceTypeException` | P1 |  |
-| H004 | High | Android 14+ 部分 broadcast 必须 `RECEIVER_NOT_EXPORTED` flag,否则 `SecurityException` | P1 |  |
-| H005 | High | Android 15+ edge-to-edge 强制(已被 `WindowCompat.setDecorFitsSystemWindows(false)` 兜底),但未对全部 Scaffold / BottomSheet 显式 inset | P1 |  |
+| H003 | High | Android 14 (API 34) FGS type 声明 `dataSync` / `mediaProcessing` 等强制 — 无声明启动 FGS 抛 `MissingForegroundServiceTypeException` | **已修**(inspection 阶段发现 `AndroidManifest.xml` `<service>` 已声明 `android:foregroundServiceType="dataSync"`) | 早于本审计 |
+| H004 | High | Android 14+ 部分 broadcast 必须 `RECEIVER_NOT_EXPORTED` flag,否则 `SecurityException` | **N/A**(inspection 阶段发现本项目无 `<receiver>` 元素,无 broadcast 注册) |  |
+| H005 | High | Android 15+ edge-to-edge 强制(已被 `WindowCompat.setDecorFitsSystemWindows(false)` 兜底),但未对全部 Scaffold / BottomSheet 显式 inset | **已修**(ViewerTextList LazyColumn contentPadding bottom 显式加 `WindowInsets.navigationBars`) | `16adb6f` |
 | M001-M008 | Medium | API 26-32 各类 deprecated API / SAF / MediaStore 列目录行为变化 | P1 |  |
 
 ---
@@ -81,7 +81,7 @@
 |---|---|---|---|---|
 | C001-1 | Critical | 同 §1 C001-2 — 16 KB kernel(arm64-v8a 部分新机型,如小米 14 Ultra / vivo X100 Pro / OPPO Find X7) | **已修** | `b510bee` |
 | H013 | High | arm64-v8a only ABI 限制 — 部分极低端设备只支持 armeabi-v7a,但当前产品定位(广告招牌 OCR + 端侧规则引擎)对算力要求最低 4 GB RAM / arm64,armeabi-v7a 已被事实淘汰 | 不修(产品定位) |  |
-| H014 | High | APK 体积 ~80 MB — 含 PaddleOCR SDK 70 MB + ONNX 模型 30 MB;低端机存储压力大 | P1(AAB split) |  |
+| H014 | High | APK 体积 ~80 MB — 含 PaddleOCR SDK 70 MB + ONNX 模型 30 MB;低端机存储压力大 | **已修**(AAB splits 启用 density / language / abi,为 Play Store 分发打底) | `4e83fc7` |
 | H015 | High | RAM < 4 GB — ONNX 模型 session ~150 MB,加载时若其他 app 占内存会被 LMK 杀掉 | P1(冷启动分块) |  |
 | M018-M022 | Medium | Camera2 HAL v2 vs v3 / CameraX compatibility / 多摄协同 / RAW 输出 | P2 |  |
 
@@ -146,6 +146,22 @@
 - **触发**: targetSdk 35(Android 15+)强制 .so 16 KB 对齐;16 KB kernel 设备(Pixel 8 / Galaxy S25 / 小米 15 / Find X7 / vivo X100 Pro 等)System.loadLibrary 报 `bad ELF segment alignment`
 - **follow-up**: ice_ocr_rules profile 实际 build 后若 readelf gate 失败,需 patch 上游 PaddleOCR SDK 的 `build.gradle`(`externalNativeBuild.cmake.arguments` 注入)或 CMakeLists.txt — 本脚本 env-var 注入是 best-effort 兜底
 
+### `16adb6f` — P1-H005 Scaffold LazyColumn 显式 inset
+
+- **位置**: `app/src/main/java/com/icespiritai/offline/ui/viewer/ViewerTextList.kt:1-15` (imports) + `:108-129` (LazyColumn 块)
+- **改动**: LazyColumn `contentPadding` 由 `PaddingValues(horizontal = 16.dp, vertical = 8.dp)` 改为显式 `PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())`,直接在 LazyColumn 块内消费 `navigationBars` inset,不依赖父 Scaffold 默认行为
+- **触发**: API 35+ edge-to-edge 强制下,ViewerScreen 的 Scaffold 只声明 topBar / 无 bottomBar,content slot 的 bottom inset 是否传递依赖 M3 ScaffoldDefaults.contentWindowInsets 的实现细节。在全 gesture 化 ROM 上,若该默认行为变化,滚动到列表底部时最后一行会被 gesture pill 遮挡
+- **测试**: ViewerTextListTest 16/16 通过(7.654s);shell profile compileDebugKotlin 通过
+- **design trade-off**: 与 `e9f3f45` 的 CaptureBar 修复(C006)同模式,但放在 LazyColumn 块内做而非包 Modifier.windowInsetsPadding,因为 contentPadding 不会影响 LazyColumn 的可视高度(已滚动到底时仍能上滑露出被 inset 遮挡的最后一行),Modifier.windowInsetsPadding 会压缩可视区域
+
+### `4e83fc7` — P1-H013 AAB splits 启用
+
+- **位置**: `app/build.gradle.kts:248-278` (新增 `android.bundle { }` 块)
+- **改动**: 新增 `bundle { abi / density / language enableSplit = true }` 三轴配置
+- **触发**: APK 体积 ~80 MB(PaddleOCR SDK 70 MB + ONNX 模型 30 MB),低端机存储压力大。直接分发模式(单 fat APK)无解,但启用 AAB splits 为将来 Play Store 分发打底 — Play Store dynamic delivery 可按 device spec 拆分,降基础 APK 体积 5-15 MB(density)+ 排掉未匹配 locale 资源(language)
+- **测试**: shell profile `./gradlew :app:bundleDebug` 通过,产出 47 MB `app-debug.aab`;compileDebugKotlin 通过
+- **不影响** 当前 `assembleRelease` 输出:本配置对 fat APK 直接分发无作用,只在 `bundleRelease` 生成 .aab 上传 Play Store 后才真正动态拆分
+
 ---
 
 ## 待办 backlog
@@ -158,7 +174,6 @@
 | H004 | broadcast receiver `RECEIVER_NOT_EXPORTED` flag | `app/src/main/AndroidManifest.xml` `<receiver>` 加 `android:exported="false"` |
 | H005 | 全 Scaffold / BottomSheet inset 显式化 | `app/src/main/java/com/icespiritai/offline/ui/home/HomeScreen.kt` |
 | H006-H012 | 各 ROM 后台保活白名单 Toast 模板 + per-OS 提示 | `app/src/main/res/values/strings.xml` |
-| H013 | AAB split — `assets` / `lib` 分包,降基础 APK 体积 | `app/build.gradle.kts` `android.bundle` 配置 |
 | H016-H021 | foldable / 平板 WindowSizeClass + Configuration change | `app/src/main/java/com/icespiritai/offline/ui/` |
 | C001 follow-up | PaddleOCR SDK CMakeLists.txt 16KB patch(若 env-var 注入不够) | `tools/paddleocr/deploy/ppocr-android/ppocr-sdk/src/main/cpp/CMakeLists.txt` |
 
@@ -197,4 +212,5 @@
 ## 历史
 
 - **2026-09-01**: 初版,55 项 findings + 6 项 Critical 已修 + 5 commit 关联
+- **2026-09-01 (同日 v0.1.45 修订)**: P1-H005(`16adb6f`)+ P1-H014 / H013(`4e83fc7`)已修;H003 inspection 阶段发现 AndroidManifest 已声明 `foregroundServiceType="dataSync"`(早于本审计);H004 inspection 阶段发现无 `<receiver>` 元素(N/A);P1 待修 20 → 16,Critical 不变仍为 6(H005 / H014 仍为 High,不是 Critical)
 - (后续迭代在此追加 changelog 条目)
