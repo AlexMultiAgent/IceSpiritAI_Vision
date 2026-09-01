@@ -4,8 +4,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -108,7 +111,25 @@ fun ViewerTextList(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                // P1-H005 (2026-09-01 compatibility audit): explicit
+                // navigationBars inset on the contentPadding bottom. M3
+                // Scaffold's default contentWindowInsets does pass the
+                // bottom inset into the content slot when no bottomBar is
+                // declared, but on gesture-nav devices (Pixel 8 / Galaxy
+                // S25 / Xiaomi 15 / Find X7 / vivo X100 Pro running Android
+                // 15+) the gesture pill can still overlap the last
+                // scrollable row when the parent Scaffold changes its
+                // windowInsets config. Adding the inset here makes the
+                // behavior version-agnostic and survives any future M3
+                // default change.
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = 8.dp,
+                    bottom = 8.dp + WindowInsets.navigationBars
+                        .asPaddingValues()
+                        .calculateBottomPadding(),
+                ),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 // Index-based key: OCR commonly emits the same word in
