@@ -3,6 +3,7 @@ package com.icespiritai.offline.ui.settings
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -80,6 +81,21 @@ fun UpdateSection(
             // Reset so the next time UpdateAvailable appears we re-prompt
             // (covers Failed → retry → UpdateAvailable path).
             promptedForNotif.value = false
+        }
+    }
+
+    // P0-C005: surface a one-shot Toast when the SettingsViewModel stall
+    // detector fires. Collection runs on the composition scope so the
+    // Toast lands on whichever Activity Settings is mounted to (in this
+    // app there's only one — [IceSpiritVisionActivity] — but the
+    // unattached behavior would survive a future multi-window split).
+    LaunchedEffect(viewModel) {
+        viewModel.downloadStallEvents.collect {
+            Toast.makeText(
+                context,
+                context.getString(R.string.update_stall_background),
+                Toast.LENGTH_LONG,
+            ).show()
         }
     }
 

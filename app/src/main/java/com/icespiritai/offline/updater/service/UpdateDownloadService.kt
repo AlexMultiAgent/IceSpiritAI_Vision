@@ -4,6 +4,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.os.IBinder
+import android.os.PowerManager
 import com.icespiritai.offline.BuildConfig
 import com.icespiritai.offline.AppGraph
 import com.icespiritai.offline.updater.ApkDownloader
@@ -32,6 +33,17 @@ class UpdateDownloadService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var notifier: UpdateDownloadNotifier
     private lateinit var stateStore: DownloadStateStore
+    // P0-C005: PARTIAL_WAKE_LOCK held while the FGS runs an actual byte-
+    // stream download. Foreground-service status alone doesn't keep the
+    // IO coroutine alive on aggressive Chinese ROMs (MIUI 13+ 神隐 / 华为
+    // PowerGenie / OPPO FrozenApp / vivo i 管家) — they freeze the
+    // cgroup even though the FGS notification is on-screen, which leaves
+    // a 70 MB download stranded at ~60%. `WAKE_LOCK` is already declared
+    // in the manifest. Held in [onCreate], released in [onDestroy]; the
+    // 15-minute timeout is a safety net for any path that forgets to
+    // tear down the service cleanly.
+    private var wakeLock: PowerManager.WakeLock? = null
+
     // Tracks active downloads by id → destPath. `onStartCommand` (main thread)
     // and the IO coroutines (`onDownloadComplete` / `handleCancel` / `cleanup`)
     // mutate this from different threads — a plain mutableMapOf is not
@@ -44,6 +56,20 @@ class UpdateDownloadService : Service() {
         super.onCreate()
         notifier = UpdateDownloadNotifier(this)
         stateStore = DownloadStateStore(AppGraph.dataStore(this))
+        // P0-C005: acquire a partial wake lock so the byte-stream coroutine
+        // is not frozen by aggressive background-killer cgroups on MIUI /
+        // ColorOS / OriginOS / HarmonyOS while the FGS notification is up.
+        // Reference-counted false: any duplicate acquire is a no-op rather
+        // than compounding the held count.
+        wakeLock = (getSystemService(POWER_SERVICE) as? PowerManager)
+            ?.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "IceSpirit:UpdateDownload",
+            )
+            ?.apply {
+                setReferenceCounted(false)
+                acquire(15L * 60L * 1000L)
+            }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -309,6 +335,12 @@ class UpdateDownloadService : Service() {
         //   3. `scope.cancel()` before the sweep ensures no in-flight
         //      upsert re-inserts after a delete.
         scope.cancel()
+        // P0-C005: drop the partial wake lock alongside the cancel — the
+        // lock is only useful while the byte-stream coroutine is alive.
+        // runCatching because [wakeLock] is nullable and the underlying
+        // release() can throw RuntimeException on a duplicate release.
+        runCatching { wakeLock?.release() }
+        wakeLock = null
         for ((id, destPath) in inFlight.toMap()) {
             if (destPath.isNotBlank()) {
                 runCatching { File(destPath).delete() }

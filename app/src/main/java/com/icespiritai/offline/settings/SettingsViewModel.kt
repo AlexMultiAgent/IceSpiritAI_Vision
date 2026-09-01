@@ -14,8 +14,12 @@ import com.icespiritai.offline.updater.UpdateCheckResult
 import com.icespiritai.offline.updater.UpdateRepository
 import com.icespiritai.offline.updater.UpdateState
 import com.icespiritai.offline.ui.theme.ThemeMode
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
@@ -50,6 +54,68 @@ class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
      * `updateState` is observing the same process-global [UpdateRepository.state].
      */
     val updateState: StateFlow<UpdateState> = UpdateRepository.state
+
+    /**
+     * P0-C005: emits a one-shot signal when a download has stalled for
+     * [STALL_THRESHOLD_MS] without any byte progress being reported. The
+     * UI ([com.icespiritai.offline.ui.settings.UpdateSection]) observes
+     * this and surfaces a Toast asking the user to whitelist the app in
+     * the system background-killer (MIUI 神隐 / ColorOS 深度冻结 /
+     * HarmonyOS PowerGenie all have separate user-facing toggles).
+     *
+     * Replay = 0 so a VM created AFTER the stall already fired does not
+     * re-emit the past event to a freshly-recomposed settings screen.
+     * extraBufferCapacity = 1 means a stall event firing while the UI
+     * isn't collecting (process foreground/background race) is held
+     * briefly, not dropped on the floor.
+     */
+    private val _downloadStallEvents = MutableSharedFlow<Unit>(
+        replay = 0,
+        extraBufferCapacity = 1,
+    )
+    val downloadStallEvents: SharedFlow<Unit> = _downloadStallEvents.asSharedFlow()
+
+    /**
+     * P0-C005: stall detector. Foreground-service status alone is not
+     * enough on aggressive Chinese ROMs — MIUI 13+ 神隐模式 / HyperOS
+     * keeps the FGS notification on-screen but silently freezes the IO
+     * coroutine, leaving a 70 MB APK download stranded at ~60% in
+     * practice. Watch [updateState] for [UpdateState.Downloading];
+     * whenever `downloadedBytes` stops moving for at least
+     * [STALL_THRESHOLD_MS], we fire [downloadStallEvents] once per
+     * download (a fresh progress tick resets the window).
+     *
+     * Polled every [STALL_POLL_INTERVAL_MS] on the main dispatcher —
+     * cheap (single StateFlow read + integer compare), no IO, no
+     * threading concerns.
+     */
+    private val stallDetectorJob = viewModelScope.launch {
+        var lastWritten = -1L
+        var stallStartedAt = 0L
+        var stallSignaled = false
+        while (true) {
+            val current = updateState.value
+            if (current is UpdateState.Downloading) {
+                if (current.downloadedBytes != lastWritten) {
+                    lastWritten = current.downloadedBytes
+                    stallStartedAt = System.currentTimeMillis()
+                    stallSignaled = false
+                } else if (!stallSignaled &&
+                    System.currentTimeMillis() - stallStartedAt >= STALL_THRESHOLD_MS
+                ) {
+                    stallSignaled = true
+                    _downloadStallEvents.tryEmit(Unit)
+                }
+            } else {
+                // Outside Downloading → reset the sliding window so the
+                // next download's stall detection starts fresh.
+                lastWritten = -1L
+                stallStartedAt = 0L
+                stallSignaled = false
+            }
+            delay(STALL_POLL_INTERVAL_MS)
+        }
+    }
 
     fun setThemeMode(mode: ThemeMode) {
         // Persist to DataStore first, then push the new night mode to AppCompat.
@@ -186,6 +252,23 @@ class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
     }
 
     companion object {
+        /**
+         * P0-C005: stall threshold. UpdateDownloadService pushes a fresh
+         * progress tick every 500 ms (see [runDownload] / `lastNotifUpdate`
+         * gate), so 5 minutes is ~600 ticks — generous enough to ride
+         * out a slow network segment on the far end of a captive portal,
+         * short enough that the user is still in front of the device when
+         * the Toast fires.
+         */
+        private const val STALL_THRESHOLD_MS = 5L * 60L * 1000L
+
+        /**
+         * P0-C005: stall detector polling interval. 30 s keeps the worst-
+         * case stall latency at STALL_THRESHOLD_MS + 30 s and avoids a
+         * tight main-thread loop.
+         */
+        private const val STALL_POLL_INTERVAL_MS = 30_000L
+
         fun factory(repository: SettingsRepository) = object : androidx.lifecycle.ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {

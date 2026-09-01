@@ -124,6 +124,9 @@
     <string name="update_failed_network_unreachable">网络不可达,请重试</string>
     <string name="update_failed_cert_mismatch">签名校验失败,请联系开发者</string>
     <string name="update_notification_rationale">允许通知可在锁屏时查看下载进度</string>
+    <!-- P0-C005: MIUI / HyperOS 神隐冻结兜底 — 下载 5min 进度卡住提示用户把 app
+         手动加自启动/后台白名单。Toast,非阻断对话框 -->
+    <string name="update_stall_background">下载超过 5 分钟未推进,可能是后台被系统冻结。请在系统设置中将冰灵锐目加入后台运行白名单</string>
 
     <!-- Phase 3.2 KPI labels (StatusBanner / CaptureBar / LoadingOverlay rewrites) -->
     <string name="kpi_violation_label">违规</string>
