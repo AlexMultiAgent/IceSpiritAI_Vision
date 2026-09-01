@@ -40,7 +40,6 @@
     <string name="tab_ad_law">广告招牌</string>
     <string name="tab_food_label">食品标识</string>
 
-    <string name="status_image_hint">请对正图片后点击拍照</string>
     <string name="status_no_violation_card">未发现违规用语</string>
     <string name="status_violation_count">违规 %1$d 处</string>
     <string name="status_warning_count">警告 %1$d 处</string>
@@ -134,6 +133,8 @@
     <string name="kpi_info_label">信息</string>
     <string name="kpi_positive_label">合规</string>
     <string name="empty_idle_hint">请对正图片后点击拍照</string>
+    <!-- a11y label for the Idle mascot artwork in the empty preview -->
+    <string name="mascot_idle_desc">冰灵助手待命中</string>
     <string name="extended_fab_label">拍照</string>
     <string name="pick_image_fab_desc">从相册选图</string>
     <string name="loading_ocr_skeleton">OCR 识别中…</string>

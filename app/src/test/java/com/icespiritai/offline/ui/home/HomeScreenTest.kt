@@ -53,13 +53,16 @@ class HomeScreenTest {
     }
 
     @Test
-    fun `home idle shows image hint`() {
+    fun `home idle shows banner hint and mascot placeholder`() {
         composeRule.setContent {
             MaterialTheme(colorScheme = darkColorScheme(surface = DarkIceChatPanel, onSurface = DarkIceChatOnBg)) {
                 HomeScreenBare(onCapture = {}, onPick = {})
             }
         }
         composeRule.onNodeWithText("请对正图片后点击拍照").assertExists()
+        // The capture instruction belongs to StatusBanner (Idle) only. The idle preview used to repeat the same
+        // sentence as centered text; it now carries the mascot artwork instead.
+        composeRule.onNodeWithTag("idle_mascot").assertExists()
     }
 
     /**

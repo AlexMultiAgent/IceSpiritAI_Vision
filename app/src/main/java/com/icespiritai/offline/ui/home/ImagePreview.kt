@@ -2,14 +2,14 @@ package com.icespiritai.offline.ui.home
 
 import android.net.Uri
 import androidx.annotation.VisibleForTesting
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -22,9 +22,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
 import coil.compose.AsyncImage
 import com.icespiritai.offline.R
@@ -32,6 +34,23 @@ import com.icespiritai.offline.domain.RuleHit
 import com.icespiritai.offline.domain.TextLine
 
 internal data class FitTransform(val scaleX: Float, val scaleY: Float, val offsetX: Float, val offsetY: Float)
+
+/**
+ * Rendered size of the Idle mascot.
+ *
+ * A fixed dp token, deliberately **not** a fraction of the preview box. A
+ * percentage couples decoration to viewport height, so the same artwork reads
+ * as a tasteful placeholder on a 6" phone and as a billboard on a tablet or an
+ * unfolded foldable — and the empty state is exactly the screen those layouts
+ * spend the most extra height on. 45% of the box measured 774px (258dp) on a
+ * 1080x2400 phone, which is roughly twice current platform practice.
+ *
+ * 120dp sits in the band Google's own Material 3 empty states use (120-160dp)
+ * and still leaves the face and the smart glasses legible. It is also smaller
+ * than the 160dp+ of the capture controls below it, so the artwork stays
+ * subordinate to the action — which is the point of an empty state.
+ */
+private val IdleMascotSize = 120.dp
 
 /**
  * Compute the (scale, offset) needed to render OCR boxes (whose coordinates
@@ -122,6 +141,7 @@ fun ImagePreview(
     onDoubleTap: (() -> Unit)? = null,
 ) {
     val a11y = stringResource(R.string.image_preview_desc)
+    val idleMascotA11y = stringResource(R.string.mascot_idle_desc)
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
     var imagePainter by remember { mutableStateOf<Painter?>(null) }
     val rootModifier = modifier
@@ -151,9 +171,21 @@ fun ImagePreview(
                     .windowInsetsPadding(WindowInsets.systemBars),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = stringResource(R.string.status_image_hint),
-                    style = MaterialTheme.typography.bodyMedium,
+                // Idle artwork. The hint sentence used to be repeated here *and*
+                // in StatusBanner (Idle) above; the banner owns the instruction
+                // now, so this slot carries the mascot instead of duplicating it.
+                //
+                // The asset is a real cutout with a transparent backdrop, so it
+                // needs no frame to hide a white rectangle. Regenerate it with
+                // tools/generate_mascot_asset.py — see
+                // docs/knowledge/mascot-ui-asset.md for why that needs rembg.
+                Image(
+                    painter = painterResource(R.drawable.mascot_glasses_bust),
+                    contentDescription = idleMascotA11y,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .testTag("idle_mascot")
+                        .size(IdleMascotSize),
                 )
             }
         } else {

@@ -244,9 +244,9 @@ fun HomeScreen(
 
         when (val s = state) {
             AnalysisState.Idle -> {
-                // ImagePreview already centers `status_image_hint` when no URI is
-                // loaded, so the Idle slot is empty here to avoid a duplicate
-                // "请对正图片后点击拍照" overlay.
+                // ImagePreview already centers the Idle mascot when no URI is
+                // loaded, so the Idle slot stays empty: StatusBanner (Idle) above
+                // is the single place that states the capture instruction.
             }
             is AnalysisState.Loading -> {
                 Text(
@@ -371,10 +371,12 @@ private fun errorMessageRes(code: ErrorCode): Int = when (code) {
 internal fun HomeScreenBare(onCapture: () -> Unit, onPick: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
         Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge)
-        Text(
-            text = stringResource(R.string.status_image_hint),
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(16.dp),
+        StatusBanner(StatusBannerKind.Idle)
+        ImagePreview(
+            imageUri = null,
+            lineBoxes = emptyList(),
+            hits = emptyList(),
+            modifier = Modifier.weight(1f).fillMaxWidth(),
         )
         // Bare preview never has hits → export button hidden by CaptureBar.
         CaptureBar(
