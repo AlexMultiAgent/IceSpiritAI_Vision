@@ -1,5 +1,12 @@
 # 用户更新日志
 
+## v0.1.44 · 2026-09-01
+
+- **选图 / 拍照兼容性硬化**(无 GMS 设备 / 极简系统):
+  - 「选图」三级降级:系统 photo picker → OEM 图库 `ACTION_PICK` + MediaStore → 兜回 photo picker;**最后兜回也失败时**弹 Toast「未找到可用的图库应用」,不再崩溃
+  - 拍照 launch 包 try/catch,设备无相机应用时弹 Toast「未找到可用的相机应用」,原路径直接崩 ActivityNotFoundException
+  - `Intent.setType` 误用修复:`Intent(ACTION_PICK, uri).apply { type = ... }` 会把 data URI 清空,改用 `setDataAndType(uri, type)` 保留
+
 ## v0.1.43 · 2026-09-01
 
 - **审计 round 2 收尾(代码 + hook + 文档)**:

@@ -1,8 +1,12 @@
 package com.icespiritai.offline.ui.home
 
 import android.Manifest
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -68,6 +72,8 @@ fun HomeScreen(
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
     val cameraDeniedMsg = stringResource(R.string.error_camera_denied)
+    val noCameraAppMsg = stringResource(R.string.error_no_camera_app)
+    val noGalleryAppMsg = stringResource(R.string.error_no_gallery_app)
 
     val selectedTab by viewModel.currentTab.collectAsState()
     // pendingUri persists across Loading→Complete so the image stays visible
@@ -81,17 +87,50 @@ fun HomeScreen(
     // Stays local because only the camera launcher reads it.
     var pendingCaptureUri by remember { mutableStateOf<Uri?>(null) }
 
-    val pickMedia = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
-    ) { uri: Uri? ->
+    fun onImagePicked(uri: Uri?) {
         if (uri != null) {
             viewModel.setPendingUri(uri)
             viewModel.startAnalysis(uri)
         }
     }
 
+    val pickMedia = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri: Uri? -> onImagePicked(uri) }
+
+    // Fallback for devices without a system photo picker (Huawei/HarmonyOS
+    // without GMS). PickVisualMedia silently degrades to ACTION_OPEN_DOCUMENT
+    // there, which shows the DocumentsUI file browser instead of a gallery.
+    val pickLegacy = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        onImagePicked(result.data?.data.takeIf { result.resultCode == Activity.RESULT_OK })
+    }
+
     fun pickFromGallery() {
-        pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        val request = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+        // Both branches can throw: a stripped device may have neither an OEM
+        // gallery nor the DocumentsUI that PickVisualMedia degrades to.
+        try {
+            if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(context)) {
+                pickMedia.launch(request)
+                return
+            }
+            // setDataAndType, not `type = ...` — Intent.setType() nulls out the
+            // data URI set by the constructor.
+            pickLegacy.launch(
+                Intent(Intent.ACTION_PICK).setDataAndType(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    "image/*",
+                ),
+            )
+        } catch (_: ActivityNotFoundException) {
+            try {
+                pickMedia.launch(request)
+            } catch (_: ActivityNotFoundException) {
+                Toast.makeText(context, noGalleryAppMsg, Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     val takePictureLauncher = rememberLauncherForActivityResult(
@@ -105,12 +144,23 @@ fun HomeScreen(
         }
     }
 
+    // ACTION_IMAGE_CAPTURE has no handler on devices without a camera app
+    // (uses-feature camera is required="false"), and launch() throws.
+    fun launchTakePicture(uri: Uri) {
+        try {
+            takePictureLauncher.launch(uri)
+        } catch (_: ActivityNotFoundException) {
+            pendingCaptureUri = null
+            Toast.makeText(context, noCameraAppMsg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
         val uri = pendingCaptureUri
         if (granted && uri != null) {
-            takePictureLauncher.launch(uri)
+            launchTakePicture(uri)
         } else {
             pendingCaptureUri = null
             Toast.makeText(context, cameraDeniedMsg, Toast.LENGTH_SHORT).show()
@@ -130,7 +180,7 @@ fun HomeScreen(
             context, Manifest.permission.CAMERA,
         ) == PackageManager.PERMISSION_GRANTED
         if (granted) {
-            takePictureLauncher.launch(uri)
+            launchTakePicture(uri)
         } else {
             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
