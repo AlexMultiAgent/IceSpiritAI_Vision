@@ -255,7 +255,12 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 | [`docs/smoke/2026-08-14-phase1-smoke.md`](docs/smoke/2026-08-14-phase1-smoke.md), [`docs/smoke/2026-08-14-phase2-smoke.md`](docs/smoke/2026-08-14-phase2-smoke.md) | 烟测记录 |
 | [`docs/smoke/2026-08-20-icevision-v6-upgrade.md`](docs/smoke/2026-08-20-icevision-v6-upgrade.md) | PP-OCRv5→v6 升级烟测记录(2026-08-20) |
 | [`docs/knowledge/ppocrv6_vs_v5_a_b_test.md`](docs/knowledge/ppocrv6_vs_v5_a_b_test.md) | v6_small vs v5_mobile 在 4 张实拍广告招牌上的 A/B 实测 + 决策依据 |
+| [`docs/knowledge/mascot-ui-asset.md`](docs/knowledge/mascot-ui-asset.md) | 应用内吉祥物素材(去底 PNG)生成 / 选型 |
 
 ## 启动图标
 
 图标由 `冰灵（男）.png` 经 `tools/generate_launcher_icon.py` 生成(去白底 → 顶部对齐裁切 → 自适应前景 + 各密度回退)。当前裁切为 `y=0..1550`。构图调整、参数换算与重新生成命令见 [`docs/knowledge/launcher-icon-generation.md`](docs/knowledge/launcher-icon-generation.md)。
+
+## 应用内吉祥物素材
+
+首页 Idle 预览区的胸像占位图由 `冰灵（男）形象/戴智能眼镜.jpg` 经 `tools/generate_mascot_asset.py` 生成(**rembg `isnet-general-use` 出 matte** → 补洞 → 去阶梯 → 边缘带反解 JPEG 混色 → 紧裁缩放),输出 `app/src/main/res/drawable-nodpi/mascot_glasses_bust.png`(透明底),由 `ImagePreview` 以**固定 120dp**(`IdleMascotSize`)居中显示 —— 空态装饰图用固定 dp 而不是容器百分比,否则平板 / 折叠屏上会变成广告牌(旧实现 45% 容器高 = 258dp / 774px)。**这张图不能用颜色泛洪抠**(白衬衫前襟 / 半透明镜片会被咬穿,三种阈值法均已实测失败),脚本内的 `--engine chroma` 只是别的素材的应急回退;选型理由与验收清单见 [`docs/knowledge/mascot-ui-asset.md`](docs/knowledge/mascot-ui-asset.md)。
