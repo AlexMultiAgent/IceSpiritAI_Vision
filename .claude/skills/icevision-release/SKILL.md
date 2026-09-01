@@ -1,6 +1,6 @@
 ---
 name: icevision-release
-description: Walks IceSpiritAI_Vision release pipeline (assembleRelease → generateVisionLatestJson → archiveVisionRelease → uploadVisionReleaseToGitea) with cert-pin pre-flight, Gitea route availability check, and recovery shortcuts for the documented footguns (Gitea 1.22.x APK 404, large-file POST timeout, v1 signing must be enabled). Use when user says /icevision-release or "发版" / "release" / "走发布流水线". User-only — invoke explicitly before release.
+description: Walks IceSpiritAI_Vision release pipeline (assembleRelease → generateVisionLatestJson → archiveVisionRelease → uploadVisionReleaseToGitea) with cert-pin pre-flight, Gitea route availability check, post-release smoke, dual code-repo sync, and recovery shortcuts for the documented footguns (Gitea 1.22.x APK 404, large-file POST timeout, v1 signing must be enabled). Use when user says /icevision-release or "发版" / "release" / "走发布流水线". User-only — invoke explicitly before release.
 disable-model-invocation: true
 ---
 
@@ -124,6 +124,31 @@ test "$LOCAL_SIZE" = "$REMOTE_SIZE" && echo "SIZE OK ($LOCAL_SIZE)" || echo "SIZ
 
 # 3. (Optional) In-app update smoke on Huawei nova 6 — see docs/smoke/2026-08-14-phase1-smoke.md
 ```
+
+## After release: sync code to both code repos
+
+Step 4 only writes to the **publishing** repo `giteaadmin/vision-app` (APK +
+JSON for in-app update). The two **code** repos — `giteaadmin/IceSpiritAI_Vision`
+(gitea) and `AlexMultiAgent/IceSpiritAI_Vision` (github) — drift independently
+because nothing in this pipeline touches them. Push `main` to both:
+
+```bash
+# Skip if already at HEAD (compare local vs remote main sha first).
+git -c http.proxy= -c https.proxy= push gitea main
+git -c http.proxy= -c https.proxy= push github main
+# `-c http.proxy= -c https.proxy=` bypasses the dead 127.0.0.1:7892 proxy that
+# the user's git config points at; see memory `reference-gitea-proxy-bypass`.
+```
+
+**Why bother**: gitea code repo was stuck at `87a03ad` when v0.1.45 shipped
+(2026-09-01) — 28+ commits behind local main. Caught up in one push, but if
+this step keeps being skipped, external reviewers, audit trails, and future
+`git log` archaeology only see pre-v0.1.36 state. The publishing repo is
+unaffected (separate, APK + JSON only) so in-app update works fine either way;
+this is purely code-repo hygiene.
+
+**This is plumbing only**: no tag push, no release-staging mutation, no
+gradle invocation. Tag push stays in `project-commit`'s Release 三段式.
 
 ## Things NEVER to do during release
 
