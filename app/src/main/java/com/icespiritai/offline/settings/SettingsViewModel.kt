@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
@@ -87,31 +88,40 @@ class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
      *
      * Polled every [STALL_POLL_INTERVAL_MS] on the main dispatcher —
      * cheap (single StateFlow read + integer compare), no IO, no
-     * threading concerns.
+     * threading concerns. While no download is in flight the coroutine
+     * parks on [kotlinx.coroutines.flow.first] instead of re-arming that
+     * timer, which both avoids a wakeup every 30 s for the life of the
+     * ViewModel and is what keeps `runTest`'s `advanceUntilIdle` from
+     * spinning forever here (see the KDoc on [stallDetectorJob]).
      */
     private val stallDetectorJob = viewModelScope.launch {
         var lastWritten = -1L
         var stallStartedAt = 0L
         var stallSignaled = false
         while (true) {
-            val current = updateState.value
-            if (current is UpdateState.Downloading) {
-                if (current.downloadedBytes != lastWritten) {
-                    lastWritten = current.downloadedBytes
-                    stallStartedAt = System.currentTimeMillis()
-                    stallSignaled = false
-                } else if (!stallSignaled &&
-                    System.currentTimeMillis() - stallStartedAt >= STALL_THRESHOLD_MS
-                ) {
-                    stallSignaled = true
-                    _downloadStallEvents.tryEmit(Unit)
-                }
-            } else {
-                // Outside Downloading → reset the sliding window so the
-                // next download's stall detection starts fresh.
+            val current = updateState.value as? UpdateState.Downloading
+            if (current == null) {
+                // Nothing to watch. Suspend until a download actually starts
+                // rather than keeping a repeating delay armed: an unbounded
+                // `delay` loop is unsatisfiable for a coroutine-test scheduler
+                // (`advanceUntilIdle` re-runs it forever, which is how every
+                // SettingsViewModelTest hung from v0.1.45 on), and a StateFlow
+                // await costs nothing while idle.
+                updateState.first { it is UpdateState.Downloading }
                 lastWritten = -1L
                 stallStartedAt = 0L
                 stallSignaled = false
+                continue
+            }
+            if (current.downloadedBytes != lastWritten) {
+                lastWritten = current.downloadedBytes
+                stallStartedAt = System.currentTimeMillis()
+                stallSignaled = false
+            } else if (!stallSignaled &&
+                System.currentTimeMillis() - stallStartedAt >= STALL_THRESHOLD_MS
+            ) {
+                stallSignaled = true
+                _downloadStallEvents.tryEmit(Unit)
             }
             delay(STALL_POLL_INTERVAL_MS)
         }

@@ -190,6 +190,7 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
   assertEquals("v0.1.X", entries.first().version)
   ```
   这样断言的是 `VersionHistoryRenderer.parse` 的契约(纯函数),不依赖 Compose 合成 / LazyColumn viewport,稳定 + 快;适用场景:任何"asset 第一段 = shipping version"的回归 pin(每个版本 bump 都要改这里的字面量)。
+- **ViewModel 里 `while(true) { … delay(N) }` 会让 `runTest` 永久卡死(不是超时,是真卡死)**:`SettingsViewModel` 的 `stallDetectorJob`(v0.1.45 `7038274` 加的下载停滞轮询)在**构造期**就起了一条无终止的 `delay(30_000)` 循环;测试用 `Dispatchers.setMain(UnconfinedTestDispatcher())` + `runTest`,收尾的 `advanceUntilIdle` 会把虚拟时间一路推进 —— 每次 `delay` 立即完成又立刻重新排程,**永远不 idle**。更糟的是 `runTest` 的 60s 超时本身也调度在同一个 test scheduler 上,`advanceUntilIdleOr` 循环里根本没机会被检查,表现为 gradle 任务挂 26 分钟不动。**修法:空闲时不要挂定时器,改成 `updateState.first { it is Downloading }` 挂起等待** —— 协程停在"等 flow 发射"上不算 pending task,`advanceUntilIdle` 立刻返回;顺带省掉整个 VM 生命周期内每 30s 一次的无意义唤醒。同类坑:任何 eager 启动的轮询 / 心跳 / 重试循环都一样,VM 构造期只该挂起、不该定时醒。
 
 ## 开发环境
 
