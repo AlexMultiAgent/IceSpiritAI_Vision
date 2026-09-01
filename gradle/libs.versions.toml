@@ -15,7 +15,7 @@ coroutines = "1.10.2"
 serialization = "1.9.0"
 hankcsAc = "1.2.3"
 onnxruntime = "1.21.1"
-opencv = "4.10.0"
+opencv = "4.12.0"
 junit = "4.13.2"
 androidxJunit = "1.3.0"
 espresso = "3.7.0"
@@ -69,6 +69,14 @@ onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android"
 # but the newer libc++_shared.so no longer exports. 4.10.0 ships libs built
 # with a newer NDK and resolves cleanly. Same `org.opencv.android.OpenCVLoader`
 # package, same `initDebug()` API — no source change needed.
+#
+# P0-C001: bumped 4.10.0 → 4.12.0 for explicit 16KB page-size alignment
+# (targetSdk 35 / Android 15+). org.opencv:opencv:4.12.0 ships libs
+# pre-built with `-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384`
+# so System.loadLibrary("opencv_java4") on a 16KB kernel device
+# (Pixel 8 / Galaxy S25 / Xiaomi 15 with Android 15+) succeeds. 4.10.0
+# worked in practice but was a borderline pick — 4.12.0 is a known-good
+# stable for the AGP 9 + NDK 28 stack.
 opencv-android = { module = "org.opencv:opencv", version.ref = "opencv" }
 
 # Test
