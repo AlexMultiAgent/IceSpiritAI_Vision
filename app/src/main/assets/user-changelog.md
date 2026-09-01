@@ -1,5 +1,16 @@
 # 用户更新日志
 
+## v0.1.45 · 2026-09-01
+
+- **全项目兼容性审计(55 项 findings / 4 维度)**: Android API(API 26→37) / 中国 ROM(HarmonyOS / MIUI / ColorOS / OriginOS / vivo) / Hardware(arm64 / RAM / camera / APK 体积) / Screen form(foldable / gesture / WindowSizeClass / edge-to-edge)四象限扫描,识别 6 项 Critical + 16 项 High(P1)+ 29 项 Medium(P2)。详 [`docs/knowledge/2026-09-01-compatibility-audit.md`](docs/knowledge/2026-09-01-compatibility-audit.md)。Critical 全部已在 5 个 commit 落地(bfcab6a / e9f3f45 / 7038274 / 9c0496c / b510bee);本轮(16adb6f / 4e83fc7)新落地 2 项 P1:
+  - **Viewer 底部 OCR 文字列表加 navigationBars inset**(P1-H005): API 35+ edge-to-edge 强制 + 全 gesture 化 ROM(HyperOS / MIUI / HarmonyOS 全面屏)上,`ViewerScreen` 的 Scaffold 只有 topBar / 无 bottomBar,content slot 的 bottom inset 是否传递依赖 M3 ScaffoldDefaults.contentWindowInsets 的实现细节。在 LazyColumn `contentPadding.bottom` 显式加 `WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()`,使最后一行不被 gesture pill 遮挡,且对 M3 默认行为变化有韧性
+  - **AAB splits 启用(abi / density / language 三轴)**(P1-H013): 启用 `android.bundle { abi / density / language { enableSplit = true } }`。当前分发模式(单 fat APK,direct in-app update)对当前输出无影响,但为将来 Play Store 分发打底 — Play Store dynamic delivery 可按 device spec 拆分,降基础 APK 体积 5-15 MB(density split)+ 排掉未匹配 locale 资源(language split)
+- **审计 inspection 收获**:
+  - **H003**(Android 14 FGS type 声明)inspection 阶段发现 `AndroidManifest.xml` `<service>` 已声明 `android:foregroundServiceType="dataSync"`(早于本审计)
+  - **H004**(`RECEIVER_NOT_EXPORTED`)inspection 阶段发现本项目无 `<receiver>` 元素,N/A
+- **审计文档同步**: `docs/knowledge/2026-09-01-compatibility-audit.md` 加 v0.1.45 修订记录 — 表头数字 P1 20→16(4 项已修 / N/A),各 finding 行加 commit 关联,新增 2 节修复明细,补历史 changelog 条目
+- **测试覆盖**: 622 tests / 0 failures / 100% successful(`testDebugUnitTest -PmodelProfile=shell`);`./gradlew :app:bundleDebug` 通过,产出 47 MB debug AAB
+
 ## v0.1.44 · 2026-09-01
 
 - **选图 / 拍照兼容性硬化**(无 GMS 设备 / 极简系统):
