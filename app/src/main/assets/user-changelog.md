@@ -1,5 +1,15 @@
 # 用户更新日志
 
+## v0.1.46 · 2026-09-02
+
+- **Idle 预览区展示吉祥物胸像**(a5ddc5f):空态装饰从居中文案「请对正图片后点击拍照」改为渲染 `mascot_glasses_bust.png`(固定 120dp),引导文案统一到 `StatusBanner(Idle)` 单点呈现 — `ImagePreview` 留 testTag `idle_mascot`,`HomeScreenTest` 改 `composeRule.onNodeWithTag("idle_mascot").assertExists()` 校验装饰图节点存在,替代之前依赖 Robolectric Compose viewport 文本渲染的脆弱路径(参 [Unit test 踩坑(2026-08-21 v0.1.14)](../../../CLAUDE.md))
+- **`SettingsViewModel` `stallDetector` 死循环修复**(92b6da0):v0.1.45 `7038274` 在 VM 构造期起的 `delay(STALL_POLL_INTERVAL_MS)` 循环把 `runTest` 的 `advanceUntilIdle` 永久挂住,gradle 任务挂 26 分钟。无下载时改用 `updateState.first { it is Downloading }` 挂起等待 — 协程停在 flow 上不算 pending task,`advanceUntilIdle` 立刻返回;顺带清掉整个 VM 生命周期的 30s 周期唤醒。同类坑:VM 构造期只该挂起、不该 eager 起定时器
+- **吉祥物去底 PNG + 生成脚本 + 选型文档入仓**(757c69d):
+  - `app/src/main/res/drawable-nodpi/mascot_glasses_bust.png`:480×480 透明底胸像,rembg `isnet-general-use` 出 matte
+  - `tools/generate_mascot_asset.py`:可重复生成(border 8px 环中位数检背景 → matte → 补洞 → 高斯去阶梯 → 边缘带反解 JPEG 混色 → 紧裁缩放)。`--engine chroma` 边框色度泛洪保留为「主体与背景色度差异大」的应急回退,本素材必须走 `isnet`
+  - [`docs/knowledge/mascot-ui-asset.md`](../../../docs/knowledge/mascot-ui-asset.md):空态装饰图用固定 dp 而非容器百分比(平板/折叠屏空态会被百分比撑成广告牌)的实测理由 + `#11212C` 上放大 2~2.5x 验收清单(右镜片 / 领高光 / 白前襟 / 腿缝)
+- **测试 pin bump**:`ChangelogScreenTest` 顶部 `v0.1.45` → `v0.1.46`
+
 ## v0.1.45 · 2026-09-01
 
 - **全项目兼容性审计(55 项 findings / 4 维度)**: Android API(API 26→37) / 中国 ROM(HarmonyOS / MIUI / ColorOS / OriginOS / vivo) / Hardware(arm64 / RAM / camera / APK 体积) / Screen form(foldable / gesture / WindowSizeClass / edge-to-edge)四象限扫描,识别 6 项 Critical + 16 项 High(P1)+ 29 项 Medium(P2)。详 [`docs/knowledge/2026-09-01-compatibility-audit.md`](docs/knowledge/2026-09-01-compatibility-audit.md)。Critical 全部已在 5 个 commit 落地(bfcab6a / e9f3f45 / 7038274 / 9c0496c / b510bee);本轮(16adb6f / 4e83fc7)新落地 2 项 P1:
