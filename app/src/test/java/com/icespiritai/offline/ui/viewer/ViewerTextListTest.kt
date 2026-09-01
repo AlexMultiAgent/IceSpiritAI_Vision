@@ -226,6 +226,73 @@ class ViewerTextListTest {
         assertEquals(2..3, matches[1].first)
     }
 
+    // ---- mapNormRangeToOriginal (v0.1.41 helper) ----
+    //
+    // The viewer highlights matched substrings inside OCR lines. The
+    // rule engine emits match ranges in the *normalized* string (whitespace
+    // stripped); to paint them on the original line we have to walk the
+    // original text and skip whitespace, advancing the normalized index in
+    // lockstep. These tests pin the offset math so that a one-character
+    // shift in the rule match can't silently paint on the wrong character.
+
+    @Test
+    fun `mapNormRangeToOriginal maps simple no-whitespace string 1to1`() {
+        // No whitespace → normalized index == original index. The full
+        // string maps to its full original range.
+        val original = "本店专治糖尿病"
+        // normalized = "本店专治糖尿病", idx=0 len=7
+        val mapped = mapNormRangeToOriginal(original, normStart = 0, normLength = 7)
+        // 7 chars occupy original indices 0..6 inclusive.
+        assertEquals(0..6, mapped)
+    }
+
+    @Test
+    fun `mapNormRangeToOriginal skips leading and internal whitespace`() {
+        // OCR often produces strings like "本店 专治 糖尿病" (mixed CJK + spaces).
+        // Normalized = "本店专治糖尿病" (7 chars). The normalized range [2, 4)
+        // — covering "专治" — should map to original indices that skip the
+        // intervening space.
+        val original = "本店 专治 糖尿病"
+        val mapped = mapNormRangeToOriginal(original, normStart = 2, normLength = 2)
+        // First 2 norm chars are "本店" → original indices 0..1
+        // normIdx 2 = '专' → original index 3 (skipping space at idx 2)
+        // normIdx 3 = '治' → original index 4
+        // range = original[3..4] inclusive (IntRange displays as start..endInclusive)
+        assertEquals(3..4, mapped)
+    }
+
+    @Test
+    fun `mapNormRangeToOriginal handles trailing whitespace in original`() {
+        // OCR occasionally emits trailing space; that doesn't affect the
+        // mapping (the function walks until origIdx == original.length).
+        val original = "本店专治糖尿病   "
+        val mapped = mapNormRangeToOriginal(original, normStart = 4, normLength = 3)
+        // norm chars 4..7 = "尿病"; original indices 4..6 inclusive
+        // (the trailing spaces are skipped — they're past the last
+        // normalized char so don't matter for the range, only the walk).
+        assertEquals(4..6, mapped)
+    }
+
+    @Test
+    fun `mapNormRangeToOriginal returns null when norm range runs off the end`() {
+        // normStart=8 with a 7-char normalized string never lands — the
+        // function should return null (caller treats as "no highlight").
+        val original = "本店专治糖尿病"
+        val mapped = mapNormRangeToOriginal(original, normStart = 8, normLength = 1)
+        assertNull("out-of-bounds norm range must return null", mapped)
+    }
+
+    @Test
+    fun `mapNormRangeToOriginal returns null for zero or negative inputs`() {
+        // Defensive: normLength=0 means "no highlight" (caller skipped it);
+        // negative inputs are programmer error and must not silently paint
+        // a wrong range.
+        val original = "本店专治糖尿病"
+        assertNull("normLength=0 must return null", mapNormRangeToOriginal(original, 0, 0))
+        assertNull("normStart<0 must return null", mapNormRangeToOriginal(original, -1, 2))
+        assertNull("normLength<0 must return null", mapNormRangeToOriginal(original, 0, -1))
+    }
+
     @Test
     fun `ViewerTextList composes with hits when wrapped in IceSpiritVisionTheme`() {
         // Smoke test: passing a non-empty hit list with a real severity

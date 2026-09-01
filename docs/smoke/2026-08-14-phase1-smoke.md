@@ -1,5 +1,7 @@
 # Phase 1 烟测结果 — 2026-08-14
 
+> ⚠ **STALE — v0.1.22 起 sourceSet 拆分落地**(2026-08-23 起,详见 [`prepare-ocr-rules.gradle.kts`](../../app/prepare-ocr-rules.gradle.kts) + [`CLAUDE.md §modelProfile 系统`](../../CLAUDE.md)):**shell profile APK 已不再打包 OCR native libs / ONNX**(走 `src/shell/java/` + `FakeOcrEngine` 独占 sourceSet),实际大小 **~10 MB**;`ice_ocr_rules` profile 含 PaddleOcrEngine + ONNX,**~59 MB**。下表 55 MB 系 sourceSet 拆分前的旧测量值,`ad_law_rules.json` 文件名也已作废(现为 `assets/rules/ad_signage_rules.json` v10 / 129 条)。本表作为拆分前的工程里程碑保留。
+
 > Task 1.15: 启动期 / 装机后 / 功能验证清单。结果以本次实际跑出的为准,而不是计划里的目标值。
 
 ## 1. 构建产物

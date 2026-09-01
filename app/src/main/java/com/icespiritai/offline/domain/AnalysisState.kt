@@ -84,8 +84,9 @@ data class RuleHit(
     /**
      * Domain marker — `"ad"` for 广告招牌 or `"food"` for 食品标识. Drives the
      * [CategoryDisplay] lookup and the `domain` field on the ZIP manifest's
-     * `report.json`. Defaulted to `"ad"` so legacy hits and tests compile
-     * without ceremony.
+     * `report.txt` (Phase 3.5 / v0.1.39 dropped the legacy `report.json`
+     * since the user-facing ZIP ships the human-readable report now).
+     * Defaulted to `"ad"` so legacy hits and tests compile without ceremony.
      */
     val domain: String = "ad",
     /**

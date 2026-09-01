@@ -29,7 +29,7 @@
 - **模型加载**: 两套都走 `onnxruntime.InferenceSession` + CPU,直接从 `inference.onnx` 推,不走 Paddle/PaddleX(paddlex 默认要 Paddle 格式,绕路且依赖重)。
 - **图像前处理**: det 按各自 yml 的 `DetResizeForTest`(v5 = resize_long=960,v6 = limit_side=960)+ ImageNet mean/std 归一化;rec 按 `OCRReisizeNormImg.resize_norm_img`(BGR → /255 → −0.5 → /0.5,不是 imagenet 归一化)。
 - **CTC 解码**: 走 PaddleOCR CTCLabelDecode 等价路径。字典构造 = `["blank"] + yml.character_dict + [" "]`(匹配 PaddleOCR 内部 init 顺序);blank 始终是 index 0。
-- **规则匹配**: 把每张图的全部 OCR 行 join 后过 Aho-Corasick(532 个唯一归一化 keyword);规则库 `app/src/main/assets/rules/ad_signage_rules.json`(v4,116 条)。
+- **规则匹配**: 把每张图的全部 OCR 行 join 后过 Aho-Corasick(532 个唯一归一化 keyword);规则库 `app/src/main/assets/rules/ad_signage_rules.json`(v4,116 条 — **2026-08-20 实测当时版本**,截至 2026-09-01 已迭代到 v10 / 129 条;5× 命中数提升的趋势仍稳定,但具体规则数与种类以最新 JSON 为准)。
 - **完整脚本**: `D:\tmp\ocr_compare\compare.py` + `D:\tmp\ocr_compare\match_rules.py`,中间产物在同目录。
 
 **已知小坑**(不影响 v5 vs v6 相对比较,但解读绝对数字时要心里有数):

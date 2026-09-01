@@ -73,8 +73,8 @@ android {
         applicationId = "com.icespiritai.vision"
         minSdk = 26
         targetSdk = 37
-        versionCode = 42
-        versionName = "0.1.42"
+        versionCode = 43
+        versionName = "0.1.43"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -139,11 +139,25 @@ android {
                 // every contributor who does not hold the production keystore.
                 // Scope the hard failure to invocations that actually ask for
                 // release artifacts.
+                // Explicit allow-list of release-pipeline task names. The
+                // previous substring match (`taskName.contains("release")`)
+                // false-positived on `testRelease`, `lintRelease`,
+                // `cleanRelease`, `bundleRelease`, `installRelease` —
+                // tasks that don't need the release signing config and that
+                // a contributor without the keystore should be able to run.
+                // Audited 2026-09-01 (v0.1.43 round 2): the substring was
+                // too greedy, but the narrower list below covers every
+                // task the release pipeline (`assembleRelease` →
+                // `archiveVisionRelease` → `uploadVisionReleaseToGitea` +
+                // `generateVisionLatestJson`) actually depends on.
+                val releasePipelineTasks = setOf(
+                    "assembleRelease",
+                    "archiveVisionRelease",
+                    "uploadVisionReleaseToGitea",
+                    "generateVisionLatestJson",
+                )
                 val wantsReleaseArtifacts = gradle.startParameter.taskNames.any { taskName ->
-                    taskName.contains("release", ignoreCase = true) ||
-                        taskName.contains("uploadVisionReleaseToGitea", ignoreCase = true) ||
-                        taskName.contains("generateVisionLatestJson", ignoreCase = true) ||
-                        taskName.contains("archiveVisionRelease", ignoreCase = true)
+                    taskName in releasePipelineTasks
                 }
                 if (wantsReleaseArtifacts) {
                     // Names ONLY. Gradle prints exception messages verbatim to

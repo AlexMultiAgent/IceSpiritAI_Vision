@@ -33,15 +33,27 @@ process.stdin.on('end', () => {
 
   if (!cmd) process.exit(0);
 
-  // Rule 1: `git add -A` / `git add .` (must catch shell continuations like
-  //   `git add -A; echo done`, `git add . && git status`, etc.)
-  // Bypass the original regex would miss:
-  //   - shell continuations (`;`, `&&`, `||`, `|` separator followed by `git add -A`)
+  // Rule 1: `git add -A` / `git add --all` / `git add .` / `git add ./`
+  //   / `git add ..` / `git add .git` / `git add *` (must catch shell
+  //   continuations like `git add -A; echo done`, `git add . && git status`,
+  //   and global flags between `git` and `add` like `git -C . add -A` or
+  //   `git --git-dir=x add -A`).
+  // Bypass cases the regex now covers (verified v0.1.43 self-test):
+  //   - shell continuations (`;`, `&&`, `||`, `|`, newline) before/after
+  //     `git add ...`
   //   - commands embedded after leading whitespace
-  // Strategy: require a shell separator or string start BEFORE `git`, then
-  // match the bare `-A` token (with word boundary) OR the bare `.` token
-  // (followed by EOL/space/separator). `--all`, `-Ap`, `-Al` pass through.
-  if (/(?:^|;|\s|\|\||&&|\|)\s*git\s+add\s+(?:-A\b|\.(?=\s|$|;|\|\||&&|\|))/m.test(cmd)) {
+  //   - global git flags (`-C x`, `--git-dir=foo`, `-c x=y`) between
+  //     `git` and `add`
+  //   - `--all` long form (functionally identical to `-A`)
+  //   - `./`, `..`, `.git` bare dot variants (all stage cwd or .git dir)
+  //   - bare `*` glob (caller's intent was "add everything")
+  // The capture group `(?:\s+\S+)*` allows any number of whitespace+token
+  // groups between `git` and `add` (i.e. global flags), so `git -C foo add`
+  // and `git --git-dir=bar add` are caught. The lookahead on `.`
+  // (`[\s\/.;&|*]|$`) expands the previous regex's separator set to also
+  // include `/`, `*`, and `.` so `git add ./`, `git add ../foo`, and
+  // `git add .git` are blocked.
+  if (/(?:^|;|\s|\|\||&&|\|)\s*git(?:\s+\S+)*\s+add\s+(?:-A\b|--all\b|\.(?=[\s\/.;&|*]|$)|\.\.\b|\.git\b|\*(?=[\s;|&]|$))/m.test(cmd)) {
     console.error(
       'BLOCKED by IceSpiritAI_Vision PreToolUse hook:\n' +
       '  CLAUDE.md requires explicit file paths in `git add`, not `git add -A` or `git add .`.\n' +
@@ -65,12 +77,18 @@ process.stdin.on('end', () => {
     process.exit(2);
   }
 
-  // Rule 3: destructive ops on app/libs/*.aar (PaddleOCR SDK)
-  // Match either forward-slash (bash) or back-slash (cmd/PowerShell) paths,
-  // and any .aar filename under app/libs/.
-  const aarFile = /app[\\/]+libs[\\/]+[\w.\-]+\.aar/;
-  const destructive = /\b(rm|del|rm\s+-rf|rm\s+-r|rmdir|unlink|mv|git\s+rm|truncate)\b/;
-  if (aarFile.test(cmd) && destructive.test(cmd)) {
+  // Rule 3: destructive ops on app/libs/*.aar (PaddleOCR SDK) or the
+  //   app/libs/ directory itself. Match either forward-slash (bash) or
+  //   back-slash (cmd/PowerShell) paths, any .aar filename under app/libs/,
+  //   the `*.aar` glob pattern, OR a destructive op on app/libs/ as a
+  //   directory. `ppocr-sdk.aar` is the only AAR currently committed (~70 MB),
+  //   but future AARs added under app/libs/ must also be guarded — the
+  //   regex matches any `.aar` filename under app/libs/, not just the
+  //   current one.
+  const aarFile = /app[\\/]+libs[\\/]+(?:\*|[\w\-.]*\.aar)/;
+  const appLibsDir = /app[\\/]+libs[\\/](?=\s|$|\*|;|&|\|)/;
+  const destructive = /\b(rm|del|rm\s+-rf|rm\s+-r|rmdir|unlink|mv|git\s+rm|truncate|find\b[^\n]*-delete)\b/;
+  if (destructive.test(cmd) && (aarFile.test(cmd) || appLibsDir.test(cmd))) {
     console.error(
       'BLOCKED by IceSpiritAI_Vision PreToolUse hook:\n' +
       '  The command would delete/move/rm a PaddleOCR SDK AAR in app/libs/.\n' +

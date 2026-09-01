@@ -125,9 +125,14 @@ class IceSpiritVisionViewModelTest {
         assertNotNull(job)
 
         vm.reset()
+        // reset() is fully synchronous (cancel + state writes happen inline
+        // — see VM.reset KDoc for the trade-off vs startAnalysis's
+        // cancelAndJoin pattern). All post-reset state is observable
+        // immediately, no advanceUntilIdle() needed.
 
         assertTrue("reset() must cancel the current Job", job!!.isCancelled)
         assertEquals(AnalysisState.Idle, vm.state.value)
+        assertEquals("reset() must clear pendingUri", null, vm.pendingUri.value)
     }
 
     /**

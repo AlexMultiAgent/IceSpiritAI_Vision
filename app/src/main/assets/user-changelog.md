@@ -1,5 +1,31 @@
 # 用户更新日志
 
+## v0.1.43 · 2026-09-01
+
+- **审计 round 2 收尾(代码 + hook + 文档)**:
+  - **代码硬化**:
+    - `IceSpiritVisionViewModel.reset()` 恢复全同步(`cancel()` + state 写 inline)。原 round 1 引入的 `cancelAndJoin`-inside-launch 在 JVM 测试下与 `withContext(Dispatchers.Default) { matcher.scan }` 产生 scheduler-blind 竞态(测试 scheduler 看不到 Default 池,`advanceUntilIdle` 提前返回导致 state 仍为 `Loading`)。新 KDoc 明示 trade-off:reset 仅在 `state !is Loading` 时被调用(HomeScreen `ErrorPanel.onReset` + `setTab` 内部路径),生产路径下无 in-flight analyze 可竞争。`IceSpiritVisionViewModelTest.reset_cancelsCurrentJobAndReturnsStateToIdle` + `setTab_sameTab_nonLoadingState_resetsToIdle` 同步断言恢复通过
+    - `ExportAction.share` 新增 `ioDispatcher: CoroutineDispatcher = Dispatchers.IO` 参数。`ioScope.launch(ioDispatcher)` 让 ContentResolver + ZipOutputStream + cacheDir.writeBytes 走注入的 IO 调度器;`showFailureToast` 仍走 `Dispatchers.Main`(Toast / startActivity 必须在主线程)。测试传 `UnconfinedTestDispatcher` 作为 `ioScope` + `ioDispatcher`,生产传 `rememberCoroutineScope()` + 走默认 `Dispatchers.IO`,调用点不动。`ExportActionTest` 3 个 case(happy path / provider fail / write fail)同步 `ioDispatcher = testDispatcher` 后恢复通过
+    - `HomeScreen.onExport` 改 `ExportAction.share(context, s.report, BuildConfig.VERSION_NAME, exportScope)`,`exportScope = rememberCoroutineScope()` 生命周期绑 Compose screen,避免后台 export 跨屏幕泄露
+  - **PreToolUse hook 加固 + 自检**:
+    - `pre-tool-use.js` Rule 1 正则扩展,堵 4 类 git add 绕过:`git add --all`(long form)、`git add *`(`*` 非 `\b` 边界,原 `\b\*\b` 不匹配)、`git add ./` / `git add ..`(cwd 与 parent)、`git add .git`(直接污染 HEAD)。最终正则:`(?:\s+\S+)*\s+add\s+(?:-A\b|--all\b|\.(?=[\s\/.;&|*]|$)|\.\.\b|\.git\b|\*(?=[\s;|&]|$))`
+    - 新增 `tools/pre-tool-use-hook-test.js` 自检脚本(23 case,全过,含 4 类新绕过 + 旧 6 类边界 + 误报零回归),开发者改 hook 后 `node tools/pre-tool-use-hook-test.js` 一键验证
+  - **文档 / Spec 对齐(消除实际状态与描述 drift)**:
+    - `CLAUDE.md` §profile 表 3 处 v5/120 → v10/129/14 类别对齐(`ice_ocr_rules` 行 + 广告招牌注释 + 检测 surface 段)
+    - `CLAUDE.md` §开发环境 删「`gradle.properties` 设 `auto-download=true`」误导句(实际该 flag 已 v0.1.42 删除)
+    - `CLAUDE.md` §Claude Code 自动化 4 skills + 2 hooks + 2 agents 计数修订
+    - `CLAUDE.md` §发布流水线踩坑 上传顺序描述从「先 POST JSON 再 POST APK」改为「先 POST APK 抓 uuid → 改写 apkUrl 为 `/attachments/<uuid>` → POST JSON」,与 `build.gradle.kts` `uploadVisionReleaseToGitea` 实际 3a/3b/3c 顺序一致
+    - `CLAUDE.md` Gitea PAT 模板文件名 `.token.properties.example` → `gradle.token.properties.example`
+    - `settings.gradle.kts` 注释同步删 `auto-download=true` 引用
+    - `domain/AnalysisState.kt` 顶部注释 `report.json` → `report.txt`(EvidencePackageBuilder v0.1.39 早已切到 txt)
+    - `docs/knowledge/ad-signage-detection-surface-2026-08.md` v5/118 → v10/129/14 类别
+    - `docs/knowledge/ppocrv6_vs_v5_a_b_test.md` 加 caveat:A/B 时规则库是 v4/116,当前是 v10/129,数据可比性需考虑
+    - `docs/knowledge/cross-project-implications.md` `targetSdk 36 → 37`,Actions 2/3 标 CLOSED 2026-08-13
+    - `docs/superpowers/specs/2026-08-15-icevision-ui-design.md` 顶部加 `⚠ SUPERSEDED` banner(指向 v0.1.36-42 UI overhaul)
+    - `docs/smoke/2026-08-14-phase1-smoke.md` 加 `⚠ STALE` banner(shell APK 体积 / rules JSON 路径 / 类别数已变)
+    - `.claude/skills/icevision-release/SKILL.md` 修断的 numbered list(补漏的 step 1 + `--max-time 900`)+ APK size check 路径修正(`app/build/outputs/.../icespiritai-vision.apk` → `build/generated/release-staging/icespiritai-vision.apk`,对齐 v0.1.42 staging 路径迁移)
+    - `README.md` 头部 v0.1.42 → v0.1.43
+
 ## v0.1.42 · 2026-08-31
 
 - **全面审计修复(19 项 / 6 维度扫描 + 对抗验证)**:

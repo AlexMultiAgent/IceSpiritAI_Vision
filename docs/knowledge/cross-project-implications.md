@@ -71,7 +71,7 @@
 
 | 时点 | 行动 |
 |---|---|
-| **2026 H2** | **冰灵锐目**先迁前瞻路径(Phase 1 baseline 即按 AGP 9.3 / Gradle 9.7 / Kotlin 2.4.10 / compileSdk 36);**冰灵智译**留在 AGP 8.x 末班车;**冰灵慧语**视情况 |
+| **2026 H2** | **冰灵锐目**先迁前瞻路径(Phase 1 baseline 即按 AGP 9.3 / Gradle 9.7 / Kotlin 2.4.10 / compileSdk **37** / targetSdk **37**);**冰灵智译**留在 AGP 8.x 末班车;**冰灵慧语**视情况 |
 | **2027 H1** | **冰灵智译**起独立迁移 spec → AGP 9.x(以 Vision 经验为参考) |
 | **2027 H2** | **冰灵慧语**起迁移 spec(若需要) |
 
@@ -99,8 +99,8 @@ Translate 可在迁移时引用,避免重新设计。
 | # | 项目 | 行动 | 期望时点 |
 |---|---|---|---|
 | 1 | 冰灵锐目 | Phase 1 baseline = 前瞻路径 | 本 Spec 落地时 |
-| 2 | 冰灵锐目 | 验证 ONNX Runtime 1.29.0 在 arm64-v8a / minSdk 26 / targetSdk 36 实际可用 | Phase 1 plan 启动期 |
-| 3 | 冰灵锐目 | 验证 RapidOCR 最新 Android artifact 的 ABI 切片 | Phase 1 plan 启动期 |
+| 2 | 冰灵锐目 | ~~验证 ONNX Runtime 1.29.0~~ — **CLOSED 2026-08-13**:实际切到 **ONNX Runtime 1.21.1**(PaddleOCR v3.7.0 SDK 锁定版本),目标 1.29.0 无对应 Paddle 二进制 → 关闭 | — |
+| 3 | 冰灵锐目 | ~~验证 RapidOCR Android artifact~~ — **CLOSED 2026-08-13**:OCR 路线从 RapidOCR 改为 **PaddleOCR v3.7.0 官方 SDK**(走 ONNX Runtime + OpenCV),RapidOCR 评估作废 → 关闭 | — |
 | 4 | 冰灵锐目 | 沉淀共享 build 模板到 `build-templates/` | Phase 1 实施末 |
 | 5 | 冰灵智译 | 留在 AGP 8.13 + Gradle 8.14.5 + Kotlin 2.4.10 + NDK 27.x | 维持 |
 | 6 | 冰灵智译 | 独立 AGP 9 迁移 spec(以 Vision 经验为模板) | 2027 H1 |

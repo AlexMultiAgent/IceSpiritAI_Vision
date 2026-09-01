@@ -68,6 +68,15 @@ Since the in-app update client downloads from whichever URL is in `vision-latest
 we still rewrite `apkUrl` to the just-uploaded APK's `/attachments/<uuid>` URL as
 defense-in-depth — cost is one extra POST + 80-char URL replace per release, and it
 prevents recurrence if the publishing repo ever hits the same Gitea 1.22.x bug.
+
+The current `uploadVisionReleaseToGitea` Gradle task does this in 3 sub-steps:
+
+1. POST the APK first (large file POST sometimes returns HTTP 100 and stalls; `--max-time 900`):
+   ```bash
+   curl -X POST "${GITEA_BASE}/releases/${RELEASE_ID}/assets" \
+       -H "Authorization: token ${GITEA_PAT}" \
+       -F "attachment=@${APK_PATH}" \
+       --max-time 900
    ```
 2. Rewriting `apkUrl` in `vision-latest.json` to:
    ```
@@ -105,7 +114,11 @@ print('JSON OK:', d['versionCode'], d['signerCertSha256'])
 "
 
 # 2. APK is reachable + correct size
-LOCAL_SIZE=$(stat -c %s app/build/outputs/apk/release/icespiritai-vision.apk)
+#    `icespiritai-vision.apk` lives in `build/generated/release-staging/` after
+#    `archiveVisionRelease` (the rename from AGP default `app-release.apk`
+#    happens there; the source-of-truth file the Gitea upload posts is the
+#    staged copy, NOT the raw `outputs/apk/release/app-release.apk`).
+LOCAL_SIZE=$(stat -c %s build/generated/release-staging/icespiritai-vision.apk)
 REMOTE_SIZE=$(curl -sI http://125.211.45.14:3000/attachments/<uuid> | awk '/Content-Length/{print $2}' | tr -d '\r')
 test "$LOCAL_SIZE" = "$REMOTE_SIZE" && echo "SIZE OK ($LOCAL_SIZE)" || echo "SIZE MISMATCH local=$LOCAL_SIZE remote=$REMOTE_SIZE"
 

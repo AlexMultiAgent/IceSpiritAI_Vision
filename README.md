@@ -4,7 +4,7 @@
 
 ## 状态
 
-**v0.1.41** — UI 严重度感知 + KPI 点击提示 + Viewer 命中子串高亮 + Tab → 初始页 reset + 离线 OCR/规则库判违(`ice_ocr_rules` profile)。
+**v0.1.43** — 审计 round 2 收尾:`IceSpiritVisionViewModel.reset` 同步取消(UI 即时回 Idle,消除 `cancelAndJoin` + `withContext(Default)` 在 JVM 测试下的 scheduler-blind 竞态)+ `ExportAction.share` 注入 `ioDispatcher` 参数(测试可注入 `TestDispatcher`,生产保持 `Dispatchers.IO`)+ PreToolUse hook Rule 1 正则加固(拦截 `git add --all` / `git add *` / `git add ./` 等绕过)+ Hook 自检脚本 `tools/pre-tool-use-hook-test.js`(23 case,全过)+ 文档与 build.gradle.kts / settings.gradle.kts / doc drift 多处对齐实际版本号 / SDK / 规则数。
 
 (历史发版见 [app/src/main/assets/user-changelog.md](app/src/main/assets/user-changelog.md))
 

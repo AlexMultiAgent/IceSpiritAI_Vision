@@ -1,10 +1,17 @@
 # 冰灵锐目 UI 设计规范 — 执法场景单页直入式
 
+> ⚠ **SUPERSEDED — 2026-09-01 audit**:本规范的 UI 布局 + 严重度模型(0/1/2/3 四级但 Positive 未独立)+ `SeverityChip` 形态已被 **2026-08-25 ui-modernization + v0.1.39–v0.1.41 UI 重大调整**全面替换:
+>   - **Severity model**(v0.1.36 enum 重排 + v0.1.40):`Violation` / `Warning` / `Info` / `Positive` 四级(Positive 故意放末尾,任何 ordinal-based `maxOfOrNull` 退化路径仍会把 Violation 排在 Positive 前面)。`severityRank(severity)` helper 在 `domain/AnalysisState.kt` 顶层 function。
+>   - **Phase 3.5 严重度感知 UI**(v0.1.40):HitCard 全卡片染色 + SeverityChip + 删 `rule category` 整条 + ResultPanel 按 rank 分组 + KPI 长按提示。
+>   - **v0.1.41 6 点微调**:KPI 长按→点击提示 + CaptureBar 2/3 按钮动态布局 + 导出按钮仅 hasHits 显示 + 导出文字收中位 + HitCard 字号降一档 + Viewer 命中行 + 子串高亮。
+>   - **Tab → 初始页 reset**(v0.1.38,commit 7d5485c):`setTab_sameTab_nonLoadingState` 视为「回到初始」调 `reset()`。
+> 本规范作为 2026-08-15 立项时的设计溯源保留 — **§1 用例 / §2 信息架构 / §3 主屏布局骨架** 仍可作演进参考,但 §4 起的控件级描述已与 v0.1.40-42 代码契约不符。最新 UI 契约参考 [`CLAUDE.md §UI 严重度模型 + v0.1.41 微调`](../../CLAUDE.md)。
+
 | 项 | 值 |
 |---|---|
 | 文档版本 | v0.1.0 |
 | 日期 | 2026-08-15 |
-| Spec 状态 | 待评审 |
+| Spec 状态 | **SUPERSEDED — 2026-09-01** |
 | 关联项目根指令 | `CLAUDE.md` |
 | 关联 baseline 库 | `docs/knowledge/build-stack-2026-08.md` |
 | 关联 Phase 1 spec | `docs/superpowers/specs/2026-08-13-icevision-phase1-ocr-rules-design.md` |

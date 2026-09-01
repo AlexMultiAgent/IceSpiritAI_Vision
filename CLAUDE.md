@@ -27,7 +27,7 @@
 |---|---|
 | UI tab 渲染 | [RuleTabBar.kt](app/src/main/java/com/icespiritai/offline/ui/home/RuleTabBar.kt) 内部 `visibleTabs = listOf(RuleTab.AdSignage)`,`TabRow` 只渲染一项;`RuleTab.FoodLabeling` enum 项保留 |
 | ViewModel 路由 | [IceSpiritVisionViewModel.kt](app/src/main/java/com/icespiritai/offline/IceSpiritVisionViewModel.kt) `matcherFor(tab)` 双分支保留,`FoodLabelRuleMatcher` 仍可路由;UI 不暴露入口即可 |
-| 规则 + 加载器 | `AdSignageRuleLoader` + `FoodLabelRuleLoader` 双装载入口保留;`food_label_rules.json`(66 条 / v4)+ `ad_signage_rules.json`(120 条 / v5)均随 APK 出 |
+| 规则 + 加载器 | `AdSignageRuleLoader` + `FoodLabelRuleLoader` 双装载入口保留;`food_label_rules.json`(66 条 / v4)+ `ad_signage_rules.json`(129 条 / v10,14 个类别:absolute / agricultural / cosmetic / education / finance / internet_ad / medical / minor / outdoor / pesticide / realestate / restricted / signage / veterinary)均随 APK 出 |
 | 知识库 | [知识库/](知识库/) 双域 markdown 完整保留;`广告业务/` 是当前打磨中的成熟参考,`食品标识/` 是待后续套用的对象 |
 | 测试 | [FoodLabelRuleMatcherTest.kt](app/src/test/java/com/icespiritai/offline/rules/FoodLabelRuleMatcherTest.kt) + [IceSpiritVisionViewModelTabTest.kt](app/src/test/java/com/icespiritai/offline/IceSpiritVisionViewModelTabTest.kt) 双 tab 路由断言保留 |
 | 打磨策略 | ad_signage_rules.json 关键词命中 / 严重度分级 / category 显示 / 证据包导出全部以"可复制到下一个视觉判别域"为标尺优化,达标后再以同样模式启用 FoodLabeling tab |
@@ -85,7 +85,7 @@ Gradle property `modelProfile` 控制当前构建启用哪个模型配置:
 | Profile | 状态 | 含义 |
 | --- | --- | --- |
 | `shell` | **默认 / 首版** | 仅展示骨架;UI 可跑,Fake OCR + slim rules,APK 不带模型 |
-| `ice_ocr_rules` | Phase 1(shipped) | **PP-OCRv6_small**(2026-08-20 升级,rec dict 18708 条)经 PaddleOCR v3.7.0 SDK(走 ONNX Runtime + OpenCV)+ AdSignageRuleMatcher + FoodLabelRuleMatcher 已接入;rules JSON 从 `assets/rules/ad_signage_rules.json`(广告招牌 120 条 / v5,含 2026-08-27 新增 `ad_signage_signage_food_safety_implication` 暗示安全性规则)与 `assets/rules/food_label_rules.json`(食品标识 66 条 / v4)出;ONNX 模型(bundled in APK)在 `assets/models/{det,rec}/inference.onnx` + `inference.yml` |
+| `ice_ocr_rules` | Phase 1(shipped) | **PP-OCRv6_small**(2026-08-20 升级,rec dict 18708 条)经 PaddleOCR v3.7.0 SDK(走 ONNX Runtime + OpenCV)+ AdSignageRuleMatcher + FoodLabelRuleMatcher 已接入;rules JSON 从 `assets/rules/ad_signage_rules.json`(广告招牌 129 条 / v10 / 14 类,含 2026-08-27 新增 `ad_signage_signage_food_safety_implication` 暗示安全性规则)与 `assets/rules/food_label_rules.json`(食品标识 66 条 / v4)出;ONNX 模型(bundled in APK)在 `assets/models/{det,rec}/inference.onnx` + `inference.yml` |
 | `ice_vision` | 未来 | 多标签 + 法规依据的端侧 VLM |
 
 切换方式:`./gradlew assembleDebug -PmodelProfile=<name>`
@@ -131,7 +131,7 @@ Phase 1 走 OCR + 规则库路线(**PP-OCRv6_small** + PaddleOCR 官方 SDK v3.7
 # 默认(骨架 APK,Fake OCR + slim rules)
 ./gradlew.bat assembleDebug -PmodelProfile=shell
 
-# Phase 1 shipped(PP-OCRv6_small + PaddleOCR v3.7.0 + 广告招牌 120 条 / 食品标识 66 条 + ONNX 模型)
+# Phase 1 shipped(PP-OCRv6_small + PaddleOCR v3.7.0 + 广告招牌 129 条 / 食品标识 66 条 + ONNX 模型)
 ./gradlew.bat assembleDebug -PmodelProfile=ice_ocr_rules
 
 # 单元测试 / Lint
@@ -193,7 +193,7 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 
 ## 开发环境
 
-- **JDK 17**:buildSrc 锁定 `jvmToolchain(17)`(forward-path baseline)。WIN runner 默认 `JAVA_HOME` 是 JDK 25(找不到匹配 toolchain,build 启动失败)。本仓库已手动 stage 的路径:`/c/Users/37311/.gradle/jdks/jdk-17.0.18+8`(OpenJDK 17.0.18+8)。运行命令前必须显式 `export JAVA_HOME="/c/Users/37311/.gradle/jdks/jdk-17.0.18+8"`。`gradle.properties` 另开 `org.gradle.java.installations.auto-download=true` 兜底(foojay 镜像在 CN 受限,通常需手动 stage)。
+- **JDK 17**:buildSrc 锁定 `jvmToolchain(17)`(forward-path baseline)。WIN runner 默认 `JAVA_HOME` 是 JDK 25(找不到匹配 toolchain,build 启动失败)。本仓库已手动 stage 的路径:`/c/Users/37311/.gradle/jdks/jdk-17.0.18+8`(OpenJDK 17.0.18+8)。运行命令前必须显式 `export JAVA_HOME="/c/Users/37311/.gradle/jdks/jdk-17.0.18+8"`。**`gradle.properties` 不开 `auto-download` / `auto-detect` 兜底**:仓库没有 foojay-resolver-convention plugin,这两个 flag 在无 plugin 时是纯噪音(Gradle 启动报 "could not resolve toolchain"),且 foojay 镜像在 CN 受限;实际工具链解析靠用户手动 export 的 `JAVA_HOME`。v0.1.42 显式移除该 flag。
 - **NDK 28.2.13676358**(r28c):Android SDK Manager 安装,版本由 `app/build.gradle.kts` 的 `ndkVersion` 锁定。
 - **JVM 堆**:Gradle daemon `-Xmx3072m`(`gradle.properties`);本机若启用 R8 + Lint + native build,建议 ≥8 GiB 可用内存,避免 daemon OOM。
 
@@ -210,13 +210,16 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 
 ## Claude Code 自动化(skills + hooks)
 
-仓库内置 2 个 user-only skill + 1 个 PreToolUse hook,把"发版 / 提交 / 防误删"三条最容易出错的路径固化成 bash 闸门 + 文档化清单:
+仓库内置 4 个 user-invocable skill + 2 个 hook(`pre-tool-use` + `user-prompt-submit`)+ 2 个自定义 agent(`compliance-checker` / `rule-expander`),把"发版 / 提交 / 防误删 / 规则扩写"四条最容易出错的路径固化成 bash 闸门 + 文档化清单:
 
 | Skill / Hook | 触发方式 | 职责边界 |
 |---|---|---|
 | `/icevision-release` (`.claude/skills/icevision-release/SKILL.md`) | 用户说 `/icevision-release` 或"发版" / "走发布流水线" | 5 步 pre-flight(JDK 17 / v1 signing / Gitea PAT / AAR+ONNX / cert-pin)+ 4 步流水线(`assembleRelease → generateVisionLatestJson → archiveVisionRelease → uploadVisionReleaseToGitea`)+ Gitea 1.22.x APK 404 绕路 + 大文件 POST 卡死恢复 + 发版后 smoke 校验。**不放开版打标**(那是 commit 阶段的事) |
 | `/project-commit` (`.claude/skills/project-commit/SKILL.md`) | 用户说 `/project-commit` / "commit" / "提交" | 8 步提交 hygiene(作者 AlexMultiAgent 校验 / 无 Claude trailer / 显式 `git add` / 敏感文件扫描 / JDK 17 / build 校验)+ 当 commit 主题含 release marker(`feat(v0.1.X):` / `fix(v0.1.X):` / "发版")时同步执行 **Release 三段式打标**:`versionCode` bump + `user-changelog.md` 顶部条目 + `git tag v0.1.X` + push `latest` ref |
-| `.claude/hooks/pre-tool-use.js` | Claude Code 每次 Bash 调用前自动跑 | Rule 1:`git add -A` / `git add .` 拦截;Rule 2:`gradle.token.properties` / `~/.gradle/gradle.properties` / `local.properties` 等敏感文件的 git 操作拦截;Rule 3:`app/libs/*.aar`(PaddleOCR SDK,~70 MB,不被每次 build 重新生成)的破坏性操作(`rm` / `mv` / `del` / `unlink` / `truncate` / `git rm`)拦截。规则命中 exit 2 + stderr 解释 |
+| `/add-rule-entry` (`.claude/skills/add-rule-entry/SKILL.md`) | 用户说"扩 X 规则" / "加规则" / "把 X 法规落地" | 把一条 stub 法规扩成 `知识库/<域>/<reg>.md` + rule JSON 条目 + matcher 单测 + changelog 条目 |
+| `/fixture-rename-sync` (`.claude/skills/fixture-rename-sync/SKILL.md`) | 用户说"同步 fixture 重命名" / "audit66 fixture 同步" | 同步 androidTest fixture 子文件夹的文件名重命名 + .md fixture 描述 |
+| `.claude/hooks/pre-tool-use.js` | Claude Code 每次 Bash 调用前自动跑 | Rule 1:`git add -A` / `git add --all` / `git add .` / `git add ./` / `git add ..` / `git add .git` / `git add *`(含 `git -C x add` 全局 flag 变体)拦截;Rule 2:`gradle.token.properties` / `~/.gradle/gradle.properties` / `local.properties` 等敏感文件的 git 操作拦截;Rule 3:`app/libs/*.aar`(PaddleOCR SDK,~70 MB,不被每次 build 重新生成)的破坏性操作(`rm` / `rm -rf` / `mv` / `del` / `unlink` / `truncate` / `git rm` / `find ... -delete`)拦截。规则命中 exit 2 + stderr 解释(v0.1.43 regex 加固 23 case 自测通过) |
+| `.claude/hooks/user-prompt-submit.js` | Claude Code 每次 user prompt 提交时自动跑 | `.remember/` 历史 buffer / today-*.md / recent.md / archive.md / core-memories.md 搜索触发器(用户消息含 "history" / "remember" 时返回上下文锚点) |
 
 **关键边界**:`icevision-release` 发版后 smoke 校验通过 → 才调用 `project-commit` 走 Release 三段式(确保 tag SHA = APK SHA = JSON SHA,避免 v0.1.14 那种 APK live 但 JSON 旧版本的 drift)。
 
@@ -224,9 +227,9 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 
 完整恢复步骤(curl 级)与 Gitea 1.22.x 404 绕路在 [.claude/skills/icevision-release/SKILL.md](.claude/skills/icevision-release/SKILL.md),这里只保留症状 + 修复指针,避免 CLAUDE.md 与 skill 内容漂移。
 
-- **2026-08-21 v0.1.14 — `uploadVisionReleaseToGitea` 大文件 POST 卡住(HTTP 100)**:`POST .../assets` 上传 APK 一直返回 HTTP 100,`--max-time 600` 触发超时。**不要回滚代码**,纯 Gitea 端瞬时问题。先 POST JSON(小,~1s)再 POST APK(`--max-time 900`)。详 → `icevision-release` "大文件 POST 超时恢复"段
+- **2026-08-21 v0.1.14 — `uploadVisionReleaseToGitea` 大文件 POST 卡住(HTTP 100)**:`POST .../assets` 上传 APK 一直返回 HTTP 100,`--max-time 600` 触发超时。**不要回滚代码**,纯 Gitea 端瞬时问题。**当前 APK-first 顺序**(v0.1.42 起):先 POST APK(`--max-time 900`)抓 response `uuid`,把 staged `vision-latest.json` 的 `apkUrl` 改写为 `http://125.211.45.14:3000/attachments/<uuid>`(task-local 临时文件,不 mutate staging),再 POST 改写后的 JSON(~1.4 KB,瞬时完成)。详 → `icevision-release` "大文件 POST 超时恢复"段
 - **2026-08-26 v0.1.31 — Gitea 1.22.x `releases/download/latest/<file>.apk` 返 404**:JSON 200 但 APK URL 404,改名也不解决。workaround:从 POST response 抓 `uuid`,把 `apkUrl` 改成 `http://125.211.45.14:3000/attachments/<uuid>`,cert-pin gate 不变。详 → `icevision-release` "Gitea 1.22.x APK 404 workaround"段
-- **Cert-pin 锚点**:`signerCertSha256` 必须 = `4a21f4...3043`。release 凭据在 `~/.gradle/gradle.properties`(gitignored),Gitea PAT 在 `gradle.token.properties`(gitignored,见 `.token.properties.example` 模板)。stage 路径:`build/generated/release-staging/`(per memory `feedback-no-release-history-archive.md`,已不再写 `发布版历史存档/`)
+- **Cert-pin 锚点**:`signerCertSha256` 必须 = `4a21f4...3043`。release 凭据在 `~/.gradle/gradle.properties`(gitignored),Gitea PAT 在 `gradle.token.properties`(gitignored,见 `gradle.token.properties.example` 模板)。stage 路径:`build/generated/release-staging/`(per memory `feedback-no-release-history-archive.md`,已不再写 `发布版历史存档/`)
 
 - **Gitea 1.22.x `releases/download/<tag>/<filename>` 对 `.apk` 文件名 404**(发布仓库 `giteaadmin/vision-app` 实测**健康**,in-app update 完全工作):
   - **症状**:apk URL `releases/download/latest/icespiritai-vision.apk` 持续 404,但同 tag 下 `vision-latest.json` 200 — 触发取决于 release tag 与 filename,attachment `GET /attachments/<uuid>` 正常

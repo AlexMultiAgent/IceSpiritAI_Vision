@@ -6,6 +6,12 @@ import androidx.test.core.app.ApplicationProvider
 import com.icespiritai.offline.domain.RuleHit
 import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.domain.ViolationReport
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -40,6 +46,15 @@ import java.io.File
  *   - `Toast.makeText(...)` (UI thread)
  *   - `context.startActivity(...)` (Intent dispatch)
  *
+ * v0.1.43 (audit fix): [ExportAction.share] now requires a [CoroutineScope]
+ * and dispatches the ContentResolver + ZipOutputStream + cacheDir.writeBytes
+ * onto an injectable `ioDispatcher` (defaults to `Dispatchers.IO`),
+ * bouncing Toast + startActivity to `Dispatchers.Main`. Tests pass
+ * `UnconfinedTestDispatcher` as both `ioScope` AND `ioDispatcher`, plus
+ * `Dispatchers.setMain(testDispatcher)` so the `Dispatchers.Main` switch
+ * inside `showFailureToast` lands on the same eager dispatcher. Unconfined
+ * executes everything synchronously — no `advanceUntilIdle()` needed.
+ *
  * **Windows note:** Robolectric's SDK 33 + AndroidX FileProvider on Windows
  * trips a path-separator bug (issuetracker.google.com/issues/79845) that
  * surfaces as `IllegalArgumentException: Failed to find configured root`
@@ -51,6 +66,7 @@ import java.io.File
  * All four branches above are Android-framework seams that the JVM shim
  * cannot satisfy without Robolectric.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
 class ExportActionTest {
@@ -74,10 +90,16 @@ class ExportActionTest {
     }
 
     private lateinit var evidenceDir: File
+    private val testDispatcher = UnconfinedTestDispatcher()
+    private val testScope = CoroutineScope(testDispatcher + kotlinx.coroutines.SupervisorJob())
 
     @Before
     fun setUp() {
         ShadowToast.reset()
+        // Override Main so `withContext(Dispatchers.Main)` inside share() lands
+        // back on the test dispatcher (UnconfinedTestDispatcher executes
+        // eagerly — no advanceUntilIdle needed).
+        Dispatchers.setMain(testDispatcher)
         val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
         evidenceDir = File(ctx.cacheDir, "evidence").apply {
             deleteRecursively()
@@ -87,6 +109,7 @@ class ExportActionTest {
 
     @After
     fun tearDown() {
+        Dispatchers.resetMain()
         evidenceDir.deleteRecursively()
     }
 
@@ -110,8 +133,9 @@ class ExportActionTest {
         val toastBefore = ShadowToast.getTextOfLatestToast()
 
         // Must not throw — share() swallows framework exceptions and
-        // surfaces them via Toast.
-        ExportAction.share(ctx, report, appVersion = "0.0.0-test")
+        // surfaces them via Toast. UnconfinedTestDispatcher runs the
+        // launched coroutine to completion before returning.
+        ExportAction.share(ctx, report, appVersion = "0.0.0-test", ioScope = testScope, ioDispatcher = testDispatcher)
 
         // 1. No failure toast on success.
         val toastAfter = ShadowToast.getTextOfLatestToast()
@@ -160,7 +184,7 @@ class ExportActionTest {
 
         // Must NOT throw — the production code catches all Throwables from
         // EvidencePackageBuilder and surfaces a Toast instead.
-        ExportAction.share(ctx, reportWithBogusUri, appVersion = "0.0.0-test")
+        ExportAction.share(ctx, reportWithBogusUri, appVersion = "0.0.0-test", ioScope = testScope, ioDispatcher = testDispatcher)
 
         // 1. Toast surfaced the failure.
         val toast = ShadowToast.getTextOfLatestToast()
@@ -205,7 +229,7 @@ class ExportActionTest {
             ByteArrayInputStream(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x4B)),
         )
 
-        ExportAction.share(ctx, report, appVersion = "0.0.0-test")
+        ExportAction.share(ctx, report, appVersion = "0.0.0-test", ioScope = testScope, ioDispatcher = testDispatcher)
 
         // 1. Failure toast surfaced.
         val toast = ShadowToast.getTextOfLatestToast()

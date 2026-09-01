@@ -32,10 +32,13 @@ class UpdateDownloadService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var notifier: UpdateDownloadNotifier
     private lateinit var stateStore: DownloadStateStore
-    // ConcurrentHashMap-backed set: onStartCommand (main thread) and the IO
-    // coroutines (onDownloadComplete / handleCancel / cleanup) mutate this from
-    // different threads. A plain mutableSetOf is not thread-safe.
-    private val inFlight: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    // Tracks active downloads by id → destPath. `onStartCommand` (main thread)
+    // and the IO coroutines (`onDownloadComplete` / `handleCancel` / `cleanup`)
+    // mutate this from different threads — a plain mutableMapOf is not
+    // thread-safe. The destPath denormalization lets [onDestroy] wipe
+    // partially-downloaded APKs without a suspending DataStore read (see
+    // KDoc there for why we don't go through stateStore on teardown).
+    private val inFlight: MutableMap<String, String> = ConcurrentHashMap()
 
     override fun onCreate() {
         super.onCreate()
@@ -66,7 +69,9 @@ class UpdateDownloadService : Service() {
         // downloadId + resume=true. Reconstruct URL / dest / cert from the
         // persisted DataStore record so the download actually resumes —
         // otherwise the service would bail out here and resume silently fails.
-        if (!inFlight.add(id)) return  // idempotent: same id already running
+        // Atomic check-or-insert; second start with the same id is a no-op.
+        val effectiveDest = destPath ?: ""
+        if (inFlight.putIfAbsent(id, effectiveDest) != null) return
 
         scope.launch {
             val persisted = stateStore.get(id)
@@ -89,6 +94,11 @@ class UpdateDownloadService : Service() {
                 inFlight.remove(id)
                 return@launch
             }
+
+            // Update the destPath in the inFlight map now that we've resolved
+            // any persisted fallback — [onDestroy] uses it to wipe partial
+            // APKs without a suspending DataStore read.
+            inFlight[id] = effDest
 
             val record = DownloadRecord(
                 downloadId = id, url = effUrl, destPath = effDest,
@@ -163,19 +173,27 @@ class UpdateDownloadService : Service() {
                         }
                         lastNotifUpdate = now
                     }
-                    // Push live progress to the StateFlow at the same 500 ms cadence
-                    // so UpdateSection's progress bar advances (the bar reads from
-                    // UpdateRepository.state, not from DataStore). Decoupled from
-                    // lastNotifUpdate: if either side lags the other won't stall.
+                    // Push live progress to the StateFlow + DataStore at the same
+                    // 500 ms cadence. Both reads serve the same purpose — UI
+                    // progress bar (StateFlow) + resume-after-process-death
+                    // recovery (DataStore). The DataStore write previously ran
+                    // on every onProgress tick (unbounded — ApkDownloader's
+                    // chunk size is typically 16-64 KB, so a 70 MB APK produced
+                    // 1000-4000+ DataStore.edit coroutines per second). That
+                    // saturated DataStore's serializer mutex and stalled the
+                    // subsequent onDownloadComplete `stateStore.upsert(Verifying)`
+                    // write, sometimes by minutes. Throttling to the same 500 ms
+                    // gate as the StateFlow keeps the two views in lockstep and
+                    // caps outstanding writes at ~2 per second.
                     if (now - lastStateUpdate >= 500) {
                         UpdateRepository.onDownloadProgress(
                             downloadId = liveRecord.downloadId,
                             written = written,
                             total = liveRecord.totalBytes,
                         )
+                        scope.launch { stateStore.upsert(liveRecord.copy(bytesWritten = written)) }
                         lastStateUpdate = now
                     }
-                    scope.launch { stateStore.upsert(liveRecord.copy(bytesWritten = written)) }
                 },
                 // onMetadata fires once per fetch when Content-Length is known
                 // (before the first body byte). Pushes the real total to both
@@ -269,7 +287,34 @@ class UpdateDownloadService : Service() {
     private fun notifIdFor(record: DownloadRecord) = 0xF001 + record.downloadId.hashCode()
 
     override fun onDestroy() {
+        // Cancel the in-flight scope first so any runDownload coroutines
+        // suspended on the IO pool are torn down (the ApkDownloader
+        // HttpURLConnection streams observe cancellation at the next read).
+        // Then sweep the `inFlight` map: every id that didn't reach
+        // `inFlight.remove(...)` in its completion / cancel path represents
+        // a partially-downloaded APK on disk. We delete the partial file so
+        // a later session's UpdateResumeWorker doesn't try to resume from
+        // bytes that never made it to the file (DataStore says "60% written"
+        // but the file is shorter — handleDownload() will detect the
+        // mismatch and reset bytesWritten to 0 for a fresh start).
+        //
+        // We deliberately leave the DataStore record alone here:
+        //   1. stateStore.delete is `suspend`, onDestroy can't suspend
+        //      without blocking the main thread (no `runBlocking` policy on
+        //      Service teardown).
+        //   2. The orphan record is harmless — handleDownload's
+        //      `resumeFrom = null` branch (mismatched file length) wipes
+        //      bytesWritten + deletes the file again. So no double-spend,
+        //      just an extra file system stat on next resume.
+        //   3. `scope.cancel()` before the sweep ensures no in-flight
+        //      upsert re-inserts after a delete.
         scope.cancel()
+        for ((id, destPath) in inFlight.toMap()) {
+            if (destPath.isNotBlank()) {
+                runCatching { File(destPath).delete() }
+            }
+            inFlight.remove(id)
+        }
         super.onDestroy()
     }
 

@@ -52,7 +52,17 @@ import kotlinx.coroutines.launch
  */
 class IceSpiritVisionViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val ocrEngine: OcrEngine = OcrEngineFactoryLocator.create(application)
+    // Lazy to match the rule-loader pattern below: a missing
+    // `OcrEngineFactory` on the classpath (e.g. a packaging defect that
+    // omitted `buildProfileServicesJar`'s output from the APK) should
+    // surface as `AnalysisState.Error(OCR_UNAVAILABLE)` when the user
+    // actually tries to analyze, not as an IllegalStateException out of
+    // this ViewModel's constructor where no UI state exists to display it.
+    // [OcrEngineFactoryLocator.create] throws IllegalStateException via
+    // `error(...)`; that exception will propagate out of this lazy on
+    // first access inside `startAnalysis`, where `repository.analyze`'s
+    // catch-all block converts it into the domain Error.
+    private val ocrEngine: OcrEngine by lazy { OcrEngineFactoryLocator.create(application) }
     private val app = application
 
     private val adMatcher: RuleMatcher by lazy {
@@ -158,6 +168,31 @@ class IceSpiritVisionViewModel(application: Application) : AndroidViewModel(appl
         _pendingUri.value = uri
     }
 
+    /**
+     * Reset the ViewModel to a clean slate: cancel any in-flight analysis
+     * and clear [state] + [pendingUri]. Fully synchronous — both [Job.cancel]
+     * and the state writes happen on the calling thread so the UI sees Idle
+     * the instant `reset()` returns.
+     *
+     * **Why synchronous (not `cancelAndJoin`-inside-launch like
+     * [startAnalysis]):** the analyze pipeline suspends on
+     * `withContext(Dispatchers.Default) { matcher.scan(...) }` inside
+     * `ImageAnalyzerRepository.analyze`. Under JVM unit tests,
+     * `StandardTestDispatcher.advanceUntilIdle()` does NOT wait for
+     * external dispatchers to complete, so an async `cancelAndJoin`
+     * races with the test assertions. Synchronous cancel + state writes
+     * give unit tests an immediate, deterministic post-reset state.
+     *
+     * **Atomicity trade-off:** [startAnalysis] defers its `_pendingUri`
+     * write until after `cancelAndJoin` because a stale thumbnail showing
+     * the wrong image is the worst-case UI artifact. [reset] does NOT
+     * defer — the worst-case artifact of a stale Loading emission
+     * landing between the Idle write and the prior job's next yield
+     * point is a brief UI flicker, and in practice [reset] is only
+     * invoked when state is not Loading (see [setTab] + the
+     * `ErrorPanel.onReset` path), so the analyze pipeline is not in
+     * flight when this runs.
+     */
     fun reset() {
         currentJob?.cancel()
         _state.value = Idle

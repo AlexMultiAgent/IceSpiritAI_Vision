@@ -1,15 +1,15 @@
-# ad_signage 域 判别表面 — 2026-08-20 快照(v5)
+# ad_signage 域 判别表面 — 2026-09-01 快照(v10)
 
-> 全量 118 条规则 / 13 个 category / 3 级 severity,逐条展开关键词 + 法规 + 严重度。
+> 全量 129 条规则 / 14 个 category / 4 级 severity(`Violation` / `Warning` / `Info` / `Positive`),逐条展开关键词 + 法规 + 严重度。
 > 文档面向广告检查业务人员:拍照后能看到什么命中、依据哪条法规、严重度几级。
 
 ## 0. 总览
 
 | 字段 | 值 |
 |---|---|
-| 规则 JSON 版本 | 5 |
-| 规则总条数 | **118** |
-| category 数 | **13** |
+| 规则 JSON 版本 | 10 |
+| 规则总条数 | **129** |
+| category 数 | **14**(absolute / agricultural / cosmetic / education / finance / internet_ad / medical / minor / outdoor / pesticide / realestate / restricted / signage / veterinary) |
 | severity 等级 | **3**(`Violation` / `Warning` / `Info`) |
 | 触发机制 | OCR 文本 → 归一化 → 关键词命中(`keywords` 任一) |
 | 命中产物 | `ruleId / matchedText / category / regulation / lawText / severity` |

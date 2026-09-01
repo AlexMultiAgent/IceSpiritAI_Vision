@@ -23,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.annotation.VisibleForTesting
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -154,9 +155,14 @@ fun HomeScreen(
     // a no-op export affordance when the analyzer found nothing.
     val hasHits = hits.isNotEmpty()
     val canExport = (state is AnalysisState.Complete) && hasHits
+    val exportScope = rememberCoroutineScope()
     fun onExport() {
         val s = state as? AnalysisState.Complete ?: return
-        ExportAction.share(context, s.report, BuildConfig.VERSION_NAME)
+        // v0.1.43: pass the Compose-bound scope so ExportAction.share dispatches
+        // the ContentResolver read + ZipOutputStream + cacheDir.writeBytes onto
+        // Dispatchers.IO (50-200 ms of work for an 8 MB image — was blocking
+        // the main thread when this onClick handler ran sync).
+        ExportAction.share(context, s.report, BuildConfig.VERSION_NAME, exportScope)
     }
 
     Column(modifier = Modifier.fillMaxSize()) {

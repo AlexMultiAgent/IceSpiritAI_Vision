@@ -170,6 +170,9 @@ class IceSpiritVisionViewModelTabTest {
             "setTab(same tab, non-Loading) must return false (tab unchanged)",
             vm.setTab(RuleTab.AdSignage),
         )
+        // reset() is fully synchronous (see VM.reset KDoc) so the
+        // Idle + pendingUri=null assertions hold immediately after
+        // setTab returns — no advanceUntilIdle() needed.
         assertEquals(
             "setTab(same tab, non-Loading) must clear pendingUri via internal reset()",
             null, vm.pendingUri.value,
