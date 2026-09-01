@@ -3,7 +3,10 @@ package com.icespiritai.offline.ui.home
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Save
@@ -62,7 +65,17 @@ fun CaptureBar(
     val pickA11y = stringResource(R.string.pick_image_fab_desc)
     val exportA11y = stringResource(R.string.export_button_desc)
     BottomAppBar(
-        modifier = modifier.fillMaxWidth(),
+        // P0-C006: edge-to-edge (targetSdk 35) draws the system nav bar /
+        // gesture pill on top of the bottom window region. Without an
+        // explicit windowInsetsPadding on the BottomAppBar modifier, the
+        // three ExtendedFABs sit underneath the gesture pill and become
+        // hard / impossible to tap on gesture-nav devices (Pixel 8 /
+        // Samsung S25 / Xiaomi 15). Lift the whole BottomAppBar above
+        // the navigation bar inset. Matches the pattern used in
+        // HomeTopBar.kt for the statusBars inset.
+        modifier = modifier
+            .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.navigationBars),
         containerColor = Color.Transparent,
         tonalElevation = 0.dp,
     ) {
