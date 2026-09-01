@@ -1,6 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Android 11 (API 30) package visibility: callers can only resolve
+         other apps' intent filters when the relevant intent / provider /
+         package is whitelisted in a <queries> block. Without this, system
+         camera and gallery activities show up as `resolveActivity = null`
+         on API 30+ strict vendors (HarmonyOS / One UI / MIUI), surfacing
+         as `ActivityNotFoundException` from the picker launcher.
+         PhotoPicker (ActivityResultContracts.PickVisualMedia) bypasses
+         this check via a system-level UI, but the SAF / gallery / install
+         fallback paths still need it. Listed intents:
+           - IMAGE_CAPTURE:        back camera intent fallback
+           - PICK (image/*):       system gallery PICK fallback
+           - GET_CONTENT (image/*):generi file picker fallback
+           - INSTALL_PACKAGE:      UpdateDownloadService install flow -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.PICK" />
+            <data android:mimeType="image/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.GET_CONTENT" />
+            <data android:mimeType="image/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.INSTALL_PACKAGE" />
+            <data android:mimeType="application/vnd.android.package-archive" />
+        </intent>
+    </queries>
+
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission
