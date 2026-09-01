@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.icespiritai.offline.analysis.ImageAnalyzerRepository
 import com.icespiritai.offline.domain.AnalysisState
 import com.icespiritai.offline.domain.AnalysisState.Idle
+import com.icespiritai.offline.domain.ErrorCode
 import com.icespiritai.offline.ocr.OcrEngine
 import com.icespiritai.offline.ocr.OcrEngineFactoryLocator
 import com.icespiritai.offline.rules.AdSignageRuleLoader
@@ -21,6 +22,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Phase 1 UI driver: maps a cold [ImageAnalyzerRepository] flow onto a
@@ -104,6 +106,29 @@ class IceSpiritVisionViewModel(application: Application) : AndroidViewModel(appl
 
     private var currentJob: Job? = null
 
+    private companion object {
+        /**
+         * P0-C002: outer analyze-pipeline watchdog. Caps the worst-case
+         * hang of the full `BitmapLoader.decode + OCR + RuleMatcher.scan`
+         * pipeline at 30 s before surfacing a recoverable Error state.
+         *
+         * Rationale for 30 s vs the audit's 10 s recommendation: the
+         * full pipeline routinely exceeds 10 s on slower devices without
+         * any system freeze (cold OCR first-touch, large rule sets, big
+         * images). 30 s gives the legitimate slow path 6-12× headroom
+         * against the documented 2.6 s warm / 5 s cold OCR SLA
+         * (`docs/smoke/2026-08-20-icevision-v0.1.12-real-device.md`) while
+         * still bounding user-perceived stall. The inner
+         * [com.icespiritai.offline.ocr.PaddleOcrEngine] mutex timeout
+         * (also 30 s) covers the OCR-specific deadlock independently;
+         * this outer watchdog catches hangs in `BitmapLoader` or
+         * `RuleMatcher.scan` that the inner timeout can't see.
+         *
+         * Together they cap worst-case hang at 30 s on either layer.
+         */
+        const val ANALYZE_WATCHDOG_TIMEOUT_MS = 30_000L
+    }
+
     /**
      * Switch the active tab. Returns `true` when the call actually changed
      * the selected tab.
@@ -155,7 +180,28 @@ class IceSpiritVisionViewModel(application: Application) : AndroidViewModel(appl
             prior?.cancelAndJoin()
             _pendingUri.value = uri
             _state.value = Idle
-            repository.analyze(uri, matcher).collect { _state.value = it }
+            // P0-C002: outer watchdog (see companion KDoc). withTimeoutOrNull
+            // cancels its body when the timer expires — the cancellation
+            // propagates through `repository.analyze`'s cold flow (the
+            // `flow { ... }` builder rethrows CancellationException from
+            // any in-flight suspend point, so OCR / rule scan stop cleanly)
+            // and returns null. We then surface a recoverable Error so the
+            // user can tap "Retry" instead of staring at a Loading spinner.
+            withTimeoutOrNull(ANALYZE_WATCHDOG_TIMEOUT_MS) {
+                repository.analyze(uri, matcher).collect { _state.value = it }
+            } ?: run {
+                // Cause is null on purpose: TimeoutCancellationException is
+                // an internal coroutine primitive we don't want to leak
+                // into the user's Error panel. The message carries the
+                // context — including the "可能是后台被系统冻结" hint that
+                // matches the v0.1.41 Toast in UpdateSection.kt for
+                // background-killer correlations.
+                _state.value = AnalysisState.Error(
+                    message = "分析超时(>${ANALYZE_WATCHDOG_TIMEOUT_MS / 1000}s):可能是后台被系统冻结。请重试",
+                    errorCode = ErrorCode.OCR_UNAVAILABLE,
+                    retryable = true,
+                )
+            }
         }
     }
 

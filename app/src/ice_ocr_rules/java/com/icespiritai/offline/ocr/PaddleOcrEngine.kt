@@ -3,6 +3,7 @@ package com.icespiritai.offline.ocr
 import android.content.Context
 import android.graphics.Rect
 import android.net.Uri
+import android.os.PowerManager
 import com.icespiritai.offline.domain.OcrEngineUnavailable
 import com.icespiritai.offline.domain.OcrFailed
 import com.icespiritai.offline.domain.OcrResult
@@ -15,9 +16,11 @@ import com.paddle.ocr.model.OCRError
 import com.paddle.ocr.model.OCRResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.opencv.android.OpenCVLoader
 
 /**
@@ -59,6 +62,33 @@ class PaddleOcrEngine(
     companion object {
         /** v0.1.11 / v0.1.12 default. Validated on Huawei nova 6 ARM64. */
         const val DEFAULT_REC_BATCH_SIZE = 6
+
+        /**
+         * P0-C002: mutex acquisition timeout. On aggressive Chinese ROMs
+         * (HarmonyOS 4+ PowerGenie / MIUI 13+ 神隐 / HyperOS battery saver)
+         * a previous [recognize] holder can be frozen for many minutes —
+         * well beyond any reasonable OCR SLA. The kotlinx `Mutex` API has
+         * no `tryLock(timeout)` overload, so we use [withTimeout] around
+         * `mutex.lock()` (the canonical bounded-wait pattern). Bounding the
+         * wait to 30 s converts "stuck forever" into a typed
+         * [OcrEngineUnavailable] that [ImageAnalyzerRepository] maps to
+         * [com.icespiritai.offline.domain.ErrorCode.OCR_UNAVAILABLE] — so the
+         * UI shows a recoverable error message instead of an indefinite
+         * Loading spinner. Matches the 30 s ViewModel-level analyze
+         * watchdog (`IceSpiritVisionViewModel.startAnalysis`).
+         */
+        const val MUTEX_ACQUIRE_TIMEOUT_MS = 30_000L
+
+        /**
+         * P0-C002: PARTIAL_WAKE_LOCK ceiling passed to
+         * `PowerManager.WakeLock.acquire(timeout)`. OCR runs in ~5 s
+         * cold / 2.6 s warm on the Huawei nova 6 ARM64 (per
+         * `docs/smoke/2026-08-20-icevision-v0.1.12-real-device.md`); 90 s
+         * gives 3× headroom for slower devices while bounding the
+         * blast radius of any future cancellation refactor that swallows
+         * the release() finally block.
+         */
+        const val OCR_WAKE_LOCK_TIMEOUT_MS = 90_000L
     }
 
     /**
@@ -81,139 +111,181 @@ class PaddleOcrEngine(
     private val openCvLoaded: Boolean = OpenCVLoader.initLocal()
 
     override suspend fun recognize(uri: Uri): OcrResult = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            val ocr = paddleOcr ?: run {
-                if (!openCvLoaded) {
-                    throw OcrEngineUnavailable(
-                        "OpenCV native libs failed to load — check that the opencv-android " +
-                            "AAR's native libs are bundled in the APK (arm64-v8a)"
-                    )
-                }
-                val created = try {
-                    PaddleOCR.create(
-                        context = appContext,
-                        // v6_small model-card-aligned config (PaddleOCR SDK v3.7.0
-                        // default PaddleOCRConfig() is 64/min/thresh0.3/box0.6/unclip1.5/
-                        // recScoreThresh 0.0/recBatchSize 1 — silently undercuts v6
-                        // recall and inflates rec noise feeding the rule engine).
-                        // Det params (960/max/0.2/0.45/1.4) match PP-OCRv6_small_det
-                        // inference.yml PostProcess. recScoreThresh=0.5 filters low-
-                        // confidence noise before the rule scan (avg v6 score 0.882
-                        // on 4-image benchmark, so 0.5 keeps all real text but drops
-                        // garbage). recBatchSize=6 amortizes rec preprocess; 1 vs 6
-                        // speedup needs real-device confirmation (logged for Phase 2).
-                        //
-                        // Phase 2 (2026-08-29) — tried widening to 1280/min/0.3/0.5/1.6
-                        // for long images (#19 chars 79→736, etc., 6:0 vs A on 9
-                        // OCR-misaligned cases), but 66-image E2E coverage dropped
-                        // 93.9% → 90.8% (FULL 44→26 / PARTIAL 18→33) — the wider
-                        // det params pull in noise that the matcher flags as
-                        // different rule ids, pulling several FULL slots down to
-                        // PARTIAL and pushing some PARTIAL slots to MISS. Net
-                        // effect is a ~3 pp regression on aggregate coverage, so
-                        // we revert to A.
-                        config = configOverride ?: PaddleOCRConfig(
-                            detLimitSideLen = 960,
-                            detLimitType = "max",
-                            detThresh = 0.2f,
-                            detBoxThresh = 0.45f,
-                            detUnclipRatio = 1.4f,
-                            recScoreThresh = 0.5f,
-                            recBatchSize = recBatchSize,
-                        ),
-                        engineConfig = EngineConfig(numThreads = 4),
-                        detModelAssetPath = "models/det/inference.onnx",
-                        recModelAssetPath = "models/rec/inference.onnx",
-                        recConfigAssetPath = "models/rec/inference.yml",
-                    )
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: OCRError.ModelLoadFailed) {
-                    throw OcrEngineUnavailable("OCR model load failed: ${e.message}", e)
-                } catch (e: OCRError.ModelNotFound) {
-                    throw OcrEngineUnavailable("OCR model missing in assets: ${e.message}", e)
-                } catch (e: OCRError.ConfigParseFailed) {
-                    throw OcrEngineUnavailable("OCR config parse failed: ${e.message}", e)
-                } catch (e: Exception) {
-                    // Engine construction failure is a packaging/device problem,
-                    // not a bad image: retrying with another photo won't help.
-                    throw OcrEngineUnavailable("OCR engine init failed: ${e.message}", e)
-                }
-                created.also { paddleOcr = it }
+        // P0-C002: PARTIAL_WAKE_LOCK around OCR recognize. HarmonyOS 4+
+        // PowerGenie / MIUI 13+ 神隐 / HyperOS battery saver freeze the
+        // cgroup even when the Activity is foreground — leaving the OCR
+        // coroutine suspended indefinitely while the user stares at a
+        // Loading spinner. A held PARTIAL_WAKE_LOCK is the conventional
+        // signal that gets these aggressive background-killers to back
+        // off. Mirrors the pattern in `UpdateDownloadService.kt:64`,
+        // which faces the same ROM family. Reference-counted=false so
+        // any duplicate acquire is a no-op rather than compounding.
+        val wakeLock = (appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager)
+            ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "IceSpirit:OcrRecognize")
+            ?.apply {
+                setReferenceCounted(false)
+                acquire(OCR_WAKE_LOCK_TIMEOUT_MS)
             }
-
-            val bytes = BitmapLoader.bytes(appContext, uri)
-                ?: throw OcrFailed("Failed to read image stream: $uri")
-            // BitmapFactory.decodeByteArray already applies EXIF orientation
-            // on API 24+ (minSdk=26 here), so the bitmap is in display
-            // orientation. Manually rotating again with
-            // [BitmapLoader.applyExifRotation] would double-rotate and put
-            // OCR boxes in a coordinate space that doesn't match Coil's
-            // painter.intrinsicSize — causing HighlightOverlay rects to land
-            // off-text on any non-EXIF-1 photo (verified on the 8-hit corn
-            // advertisement fixture, boxes drifted into the right margin
-            // and the OCR-text panel). The Phase 2 design doc said the
-            // opposite, but that was wrong for API 24+; the EXIF helpers in
-            // BitmapLoader are kept as utilities but no longer wired here.
-            val loaded = BitmapLoader.downsampledBitmapWithScale(bytes)
-                ?: throw OcrFailed("Failed to decode image: $uri")
-            val bitmap = loaded.bitmap
-
-            val result: OcrResult
+        try {
+            // P0-C002: withTimeout around `mutex.lock()`. The kotlinx Mutex
+            // API has no `tryLock(timeout)` overload — this is the
+            // canonical bounded-wait pattern. If a previous recognize
+            // call is frozen by an aggressive background-killer, the
+            // holder thread can't release; withTimeout throws after
+            // [MUTEX_ACQUIRE_TIMEOUT_MS] and we surface a typed
+            // [OcrEngineUnavailable] instead of waiting forever.
             try {
-                val runResult = try {
-                    ocr.recognize(bitmap)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: OCRError) {
-                    throw when (e) {
-                        is OCRError.ModelLoadFailed ->
-                            OcrEngineUnavailable("OCR model load failed: ${e.message}", e)
-                        is OCRError.ModelNotFound ->
-                            OcrEngineUnavailable("OCR model missing in assets: ${e.message}", e)
-                        is OCRError.ConfigParseFailed ->
-                            OcrEngineUnavailable("OCR config parse failed: ${e.message}", e)
-                        is OCRError.InvalidImage ->
-                            OcrFailed("Invalid image", e)
-                        is OCRError.DecodeError ->
-                            OcrFailed("OCR decode failed: ${e.message}", e)
-                        is OCRError.InferenceFailed ->
-                            OcrFailed("OCR inference failed: ${e.message}", e)
+                withTimeout(MUTEX_ACQUIRE_TIMEOUT_MS) { mutex.lock() }
+            } catch (e: TimeoutCancellationException) {
+                throw OcrEngineUnavailable(
+                    "OCR engine busy: previous recognize call appears stuck " +
+                        "(Mutex acquire timeout after ${MUTEX_ACQUIRE_TIMEOUT_MS / 1000}s). " +
+                        "Try again, or restart the app if this repeats."
+                )
+            }
+            try {
+                val ocr = paddleOcr ?: run {
+                    if (!openCvLoaded) {
+                        throw OcrEngineUnavailable(
+                            "OpenCV native libs failed to load — check that the opencv-android " +
+                                "AAR's native libs are bundled in the APK (arm64-v8a)"
+                        )
                     }
-                } catch (e: Exception) {
-                    throw OcrFailed("OCR runtime error: ${e.message}", e)
+                    val created = try {
+                        PaddleOCR.create(
+                            context = appContext,
+                            // v6_small model-card-aligned config (PaddleOCR SDK v3.7.0
+                            // default PaddleOCRConfig() is 64/min/thresh0.3/box0.6/unclip1.5/
+                            // recScoreThresh 0.0/recBatchSize 1 — silently undercuts v6
+                            // recall and inflates rec noise feeding the rule engine).
+                            // Det params (960/max/0.2/0.45/1.4) match PP-OCRv6_small_det
+                            // inference.yml PostProcess. recScoreThresh=0.5 filters low-
+                            // confidence noise before the rule scan (avg v6 score 0.882
+                            // on 4-image benchmark, so 0.5 keeps all real text but drops
+                            // garbage). recBatchSize=6 amortizes rec preprocess; 1 vs 6
+                            // speedup needs real-device confirmation (logged for Phase 2).
+                            //
+                            // Phase 2 (2026-08-29) — tried widening to 1280/min/0.3/0.5/1.6
+                            // for long images (#19 chars 79→736, etc., 6:0 vs A on 9
+                            // OCR-misaligned cases), but 66-image E2E coverage dropped
+                            // 93.9% → 90.8% (FULL 44→26 / PARTIAL 18→33) — the wider
+                            // det params pull in noise that the matcher flags as
+                            // different rule ids, pulling several FULL slots down to
+                            // PARTIAL and pushing some PARTIAL slots to MISS. Net
+                            // effect is a ~3 pp regression on aggregate coverage, so
+                            // we revert to A.
+                            config = configOverride ?: PaddleOCRConfig(
+                                detLimitSideLen = 960,
+                                detLimitType = "max",
+                                detThresh = 0.2f,
+                                detBoxThresh = 0.45f,
+                                detUnclipRatio = 1.4f,
+                                recScoreThresh = 0.5f,
+                                recBatchSize = recBatchSize,
+                            ),
+                            engineConfig = EngineConfig(numThreads = 4),
+                            detModelAssetPath = "models/det/inference.onnx",
+                            recModelAssetPath = "models/rec/inference.onnx",
+                            recConfigAssetPath = "models/rec/inference.yml",
+                        )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: OCRError.ModelLoadFailed) {
+                        throw OcrEngineUnavailable("OCR model load failed: ${e.message}", e)
+                    } catch (e: OCRError.ModelNotFound) {
+                        throw OcrEngineUnavailable("OCR model missing in assets: ${e.message}", e)
+                    } catch (e: OCRError.ConfigParseFailed) {
+                        throw OcrEngineUnavailable("OCR config parse failed: ${e.message}", e)
+                    } catch (e: Exception) {
+                        // Engine construction failure is a packaging/device problem,
+                        // not a bad image: retrying with another photo won't help.
+                        throw OcrEngineUnavailable("OCR engine init failed: ${e.message}", e)
+                    }
+                    created.also { paddleOcr = it }
                 }
 
-                result = OcrResult(
-                    fullText = runResult.results.joinToString("\n") { it.text },
-                    lineBoxes = runResult.results.map { it.toTextLine(loaded.sampleSize) },
-                    avgConfidence = if (runResult.results.isEmpty()) 0f
-                    else runResult.results.map { it.confidence }.average().toFloat(),
-                    // Display-oriented dimensions of the FULL bitmap (post-EXIF
-                    // rotation, full resolution). [loaded.bitmap] is the DOWNSAMPLED
-                    // display-oriented bitmap (inSampleSize applied), so its
-                    // width/height are in the *downsampled* coord space — NOT the
-                    // space the boxes above live in. Boxes were multiplied by
-                    // loaded.sampleSize in [OCRBox.toBoundingRect] to recover the
-                    // full-resolution display-oriented space, so we must multiply
-                    // the bitmap dims by sampleSize here too, or
-                    // [ImagePreview.computeFitTransform] will compute a transform
-                    // whose refW/refH is smaller than the actual box coord space
-                    // (boxes drift toward the canvas's right/bottom letterbox —
-                    // see the 2026-08-26 smoke-test repro on a 4032×3024 bus
-                    // photo: red box landed in the upper-right empty area).
-                    imageWidth = bitmap.width * loaded.sampleSize,
-                    imageHeight = bitmap.height * loaded.sampleSize,
-                )
+                val bytes = BitmapLoader.bytes(appContext, uri)
+                    ?: throw OcrFailed("Failed to read image stream: $uri")
+                // BitmapFactory.decodeByteArray already applies EXIF orientation
+                // on API 24+ (minSdk=26 here), so the bitmap is in display
+                // orientation. Manually rotating again with
+                // [BitmapLoader.applyExifRotation] would double-rotate and put
+                // OCR boxes in a coordinate space that doesn't match Coil's
+                // painter.intrinsicSize — causing HighlightOverlay rects to land
+                // off-text on any non-EXIF-1 photo (verified on the 8-hit corn
+                // advertisement fixture, boxes drifted into the right margin
+                // and the OCR-text panel). The Phase 2 design doc said the
+                // opposite, but that was wrong for API 24+; the EXIF helpers in
+                // BitmapLoader are kept as utilities but no longer wired here.
+                val loaded = BitmapLoader.downsampledBitmapWithScale(bytes)
+                    ?: throw OcrFailed("Failed to decode image: $uri")
+                val bitmap = loaded.bitmap
+
+                val result: OcrResult
+                try {
+                    val runResult = try {
+                        ocr.recognize(bitmap)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: OCRError) {
+                        throw when (e) {
+                            is OCRError.ModelLoadFailed ->
+                                OcrEngineUnavailable("OCR model load failed: ${e.message}", e)
+                            is OCRError.ModelNotFound ->
+                                OcrEngineUnavailable("OCR model missing in assets: ${e.message}", e)
+                            is OCRError.ConfigParseFailed ->
+                                OcrEngineUnavailable("OCR config parse failed: ${e.message}", e)
+                            is OCRError.InvalidImage ->
+                                OcrFailed("Invalid image", e)
+                            is OCRError.DecodeError ->
+                                OcrFailed("OCR decode failed: ${e.message}", e)
+                            is OCRError.InferenceFailed ->
+                                OcrFailed("OCR inference failed: ${e.message}", e)
+                        }
+                    } catch (e: Exception) {
+                        throw OcrFailed("OCR runtime error: ${e.message}", e)
+                    }
+
+                    result = OcrResult(
+                        fullText = runResult.results.joinToString("\n") { it.text },
+                        lineBoxes = runResult.results.map { it.toTextLine(loaded.sampleSize) },
+                        avgConfidence = if (runResult.results.isEmpty()) 0f
+                        else runResult.results.map { it.confidence }.average().toFloat(),
+                        // Display-oriented dimensions of the FULL bitmap (post-EXIF
+                        // rotation, full resolution). [loaded.bitmap] is the DOWNSAMPLED
+                        // display-oriented bitmap (inSampleSize applied), so its
+                        // width/height are in the *downsampled* coord space — NOT the
+                        // space the boxes above live in. Boxes were multiplied by
+                        // loaded.sampleSize in [OCRBox.toBoundingRect] to recover the
+                        // full-resolution display-oriented space, so we must multiply
+                        // the bitmap dims by sampleSize here too, or
+                        // [ImagePreview.computeFitTransform] will compute a transform
+                        // whose refW/refH is smaller than the actual box coord space
+                        // (boxes drift toward the canvas's right/bottom letterbox —
+                        // see the 2026-08-26 smoke-test repro on a 4032×3024 bus
+                        // photo: red box landed in the upper-right empty area).
+                        imageWidth = bitmap.width * loaded.sampleSize,
+                        imageHeight = bitmap.height * loaded.sampleSize,
+                    )
+                } finally {
+                    // Release the native pixel storage as soon as the result is
+                    // built. PaddleOCR keeps an internal copy of the recognition
+                    // output, so recycling the source bitmap is safe post-recognize.
+                    // Without this, repeated analyze() calls accumulate bitmaps
+                    // (~10–30 MB each for 4032×3024 photos) until GC kicks in.
+                    if (!bitmap.isRecycled) bitmap.recycle()
+                }
+                result
             } finally {
-                // Release the native pixel storage as soon as the result is
-                // built. PaddleOCR keeps an internal copy of the recognition
-                // output, so recycling the source bitmap is safe post-recognize.
-                // Without this, repeated analyze() calls accumulate bitmaps
-                // (~10–30 MB each for 4032×3024 photos) until GC kicks in.
-                if (!bitmap.isRecycled) bitmap.recycle()
+                mutex.unlock()
             }
-            result
+        } finally {
+            // WakeLock release is idempotent (refcount=false → duplicate
+            // release is a no-op), but it can still throw
+            // `RuntimeException` on a service-shutdown path. runCatching
+            // mirrors `UpdateDownloadService.onDestroy` and ensures the
+            // exception never escapes the recognize() boundary.
+            runCatching { wakeLock?.release() }
         }
     }
 
