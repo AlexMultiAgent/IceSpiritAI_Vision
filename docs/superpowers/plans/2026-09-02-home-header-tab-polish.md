@@ -57,13 +57,18 @@
     }
 ```
 
-- [ ] **Step 2: 在同一个文件顶部新增 `RuleTabBarTestTags` 顶层常量(放在 `class` 外面、`package` 声明下)**
+- [ ] **Step 2: 在同一个文件顶部新增 `RuleTabBarTestTags` 顶层常量(放在 `class` 外面、`package` 声明下)** — **临时占位,Task 2 Step 0 必须迁移到主源**
 
 ```kotlin
 /**
- * Stable test tags for [RuleTabBar] composables. Kept here (test source)
- * because the visible TabBar is a thin private Composable; if it grows,
- * promote to a shared module-level object.
+ * Stable test tags for [RuleTabBar] composables.
+ *
+ * **Placement note:** this object lives in test source for the failing-test
+ * step, but MUST be relocated to `app/src/main/java/com/icespiritai/offline/
+ * ui/home/RuleTabBar.kt` (top-level, between `package` and `enum class
+ * RuleTab`) before Task 2's main source can `import` it — Gradle source
+ * sets don't let main source see test source. Task 2 Step 0 covers the
+ * relocation; this entry gets deleted from the test file in Task 2.
  */
 object RuleTabBarTestTags {
     const val PILL_LEADING_ICON = "ruleTabBar_pill_leading_icon"
@@ -462,6 +467,6 @@ adb install -r app/build/outputs/apk/ice_ocr_rules/debug/app-ice_ocr_rules-debug
 - [x] 测试代码完整,不写 "similar to Task N"
 
 **类型 / 方法签名一致性:**
-- `RuleTabBarTestTags.PILL_LEADING_ICON` 在 Task 1 (object 声明) 和 Task 2 (引用) 一致
-- `RuleTabBarTestTags` 放在测试源(`app/src/test/`)的同一文件,Task 2 的 `import com.icespiritai.offline.ui.home.RuleTabBarTestTags` 与之同包,无需额外 module 拆分
+
+- `RuleTabBarTestTags.PILL_LEADING_ICON` 在 Task 1 (临时声明在测试源) 和 Task 2 (引用) 必须同名同值;Task 2 Step 0 会把这个 object 从测试源迁移到主源(`app/src/main/java/com/icespiritai/offline/ui/home/RuleTabBar.kt`,放在 `package` 声明下、`enum class RuleTab` 上),并同步删测试源的那一份。Gradle source set 不允许主源 import 测试源 — 这是个跨 source-set 的常量,只能放主源。
 - PillTab 签名 `(tab, isSelected, onClick, enabled)` 4 个参数保持不变,Task 2 只改实现不改签名
