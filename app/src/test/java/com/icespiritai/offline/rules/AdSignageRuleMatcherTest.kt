@@ -2478,4 +2478,78 @@ class AdSignageRuleMatcherTest {
         )
         assertEquals("增强免疫力", hits[0].matchedText)
     }
+
+    @Test fun scan_signageOriginClaim_firesOnFaYuanDi() {
+        // v12:新增「ad_signage_signage_origin_claim」规则覆盖「发源地」「之源」等
+        // 未经核实的产地/起源宣称 — 广告法 §28 虚假广告。
+        // 真实案例 80 玉泉酒杀猪菜饭馆:杀猪菜发源地;81 满族全猪宴之源
+        val r = AdSignageRule(
+            id = "ad_signage_signage_origin_claim",
+            category = "signage",
+            regulation = "《广告法》§28 + §55",
+            listOf("发源地", "之源", "发祥地", "始创于", "创始于", "起源地", "中国之最", "原产地", "正宗发源"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "玉泉酒·和谐清雅\n朋友来了有好酒\n杀猪菜发源地\n新农村杀猪菜"
+        )
+        assertEquals(1, hits.size)
+        assertEquals("发源地", hits[0].matchedText)
+        assertEquals("ad_signage_signage_origin_claim", hits[0].ruleId)
+    }
+
+    @Test fun scan_signageOriginClaim_firesOnZhiYuan() {
+        val r = AdSignageRule(
+            id = "ad_signage_signage_origin_claim",
+            category = "signage",
+            regulation = "《广告法》§28 + §55",
+            listOf("发源地", "之源", "发祥地", "始创于", "创始于", "起源地", "中国之最", "原产地", "正宗发源"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("满族全猪宴之源")
+        assertEquals(1, hits.size)
+        assertEquals("之源", hits[0].matchedText)
+    }
+
+    @Test fun scan_signageCulturalHeritageClaim_firesOnQianNianChuanCheng() {
+        // v12:新增「ad_signage_signage_cultural_heritage_claim」规则覆盖
+        // 「千年传承」「中国非遗」等未经核实的文化传承宣称 — 广告法 §28。
+        // 真实案例 83 赵记全猪宴:千年传承 + 中国非遗
+        val r = AdSignageRule(
+            id = "ad_signage_signage_cultural_heritage_claim",
+            category = "signage",
+            regulation = "《广告法》§28 + §55",
+            listOf("千年传承", "中国非遗", "非遗传承", "百年传承", "千年老店", "非物质文化遗产",
+                   "百年老店", "百年老字号", "世代传承", "传自", "传承百年", "老字号", "中华老字号"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "全猪宴\n赵\n记\n千年传承\n中国非遗"
+        )
+        assertEquals(2, hits.size)
+        val matched = hits.map { it.matchedText }.toSet()
+        assertTrue("千年传承 必须命中", "千年传承" in matched)
+        assertTrue("中国非遗 必须命中", "中国非遗" in matched)
+    }
+
+    @Test fun scan_signageCulturalHeritageClaim_firesOnZhongHuaLaoZiHao() {
+        // 「中华老字号」是已被广泛使用的中性表达,但如果未获商务部认证就宣称,
+        // 仍属虚假宣传;规则命中作为 Warning 提示。
+        // 真实案例 90 花园酒 + 120 哈十佳老红肠
+        val r = AdSignageRule(
+            id = "ad_signage_signage_cultural_heritage_claim",
+            category = "signage",
+            regulation = "《广告法》§28 + §55",
+            listOf("千年传承", "中国非遗", "非遗传承", "百年传承", "千年老店", "非物质文化遗产",
+                   "百年老店", "百年老字号", "世代传承", "传自", "传承百年", "老字号", "中华老字号"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "花园\n中华老字号\n花园酒\n穿越千年窖藏古今"
+        )
+        // 千年的关键词会被 「千年老店」「千年」做 substring dedup,
+        // 但「千年传承」不在文本中。命中:穿越千年 (无) + 中华老字号 (是) — 实际 1 命中
+        assertEquals(1, hits.size)
+        assertEquals("中华老字号", hits[0].matchedText)
+    }
 }

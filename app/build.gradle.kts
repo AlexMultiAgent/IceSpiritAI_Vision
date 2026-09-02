@@ -73,8 +73,8 @@ android {
         applicationId = "com.icespiritai.vision"
         minSdk = 26
         targetSdk = 37
-        versionCode = 48
-        versionName = "0.1.48"
+        versionCode = 49
+        versionName = "0.1.49"
 
         ndk {
             abiFilters += listOf("arm64-v8a")

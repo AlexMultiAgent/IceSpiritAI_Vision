@@ -1,5 +1,14 @@
 # 用户更新日志
 
+## v0.1.49 · 2026-09-03
+
+- **「ad」域规则库 v10 → v12**(146 条):分两轮扩展。第一轮 v10 → v11(144 条)新增 15 条规则覆盖大型赛事冠名赞助冒用 / 烟草体育赞助变相发布 / 现役军人形象商业代言 / 天安门国庆政治符号商业使用 / 人民共和国国家字样商业冒用 / 野生动物制品广告 / 招工收入保证 / 医疗承保承诺 / 外交活动背书 / CCTV必吃榜冒用 / 宣泄性酒类广告 / 非处方药户外陈列 / 医美医疗用语 / 医疗机构国家三级表述 / 国际奖项冒用 15 维度。第二轮 v11 → v12(146 条)再扩 2 条 + 扩展 1 条既有规则关键词:`ad_signage_signage_origin_claim`(9 关键词,Warning)覆盖「发源地 / 之源 / 始创于 / 原产地」;`ad_signage_signage_cultural_heritage_claim`(13 关键词,Warning)覆盖「千年传承 / 中国非遗 / 中华老字号」;`ad_signage_art9_abs_top` 增 3 关键词(`中国第一` / `中国第一品牌` / `首创`)修复 OCR 把「中国第一品牌」误识为「中国第品牌」(蟹凰宫 91/128、布列斯特套娃 133 命中)
+- **71 张 fixture 文件名复核重命名**:对照真机 OCR 文本全量审计,26 张文件被发现「文件名 vs 实际图像内容」错位,按 OCR 文本重命名同步 `违规案例/` + `app/src/androidTest/assets/fixtures/audit71/` 两目录。典型 swap:68 ↔ 69(德伦堡啤酒 ↔ 纯天然亚麻籽粉)、72 ↔ 73 ↔ 74(龙烟烟草赞助系列)、91 ↔ 92 ↔ 93(蟹凰宫 ↔ 蟹都汇 互换)、96 ↔ 107(团圆口腔医院保险版 ↔ 国家三级版)、133 ↔ 135(布列斯特套娃 ↔ 哈药牌钙铁锌)、136 ↔ 137(禧龙酒店用品 ↔ 公交220路公益)。品牌名修订:86 名泽 → 兰泽、87 易真殷氏 → 易真段氏(以图像中真实店招为准)
+- **真机端到端回归**:`connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.icespiritai.offline.rules.AdSignageAudit71ImageE2ETest` 在华为 nova 6 ANN-AN00 + SDK 35 上跑通。结果 `ANY_HIT=65/71`(v11:59/71,v10:49/71),miss 6 张 — 99 御康 OCR 召回字数为空、103 敷尔佳文本仅 21 字、109 万运龙公考 OCR 严重错位、110 KOALA 文本无违规、120 哈十佳老红肠 I❤Harbin 视觉符号未被 OCR 召回、124 人民咖啡馆地垫 OCR 仅 5 字。规则引擎本身 100% 召回,余 6 张均为 OCR 召回上限
+- **`coverage_matrix.md` 重生成**:`§2` 表格用 v5 实跑 OCR_HIT/OCR_NO_HIT 行匹配重写,filename ↔ rule_id 全部用新文件名
+- **知识库整理**:`知识库/` 加入 `.gitignore`(体积大 + 含未授权转载法源,本地留存供规则引擎引用);`广告业务/README.md` 同步添加 5 份新 markdown 索引
+- **测试 pin bump**:`AssetRuleLoaderTest.load_parsesActualBundledAdSignageAssetShape` version 10 → 12 + 阈值 ≥140(146 ≥140 ✅);新增 `scan_signageOriginClaim_firesOnFaYuanDi` / `scan_signageOriginClaim_firesOnZhiYuan` / `scan_signageCulturalHeritageClaim_firesOnQianNianChuanCheng` / `scan_signageCulturalHeritageClaim_firesOnZhongHuaLaoZiHao` 4 条 AC 命中单测覆盖 v12 新规则关键词触发 + substring dedup 行为 pin
+
 ## v0.1.48 · 2026-09-02
 
 - **首页顶部标题去 ⚡ + 字号 20sp**(`HomeTopBar.kt`):三段式 `冰灵⚡锐目` 合并为单段 `Text(stringResource(R.string.app_name))`,样式 `titleMedium.copy(fontSize = 20.sp, fontWeight = Medium)`(从 16sp 回拨到 20sp,用户反馈 "16sp 太小");同步删 `app_name_prefix` / `app_name_bolt` / `app_name_suffix` 三个死字符串,launcher label 与 a11y 仍走 `app_name` 单源。`titleMedium` 全局 token(`Type.kt:13`)不动 — 影响 `RuleTabBar` pill 文字 / `ResultPanel` / `ViewerTopBar` 等 7+ 处已稳定的 16sp 引用
