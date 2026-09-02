@@ -1,5 +1,12 @@
 # 用户更新日志
 
+## v0.1.47 · 2026-09-02
+
+- **设置页关于区三行堆叠**(9bc32f8):「版本」行上下各加一行同字号文案 — 上方 `冰灵锐目`(app brand),下方 `哈尔滨市市场监管局`(regulatory attribution),新增字符串 `settings_about_org = 哈尔滨市市场监管局`。三行 `bodySmall` 左对齐,沿用原 `padding(horizontal = 16.dp)`;无 Card 包裹,纯文本堆叠,符合本期「不加容器」约束
+- **查看更新日志 Card 框样式统一**(537d948):去掉内部 Material3 `ListItem`(自带 `surfaceColorAtElevation` 自绘容器,在 深夜雪夜 / 浅色冰月 两主题下与外观/更新 Card 的 `surfaceContainerLow` 都不一致),改 `Card(...clickable...){Row{Column(weight=1f){title; subtitle}; Icon chevron}}`,内部 padding 模式与 `AppearanceSection` 对齐 — 两主题下三 Card 视觉完全一致,实现 frame parity
+- **首页顶部标题字号下调**(473c252):三段式 `冰灵⚡锐目` 三 Text 的 `titleLarge`(22sp)→ `titleMedium`(16sp),bolt 仍 `colorScheme.tertiary` + `Modifier.padding(horizontal = 4.dp)` 不变,语义(a11y `mergeDescendants = true` 的 `app_name`)也不变;`HomeScreenBare` 测试 bare 路径同步调整保持视觉与生产一致
+- **测试 pin bump**:`ChangelogScreenTest:74` 顶部 `v0.1.46` → `v0.1.47`
+
 ## v0.1.46 · 2026-09-02
 
 - **Idle 预览区展示吉祥物胸像**(a5ddc5f):空态装饰从居中文案「请对正图片后点击拍照」改为渲染 `mascot_glasses_bust.png`(固定 120dp),引导文案统一到 `StatusBanner(Idle)` 单点呈现 — `ImagePreview` 留 testTag `idle_mascot`,`HomeScreenTest` 改 `composeRule.onNodeWithTag("idle_mascot").assertExists()` 校验装饰图节点存在,替代之前依赖 Robolectric Compose viewport 文本渲染的脆弱路径(参 [Unit test 踩坑(2026-08-21 v0.1.14)](../../../CLAUDE.md))
