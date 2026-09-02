@@ -1,13 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">冰灵锐目</string>
-    <!-- Split version of app_name for the in-app HomeTopBar. Rendered as
-         three Compose Text composables (prefix + bolt + suffix) so the ⚡
-         can be tinted with colorScheme.tertiary and stay visually distinct.
-         The launcher label (AndroidManifest) still uses app_name. -->
-    <string name="app_name_prefix">冰灵</string>
-    <string name="app_name_bolt">⚡</string>
-    <string name="app_name_suffix">锐目</string>
     <string name="action_pick_image">选图</string>
     <string name="action_take_photo">拍照</string>
     <string name="status_ocr_running">识别图片文字…</string>
