@@ -370,7 +370,7 @@ private fun errorMessageRes(code: ErrorCode): Int = when (code) {
 @VisibleForTesting
 internal fun HomeScreenBare(onCapture: () -> Unit, onPick: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
-        Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge)
+        Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleMedium)
         StatusBanner(StatusBannerKind.Idle)
         ImagePreview(
             imageUri = null,
