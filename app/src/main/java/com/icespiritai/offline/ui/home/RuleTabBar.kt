@@ -5,13 +5,18 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Verified
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -20,6 +25,16 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.icespiritai.offline.R
+
+/**
+ * Stable test tags for [RuleTabBar] composables. Declared in **main**
+ * source (not test source) because production composables in this file
+ * need to attach `Modifier.testTag(...)` directly — test sources are not
+ * visible from main in Gradle's source-set split.
+ */
+object RuleTabBarTestTags {
+    const val PILL_LEADING_ICON = "ruleTabBar_pill_leading_icon"
+}
 
 enum class RuleTab(val titleRes: Int) {
     AdSignage(R.string.tab_ad_law),
@@ -40,17 +55,17 @@ enum class RuleTab(val titleRes: Int) {
 private val visibleTabs: List<RuleTab> = listOf(RuleTab.AdSignage)
 
 /**
- * Pill-style segmented tab bar. Each tab is a [Surface] with a rounded
- * 20dp shape, `secondaryContainer` fill when selected and `surfaceVariant`
- * when unselected. The pill container provides a strong visual contrast
- * against the flat `冰灵锐目` title above, fixing the previous "title and
- * tab both look like flat text" issue. The 3dp underline indicator that
- * came with [androidx.compose.material3.TabRow] is gone — the container
- * itself now carries the selected state.
+ * Soft-color chip tab bar. Each tab is a [Surface] with `RoundedCornerShape(50)`
+ * (full pill), `tertiaryContainer` fill when selected and `surfaceVariant`
+ * when unselected, with a leading [Icons.Outlined.Verified] icon and
+ * `labelLarge` Medium label text. The soft container contrasts gently with
+ * the flat title above, replacing the previous "strong pill" segmented
+ * pattern that looked like an isolated button on Idle.
  *
  * Each pill exposes `Role.Tab` semantics via [Modifier.clickable] so
  * [RuleTabBarTest] (which counts `Role.Tab` nodes) and screen readers
- * both keep working.
+ * both keep working. The [RuleTabBarTestTags.PILL_LEADING_ICON] testTag
+ * lets tests verify the Verified icon renders.
  */
 @Composable
 fun RuleTabBar(
@@ -88,34 +103,44 @@ private fun PillTab(
     enabled: Boolean,
 ) {
     val containerColor = if (isSelected) {
-        MaterialTheme.colorScheme.secondaryContainer
+        MaterialTheme.colorScheme.tertiaryContainer
     } else {
         MaterialTheme.colorScheme.surfaceVariant
     }
     val contentColor = if (isSelected) {
-        MaterialTheme.colorScheme.onSecondaryContainer
+        MaterialTheme.colorScheme.onTertiaryContainer
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
     Surface(
         color = containerColor,
         contentColor = contentColor,
-        shape = RoundedCornerShape(20.dp),
-        tonalElevation = if (isSelected) 2.dp else 0.dp,
+        shape = RoundedCornerShape(50),
         modifier = Modifier.clickable(
             enabled = enabled,
             role = Role.Tab,
             onClick = onClick,
         ),
     ) {
-        Text(
-            text = stringResource(tab.titleRes),
-            style = if (isSelected) {
-                MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
-            } else {
-                MaterialTheme.typography.bodyLarge
-            },
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Verified,
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier
+                    .size(16.dp)
+                    .testTag(RuleTabBarTestTags.PILL_LEADING_ICON),
+            )
+            Text(
+                text = stringResource(tab.titleRes),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Medium,
+                color = contentColor,
+            )
+        }
     }
 }

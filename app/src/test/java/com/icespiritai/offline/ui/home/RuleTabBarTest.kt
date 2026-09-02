@@ -7,6 +7,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.icespiritai.offline.R
@@ -103,6 +104,30 @@ class RuleTabBarTest {
                 )
             }
         }
+        composeRule.onNodeWithText("广告招牌").assertExists()
+    }
+
+    @Test
+    fun `tab pill renders Verified icon as leading element`() {
+        composeRule.setContent {
+            IceSpiritVisionTheme(themeMode = ThemeMode.DARK) {
+                RuleTabBar(
+                    selected = RuleTab.AdSignage,
+                    onSelect = {},
+                    enabled = true,
+                )
+            }
+        }
+        // Verified icon is exposed via testTag; contentDescription is null
+        // so TalkBack skips it (decorative icon next to text label). The
+        // Icon sits inside a clickable Surface (Role.Tab) + Row that merge
+        // descendants by default, so we query the unmerged tree to find
+        // the leaf-level testTag.
+        composeRule.onNodeWithTag(
+            RuleTabBarTestTags.PILL_LEADING_ICON,
+            useUnmergedTree = true,
+        ).assertExists()
+        // Text label still present (sanity check icon didn't replace the label).
         composeRule.onNodeWithText("广告招牌").assertExists()
     }
 }
