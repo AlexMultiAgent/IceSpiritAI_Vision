@@ -1,5 +1,11 @@
 # 用户更新日志
 
+## v0.1.48 · 2026-09-02
+
+- **首页顶部标题去 ⚡ + 字号 20sp**(`HomeTopBar.kt`):三段式 `冰灵⚡锐目` 合并为单段 `Text(stringResource(R.string.app_name))`,样式 `titleMedium.copy(fontSize = 20.sp, fontWeight = Medium)`(从 16sp 回拨到 20sp,用户反馈 "16sp 太小");同步删 `app_name_prefix` / `app_name_bolt` / `app_name_suffix` 三个死字符串,launcher label 与 a11y 仍走 `app_name` 单源。`titleMedium` 全局 token(`Type.kt:13`)不动 — 影响 `RuleTabBar` pill 文字 / `ResultPanel` / `ViewerTopBar` 等 7+ 处已稳定的 16sp 引用
+- **Tab 改软色 chip + Verified leading icon**(`RuleTabBar.kt`):从 `Surface(RoundedCornerShape(20.dp)) + secondaryContainer + titleMedium SemiBold` 强对比 pill 改为 `Surface(RoundedCornerShape(50)) + tertiaryContainer + labelLarge Medium` 软色 chip,前置 `Icons.Outlined.Verified`(16dp,`onTertiaryContainer` 染色)。圆角 / 配色 / 字号三档同步下调,跟 20sp 标题拉开视觉层级;`isSelected` 分支仍保留供 FoodLabeling tab 启用时复用
+- **测试 pin bump**:`RuleTabBarTest` 新增 `tab pill renders Verified icon as leading element`(`testTag = ruleTabBar_pill_leading_icon`);`ChangelogScreenTest:74` 顶部 `v0.1.47` → `v0.1.48`
+
 ## v0.1.47 · 2026-09-02
 
 - **设置页关于区三行堆叠**(9bc32f8):「版本」行上下各加一行同字号文案 — 上方 `冰灵锐目`(app brand),下方 `哈尔滨市市场监管局`(regulatory attribution),新增字符串 `settings_about_org = 哈尔滨市市场监管局`。三行 `bodySmall` 左对齐,沿用原 `padding(horizontal = 16.dp)`;无 Card 包裹,纯文本堆叠,符合本期「不加容器」约束
