@@ -105,11 +105,20 @@ fun SettingsScreen(
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.settings_about_version, BuildConfig.VERSION_NAME),
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
+            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                Text(
+                    text = stringResource(R.string.app_name),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    text = stringResource(R.string.settings_about_version, BuildConfig.VERSION_NAME),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    text = stringResource(R.string.settings_about_org),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
         }
     }
 }
