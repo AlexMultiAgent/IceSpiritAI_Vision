@@ -37,9 +37,10 @@ import com.icespiritai.offline.settings.SettingsViewModel
 /**
  * Modernized Settings screen (Phase 3.5 Task 21).
  *
- * Layout: each section is wrapped in a [Card]; the changelog row uses a
- * Material 3 [ListItem] with a chevron trailing icon. Top-bar title uses
- * `headlineSmall` to match HomeTopBar.
+ * Layout: each section is wrapped in a [Card]; the changelog row is a
+ * `Card(clickable) { Row { Column(weight=1f) { title; subtitle }; Icon
+ * chevron } }` so its outer frame matches the 外观 / 更新 cards in both
+ * themes. Top-bar title uses `headlineSmall` to match HomeTopBar.
  *
  * `SettingsRepository(context.applicationContext)` keeps Robolectric-friendly
  * SharedPreferences; tests do not need a fake.
