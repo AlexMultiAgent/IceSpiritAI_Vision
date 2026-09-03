@@ -11,9 +11,12 @@ class AdSignageRuleMatcher(rules: List<AdSignageRule>) : RuleMatcher {
     private val ruleById: Map<String, AdSignageRule> = rules.associateBy { it.id }
     private val keywordTrie = AhoCorasickDoubleArrayTrie<List<String>>()
     private val sourceMarkerTrie = AhoCorasickDoubleArrayTrie<List<String>>()
+    private val anchorTrie = AhoCorasickDoubleArrayTrie<List<String>>()
     private val hasKeywordTrie: Boolean
     private val hasSourceMarkerTrie: Boolean
+    private val hasAnchorTrie: Boolean
     private val hasAnyAbsenceRule: Boolean
+    private val rulesRequiringAnchor: Set<String>
     /**
      * Variant → original-keyword lookup for OCR-degradation tolerance. For any
      * keyword K with |K| ≥ [MIN_KEYWORD_FOR_VARIANTS], every 1-char-deletion
@@ -58,7 +61,9 @@ class AdSignageRuleMatcher(rules: List<AdSignageRule>) : RuleMatcher {
         // Map<String, V>.
         val keywordToRuleIds = TreeMap<String, List<String>>()
         val sourceMarkerToRuleIds = TreeMap<String, List<String>>()
+        val anchorToRuleIds = TreeMap<String, List<String>>()
         val variantOriginBuilder = HashMap<String, String>()
+        val rulesRequiringAnchorBuilder = mutableSetOf<String>()
         for (rule in rules) {
             for (kw in rule.keywords) {
                 val key = TextNormalizer.forMatching(kw)
@@ -106,15 +111,31 @@ class AdSignageRuleMatcher(rules: List<AdSignageRule>) : RuleMatcher {
                     sourceMarkerToRuleIds[key] = (sourceMarkerToRuleIds[key] ?: emptyList()) + rule.id
                 }
             }
+            // Category anchors: exact substring match (no 1-char variant
+            // decomposition). Anchors are short official terms ("农药" /
+            // "兽药" / "医院" / "化妆品" / "儿童") — variant generation would
+            // expand them into adjacent substrings that lose semantic
+            // specificity (e.g. "农药" → "农" / "药", neither of which is
+            // domain-specific). Inverse polarity to sourceMarkers.
+            for (anchor in rule.categoryAnchors) {
+                val key = TextNormalizer.forMatching(anchor)
+                if (key.isNotEmpty()) {
+                    anchorToRuleIds[key] = (anchorToRuleIds[key] ?: emptyList()) + rule.id
+                    rulesRequiringAnchorBuilder += rule.id
+                }
+            }
         }
         hasKeywordTrie = keywordToRuleIds.isNotEmpty()
         hasSourceMarkerTrie = sourceMarkerToRuleIds.isNotEmpty()
+        hasAnchorTrie = anchorToRuleIds.isNotEmpty()
         if (hasKeywordTrie) keywordTrie.build(keywordToRuleIds)
         if (hasSourceMarkerTrie) sourceMarkerTrie.build(sourceMarkerToRuleIds)
+        if (hasAnchorTrie) anchorTrie.build(anchorToRuleIds)
         // Absence composite logic only runs when at least one rule declared
         // sourceMarkers. 117 existing rules all default to sourceMarkers =
         // emptyList(), so the legacy single-pass code path stays byte-equivalent.
         hasAnyAbsenceRule = rules.any { it.sourceMarkers.isNotEmpty() }
+        rulesRequiringAnchor = rulesRequiringAnchorBuilder
         variantOrigins = variantOriginBuilder
     }
 
@@ -130,6 +151,7 @@ class AdSignageRuleMatcher(rules: List<AdSignageRule>) : RuleMatcher {
         // best per (ruleId, originalKeyword).
         val rawPairs = mutableListOf<Pair<String, String>>()
         val sourceMarkerHitRules = mutableSetOf<String>()
+        val anchorHitRules = mutableSetOf<String>()
 
         val keywordHandler = AhoCorasickDoubleArrayTrie.IHit<List<String>> { begin, end, ruleIds ->
             val matched = normalized.substring(begin, end)
@@ -146,11 +168,20 @@ class AdSignageRuleMatcher(rules: List<AdSignageRule>) : RuleMatcher {
             for (ruleId in ruleIds) sourceMarkerHitRules += ruleId
         }
 
+        // Category-anchor pass: collect rule ids whose text contained at least
+        // one anchor substring. Used by the gate at Phase 3 to drop hits for
+        // anchor-gated rules whose text did NOT contain any anchor. Inverse
+        // polarity to sourceMarkers (which suppress on presence; anchors
+        // require presence).
+        val anchorHandler = AhoCorasickDoubleArrayTrie.IHit<List<String>> { _, _, ruleIds ->
+            for (ruleId in ruleIds) anchorHitRules += ruleId
+        }
+
         // `parseText` on a HankCS trie that was never `build()`-ed throws
         // `Cannot load from int array because "this.base" is null` (the
         // internal base array is uninitialized). The shell profile ships an
         // empty rules JSON (`{"version":1,"rules":[]}` — see
-        // prepare-ocr-rules.gradle.kts), which leaves both tries unbuilt.
+        // prepare-ocr-rules.gradle.kts), which leaves all three tries unbuilt.
         // Calling parseText unconditionally on every scan blew up the
         // analyze flow with an NPE, surfaced to the user as
         // `ErrorCode.UNKNOWN` → "未知错误,请重试". Gate parseText on the
@@ -160,6 +191,9 @@ class AdSignageRuleMatcher(rules: List<AdSignageRule>) : RuleMatcher {
         }
         if (hasAnyAbsenceRule && hasSourceMarkerTrie) {
             sourceMarkerTrie.parseText(normalized, sourceMarkerHandler)
+        }
+        if (hasAnchorTrie) {
+            anchorTrie.parseText(normalized, anchorHandler)
         }
 
         // Phase 2: dedup at (ruleId, originalKeyword) granularity, keeping
@@ -266,10 +300,18 @@ class AdSignageRuleMatcher(rules: List<AdSignageRule>) : RuleMatcher {
         // was matched anywhere in the text (one source marker present = claim
         // considered cited, regardless of which claim keyword matched). Non-
         // absence rules (sourceMarkers empty) pass through unchanged.
+        //
+        // For category-anchor-gated rules (categoryAnchors non-empty), keep
+        // the hit only when at least one anchor substring was found anywhere
+        // in the scanned text. Inverse polarity to source-marker suppression:
+        // source marker presence suppresses; anchor presence is required.
         return hits.filter { hit ->
             val rule = ruleById[hit.ruleId] ?: return@filter true
-            if (rule.sourceMarkers.isEmpty()) true
-            else rule.id !in sourceMarkerHitRules
+            when {
+                rule.sourceMarkers.isNotEmpty() -> rule.id !in sourceMarkerHitRules
+                rule.categoryAnchors.isNotEmpty() -> rule.id in anchorHitRules
+                else -> true
+            }
         }
     }
 

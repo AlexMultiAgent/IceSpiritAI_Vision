@@ -16,6 +16,19 @@ data class AdSignageRule(
      */
     val lawText: String = "",
     val sourceMarkers: List<String> = emptyList(),
+    /**
+     * Domain-anchor substrings: when this list is non-empty, the rule only
+     * fires if the scanned text contains at least one of these anchors after
+     * `TextNormalizer.forMatching` normalization. Inverse polarity to
+     * `sourceMarkers` (which suppresses on presence; `categoryAnchors`
+     * requires presence). Default empty = backward-compatible, no gating.
+     *
+     * Use case: domain-specific rules (pesticide / veterinary / medical /
+     * cosmetic / minor) whose keywords may overlap with general categories
+     * (e.g.「不如」「按摩」「美白」「儿童」) and would otherwise fire on
+     * non-domain ads. The anchor gate scopes the rule to its real domain.
+     */
+    val categoryAnchors: List<String> = emptyList(),
 )
 
 /**
