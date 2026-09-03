@@ -1994,6 +1994,88 @@ class AdSignageRuleMatcherTest {
         assertEquals("ad_signage_veterinary_art5_deprecate", hits[0].ruleId)
     }
 
+    // --- v0.1.54 commit 3: veterinary 规则 categoryAnchors gate ---
+    //
+    // 廿四熹 PLANT TEA & COFFEE 茶饮店 fixture 112 OCR 文本「不如」同时触发
+    // ad_signage_pesticide_art5_deprecate 与 ad_signage_veterinary_art5_deprecate
+    // 两条警告(关键词「不如」「比 X 差」「完胜同类」全为通用子串,无 category 域
+    // 限定)。本组测试验证 commit 3 给 veterinary 规则加 categoryAnchors(兽药 /
+    // 兽用 / 兽医 / 本药)后:非兽药文本下,8 条 vet 规则全部不触发;兽药文本下,
+    // 规则照常触发。
+
+    @Test
+    fun scan_veterinaryArt5Deprecate_gateBlocksTeaShopAd() {
+        val r = AdSignageRule(
+            "ad_signage_veterinary_art5_deprecate",
+            "veterinary",
+            "兽药广告审查发布规定 §5",
+            listOf("不如", "比 X 差", "完胜同类"),
+            Severity.Warning,
+            categoryAnchors = listOf("兽药", "兽用", "兽医", "本药"),
+        )
+        // fixture 112 茶饮店 OCR 文本(去「不如」两侧门店招牌等无关字符),不含兽药锚点
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "NIAN 廿四熹 本草时令茶咖 PLANT TEA COFFEE 成功无定义 活久最重要 不如自己来一杯"
+        )
+        assertEquals(0, hits.size)
+    }
+
+    @Test
+    fun scan_veterinaryArt5Deprecate_gateAdmitsVeterinaryAd() {
+        val r = AdSignageRule(
+            "ad_signage_veterinary_art5_deprecate",
+            "veterinary",
+            "兽药广告审查发布规定 §5",
+            listOf("不如", "比 X 差", "完胜同类"),
+            Severity.Warning,
+            categoryAnchors = listOf("兽药", "兽用", "兽医", "本药"),
+        )
+        // 兽药广告文本:含「兽药」+「不如」+「完胜同类」,vet 规则应触发(可能多条 — keyword dedup per (ruleId, kw))
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "本兽药 对比同类 完胜同类 不如他家 驱虫更彻底"
+        )
+        assertTrue("vet rule 应触发,实际 0 hits", hits.size >= 1)
+        assertTrue(hits.all { it.ruleId == "ad_signage_veterinary_art5_deprecate" })
+    }
+
+    @Test
+    fun scan_teaShopFixture_doesNotFireVeterinaryRules() {
+        // 廿四熹 PLANT TEA & COFFEE 茶饮店 fixture 112 OCR text (近似)
+        // — 无农药 / 兽药 anchor。8 条 veterinary 规则全部不应触发。
+        // 与 scan_teaShopFixture_doesNotFirePesticideRules 对偶(vet 侧)。
+        val rules = listOf(
+            AdSignageRule("ad_signage_veterinary_art4_assertion", "veterinary", "兽药 §4",
+                listOf("保证有效", "绝对安全"), Severity.Violation,
+                categoryAnchors = listOf("兽药", "兽用", "兽医", "本药")),
+            AdSignageRule("ad_signage_veterinary_art4_endorsement", "veterinary", "兽药 §4",
+                listOf("专家推荐", "研究院推荐"), Severity.Warning,
+                categoryAnchors = listOf("兽药", "兽用", "兽医", "研究院")),
+            AdSignageRule("ad_signage_veterinary_art4_cure_rate", "veterinary", "兽药 §4",
+                listOf("有效率", "治愈率"), Severity.Warning,
+                categoryAnchors = listOf("兽药", "兽用", "兽医")),
+            AdSignageRule("ad_signage_veterinary_art4_safety_violation", "veterinary", "兽药 §4",
+                listOf("拌料口服", "人畜同用"), Severity.Warning,
+                categoryAnchors = listOf("兽药", "兽用", "兽医", "饲料")),
+            AdSignageRule("ad_signage_veterinary_art5_deprecate", "veterinary", "兽药 §5",
+                listOf("不如", "比 X 差", "完胜同类"), Severity.Warning,
+                categoryAnchors = listOf("兽药", "兽用", "兽医", "本药")),
+            AdSignageRule("ad_signage_veterinary_art6_absolute", "veterinary", "兽药 §6",
+                listOf("最高技术", "包治百病"), Severity.Violation,
+                categoryAnchors = listOf("兽药", "兽用", "兽医")),
+            AdSignageRule("ad_signage_veterinary_art7_endorsement", "veterinary", "兽药 §7",
+                listOf("销量第一", "首选", "金奖"), Severity.Warning,
+                categoryAnchors = listOf("兽药", "兽用", "兽医")),
+            AdSignageRule("ad_signage_veterinary_art8_commitment", "veterinary", "兽药 §8",
+                listOf("无效退款", "保险公司保险", "售后无忧"), Severity.Warning,
+                categoryAnchors = listOf("兽药", "兽用", "兽医")),
+        )
+        val hits = AdSignageRuleMatcher(rules).scan(
+            "NIAN 廿四熹 本草时令茶咖 PLANT TEA COFFEE 成功无定义 活久最重要 不如自己来一杯"
+        )
+        assertTrue("茶店 fixture 不应触发 veterinary 规则, 实际: $hits",
+            hits.isEmpty())
+    }
+
     // --- 《广告法》第十一条第二款 absence 复合匹配(TDD, 2026-08-21 v0.1.15) ---
     //
     // 当 rule.sourceMarkers 非空时,matcher 跑两遍 AC:
