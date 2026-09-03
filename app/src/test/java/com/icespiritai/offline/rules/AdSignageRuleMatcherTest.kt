@@ -649,6 +649,67 @@ class AdSignageRuleMatcherTest {
     }
 
     @Test
+    fun scan_pesticideArt5Deprecate_gateBlocksFoodAd() {
+        // categoryAnchors gate: rule requires 农药/杀虫/本剂 anchor in text.
+        // Food ad text with 「不如」+「比 X 差」 but NO pesticide anchor → 0 hits.
+        val r = AdSignageRule(
+            "ad_signage_pesticide_art5_deprecate",
+            "pesticide",
+            "农药广告审查发布规定 §5",
+            listOf("不如", "比 X 差", "完胜同类"),
+            Severity.Warning,
+            categoryAnchors = listOf("农药", "杀虫", "本剂"),
+        )
+        // tea shop fixture 112-style text: 茶饮 本草 时令 + 不如 (no pesticide anchor)
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("时令本草茶咖 不如 外卖 招牌")
+        assertEquals(0, hits.size)
+    }
+
+    @Test
+    fun scan_pesticideArt5Deprecate_gateAdmitsPesticideAd() {
+        // same rule + text contains 「本剂」 anchor → gate passes → 1 hit
+        val r = AdSignageRule(
+            "ad_signage_pesticide_art5_deprecate",
+            "pesticide",
+            "农药广告审查发布规定 §5",
+            listOf("不如", "比 X 差", "完胜同类"),
+            Severity.Warning,
+            categoryAnchors = listOf("农药", "杀虫", "本剂"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本剂完胜同类,其他品牌不如本品")
+        assertEquals(2, hits.size)
+    }
+
+    @Test
+    fun scan_teaShopFixture_doesNotFirePesticideRules() {
+        // 廿四熹 PLANT TEA & COFFEE 茶饮店 fixture 112 OCR text (近似)
+        // — 无农药 / 兽药 / 医疗 / 化妆品 / 儿童 anchor
+        // 既有 5 类 domain-specific 规则全部不应触发
+        val rules = listOf(
+            AdSignageRule("pesticide_art5", "pesticide", "农药 §5",
+                listOf("不如"), Severity.Warning,
+                categoryAnchors = listOf("农药", "杀虫")),
+            AdSignageRule("veterinary_art5", "veterinary", "兽药 §5",
+                listOf("不如"), Severity.Warning,
+                categoryAnchors = listOf("兽药", "兽用")),
+            AdSignageRule("medical_art6", "medical", "医疗 §6",
+                listOf("按摩"), Severity.Warning,
+                categoryAnchors = listOf("医疗", "医院")),
+            AdSignageRule("cosmetic_art17", "cosmetic", "化妆品 §17",
+                listOf("美白"), Severity.Warning,
+                categoryAnchors = listOf("化妆品", "美容")),
+            AdSignageRule("minor_art10", "minor", "广告法 §10",
+                listOf("儿童"), Severity.Warning,
+                categoryAnchors = listOf("儿童", "未成年人")),
+        )
+        val hits = AdSignageRuleMatcher(rules).scan(
+            "廿四熹 PLANT TEA COFFEE 成功无定义 活久最重要 不如 她家咖啡"
+        )
+        assertTrue("茶店 fixture 不应触发 domain-specific 规则, 实际: $hits",
+            hits.isEmpty())
+    }
+
+    @Test
     fun scan_pesticideArt6Endorsement_firesOn销量第一() {
         val r = AdSignageRule(
             "ad_signage_pesticide_art6_endorsement",

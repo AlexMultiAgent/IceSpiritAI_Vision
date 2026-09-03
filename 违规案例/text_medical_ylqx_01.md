@@ -16,10 +16,9 @@
     severity: Info
   - id: ad_signage_medical_art8_commitment
     severity: Warning
-  - id: ad_signage_pesticide_art10_commitment
-    severity: Violation
   - id: ad_signage_veterinary_art8_commitment
     severity: Warning
+  备注_anchor_gate: v0.1.54 起 pesticide 规则加 categoryAnchors 后,本 fixture 文本(医疗器械)不含农药域锚点,pesticide_art10_commitment 不再触发 — anchor gate 的预期行为。后续 commit 3/4 将同步处理 medical/vet 规则的 anchor gate。
 处罚结果: 责令停止发布广告,罚款 100 元（广告费 100 元,从轻裁量）
 备注: 2026-05-07 马鞍山市市场监管局公布。当事人在美团网店销售"家用呼吸机"商品,商品标题与详情页含"无效退款"承诺性内容(违反《医疗器械广告审查发布标准》第八条),且推荐给个人使用的医疗器械广告未显著标明"请仔细阅读产品说明书或者在医务人员的指导下购买和使用"(违反第四条 + 第九条)。文本故意同时包含「家用呼吸机」(art4_selfuse_label)+「禁忌 / 注意事项」文本(art5_contraindication)+「医疗器械」(art6_producer)+「无效退款」(art8_commitment)。注意:「无效退款」是 medical / pesticide / veterinary 三域共享关键词(《农药广告审查发布规定》第十条、《兽药广告审查发布规定》第八条均有相同禁令),因此 fixture 的 expected 同时包含 medical 域承诺规则 + pesticide_art10_commitment + veterinary_art8_commitment。
 ---

@@ -995,6 +995,7 @@
         "彻底根除",
         "对 X 病虫草均有效"
       ],
+      "categoryAnchors": ["农药", "杀虫", "除草", "杀菌"],
       "severity": "Warning"
     },
     {
@@ -1009,6 +1010,7 @@
         "保证有效",
         "高效低毒"
       ],
+      "categoryAnchors": ["农药", "本剂", "本药", "杀虫剂"],
       "severity": "Violation"
     },
     {
@@ -1024,6 +1026,7 @@
         "学会认证",
         "用户证言"
       ],
+      "categoryAnchors": ["农药", "本剂", "研究所", "杀虫剂"],
       "severity": "Warning"
     },
     {
@@ -1036,6 +1039,7 @@
         "防治效果 95%",
         "杀灭率 99%"
       ],
+      "categoryAnchors": ["农药", "杀虫", "本剂"],
       "severity": "Warning"
     },
     {
@@ -1049,6 +1053,7 @@
         "人畜同用",
         "食用安全"
       ],
+      "categoryAnchors": ["农药", "兽药", "饲料", "添加剂", "杀虫剂"],
       "severity": "Warning"
     },
     {
@@ -1062,6 +1067,7 @@
         "完胜同类",
         "最强农药"
       ],
+      "categoryAnchors": ["农药", "杀虫", "本剂", "本药"],
       "severity": "Warning"
     },
     {
@@ -1075,6 +1081,7 @@
         "金奖",
         "唯一"
       ],
+      "categoryAnchors": ["农药", "本剂", "本药", "杀虫剂"],
       "severity": "Warning"
     },
     {
@@ -1087,6 +1094,7 @@
         "保险公司保险",
         "保证 100% 有效"
       ],
+      "categoryAnchors": ["农药", "本剂", "本药", "杀虫剂"],
       "severity": "Violation"
     },
     {
