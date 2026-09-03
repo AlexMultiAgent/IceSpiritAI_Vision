@@ -169,6 +169,8 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 
 两个脚本幂等,执行后即可 `./gradlew.bat assembleDebug -PmodelProfile=ice_ocr_rules`。
 
+**AAR 体积异常澄清(v0.1.53)**:PaddleOCR 官方 SDK v3.7.0 的 `app/libs/ppocr-sdk.aar` 是 **91K classes-only**(无 `jni/` 或 `libs/` 子目录),native .so 来自 `onnxruntime-android` + `opencv-android` 两个依赖 AAR(合计 ~70 MB,贡献最终 APK 58 MB)。`tools/build-ppocr-sdk.sh` 的 16KB alignment gate 在 .so 列表为空时静默 exit 0(已知脚本 quirk,但不阻断发版)。预编译环境看到 91K AAR **不要误判为 stub**;真机 OCR 走 PaddleOCR Java SDK → ONNX Runtime native。
+
 ## Instrumented test / 真机 A/B (androidTest)
 
 跑 `connectedDebugAndroidTest` 在华为 nova 6(ANN-AN00,SDK 35)上踩过的坑,后人不要重蹈:
@@ -264,6 +266,18 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 - **2026-08-26 v0.1.31 — Gitea 1.22.x `releases/download/latest/<file>.apk` 返 404**:JSON 200 但 APK URL 404,改名也不解决。workaround:从 POST response 抓 `uuid`,把 `apkUrl` 改成 `http://125.211.45.14:3000/attachments/<uuid>`,cert-pin gate 不变。详 → `icevision-release` "Gitea 1.22.x APK 404 workaround"段
 - **Cert-pin 锚点**:`signerCertSha256` 必须 = `4a21f4...3043`。release 凭据在 `~/.gradle/gradle.properties`(gitignored),Gitea PAT 在 `gradle.token.properties`(gitignored,见 `gradle.token.properties.example` 模板)。stage 路径:`build/generated/release-staging/`(per memory `feedback-no-release-history-archive.md`,已不再写 `发布版历史存档/`)
 
+- **Cert-pin /凭据 sourcing(v0.1.53)**:发版前 `source ~/.gradle/release-env.sh` 导出 `ICESPIRITAI_RELEASE_{STORE_FILE,STORE_PASSWORD,KEY_ALIAS,KEY_PASSWORD,CERT_SHA256}` + `JAVA_HOME`(绑定 JDK 17),**不可**手动 `~/.gradle/release.jks` 试 keytool ——实际 keystore 在 `/d/keystores/icespiritai-release.keystore`,由 `ICESPIRITAI_RELEASE_STORE_FILE` 指向(`.claude/skills/icevision-release/SKILL.md` Pre-flight 5 示例路径是过时的)。
+
+- **Triple-SHA 对齐(release 后必跑)**:`tag SHA ↔ commit SHA ↔ APK SHA-256 ↔ vision-latest.json apkSha256` 四者必须一致:
+  ```bash
+  TAG_COMMIT=$(git rev-parse v0.1.X^{})          # 剥 annotated-tag 对象 SHA
+  APK_SHA=$(sha256sum app/build/generated/release-staging/icespiritai-vision.apk | awk '{print $1}')
+  JSON_SHA=$(curl -s http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/vision-latest.json \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['apkSha256'])")
+  test "$TAG_COMMIT" = "$(git rev-parse HEAD)" && test "$APK_SHA" = "$JSON_SHA" && echo "ALIGNED" || echo "DRIFT"
+  ```
+  注:`git rev-parse v0.1.X` 返回 annotated tag **对象** SHA(≠commit SHA),必须 `^{}` 剥到 commit;JSON 字段是 `apkSha256` 不是 `sha256`。
+
 - **Gitea 1.22.x `releases/download/<tag>/<filename>` 对 `.apk` 文件名 404**(发布仓库 `giteaadmin/vision-app` 实测**健康**,in-app update 完全工作):
   - **症状**:apk URL `releases/download/latest/icespiritai-vision.apk` 持续 404,但同 tag 下 `vision-latest.json` 200 — 触发取决于 release tag 与 filename,attachment `GET /attachments/<uuid>` 正常
   - **绕过**:`app/build.gradle.kts` 的 `uploadVisionReleaseToGitea` 3a/3b/3c 步 — POST APK 抓 response `uuid`,把 staged `vision-latest.json` 的 `apkUrl` 改写为 `http://125.211.45.14:3000/attachments/<uuid>` 再 POST,客户端 cert-pin gate 不变
@@ -285,6 +299,7 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 | [`docs/knowledge/lint-vital-fir-crash.md`](docs/knowledge/lint-vital-fir-crash.md) | AGP 9 + Kotlin 2.4.10 + lint 32.3.0 在 `.gradle.kts` 上崩的根因 + 绕过 |
 | [`docs/knowledge/gitea-1.22x-release-route-broken.md`](docs/knowledge/gitea-1.22x-release-route-broken.md) | Gitea 1.22.x `releases/download/<tag>/` 对 .apk + .json 404 的根因 + `/attachments/<uuid>` 绕路 + 双 repo(代码仓库 `giteaadmin/IceSpiritAI_Vision` broken / 发布仓库 `giteaadmin/vision-app` 健康)分工;候选 nginx reverse proxy 配置在 §5 |
 | [`docs/smoke/2026-08-14-phase1-smoke.md`](docs/smoke/2026-08-14-phase1-smoke.md), [`docs/smoke/2026-08-14-phase2-smoke.md`](docs/smoke/2026-08-14-phase2-smoke.md) | 烟测记录 |
+| [`docs/smoke/2026-09-02-icevision-v0.1.47-release.md`](docs/smoke/2026-09-02-icevision-v0.1.47-release.md) | v0.1.47 完整发版 smoke record(pre-flight + 4 步流水线 + post-release 三段断言 + APK SHA 一致性,作 v0.1.53+ 发版参考模板) |
 | [`docs/smoke/2026-08-20-icevision-v6-upgrade.md`](docs/smoke/2026-08-20-icevision-v6-upgrade.md) | PP-OCRv5→v6 升级烟测记录(2026-08-20) |
 | [`docs/knowledge/ppocrv6_vs_v5_a_b_test.md`](docs/knowledge/ppocrv6_vs_v5_a_b_test.md) | v6_small vs v5_mobile 在 4 张实拍广告招牌上的 A/B 实测 + 决策依据 |
 | [`docs/knowledge/mascot-ui-asset.md`](docs/knowledge/mascot-ui-asset.md) | 应用内吉祥物素材(去底 PNG)生成 / 选型 |
