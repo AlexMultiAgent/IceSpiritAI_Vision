@@ -20,8 +20,7 @@
     severity: Violation
   - id: ad_signage_signage_medicine_flag
     severity: Violation
-  - id: cosmetic_art17_special_class
-    severity: Violation
+  备注_anchor_gate_v0_1_54_commit_5: commit 5 起 cosmetic_art17_special_class 加 categoryAnchors(化妆品/美容/护肤/肌肤),本 fixture 文本(普通水果电商页「千禧小柿子 减脂 美白 抗氧化」+ 「京东京造菊粉代餐 减肥 便秘通便」)无化妆品锚点,cosmetic_art17_special_class 不再触发。本 fixture 设计保留 3 条 food function rule 命中,精准反映「普通食品无保健食品资质宣称减肥 / 美白 / 抗氧化 / 通便」违规场景;cosmetic_art17_special_class 原本是「美白」keyword 跨桶污染导致误报,本 commit 修复。
 处罚结果: fixture / 审计场景(2026-08-27)
 备注: 2026-08-27 违规案例审计 #28 + #54 合并 1 规则(`ad_signage_signage_weight_loss_food_claim`)。#28 原案 `28_千禧柿子水果_减脂美白抗氧化_食品功能.png` 桶分类 = food_function_claim × weight_loss × internet_ad,千禧柿子属普通水果(非保健食品,无蓝帽子)在电商页宣称「减脂 / 美白 / 抗氧化」保健功能;#54 原案 `54_京东京造菊粉代餐_减肥便秘通便_食品功能.png` 桶分类 = weight_loss × food_function_claim × internet_ad,京东京造菊粉代餐属普通食品(非保健食品)在电商页宣称「减肥 / 便秘通便」;两者共用「减肥 / 减脂 / 瘦身 / 通便 / 便秘通便 / 代餐减肥 / 减肥代餐 / 菊粉代餐 / 代餐」共 9 个 keyword(category=signage,severity=Violation)。依据《广告法》§58 第二款第(三)项,违反 §18 发布保健食品广告的,处广告费用 1~3 倍罚款,广告费用无法计算或明显偏低处 10~20 万元;情节严重处 3~5 倍或 20~100 万元;普通食品无保健食品资质而宣称减肥 / 减脂等保健功能,亦同时违反 §17 非医疗药品广告涉及疾病治疗 / 保健功能(可由 §58 第(二)项处罚)。同类常见变体:含「代餐减肥 / 减肥代餐 / 菊粉代餐 / 代餐 / 减肥 / 瘦身 / 减脂 / 通便 / 便秘通便」keyword 的普通食品电商页 / 户外招牌均命中同一规则(Violation);「减肥水果 / 减肥蔬菜 / 减肥茶 / 减肥咖啡 / 减肥巧克力」等同义变体应同样命中。fixture 来自 audit #28 + #54,非 WebFetch 直读。
 ---

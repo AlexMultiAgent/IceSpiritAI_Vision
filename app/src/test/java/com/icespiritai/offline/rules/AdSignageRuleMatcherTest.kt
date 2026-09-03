@@ -3381,4 +3381,107 @@ class AdSignageRuleMatcherTest {
             matchedPerRule["ad_signage_signage_food_safety_implication"],
         )
     }
+
+    // --- v0.1.54 commit 5 — cosmetic + minor categoryAnchors(全 9 条覆盖) ---
+    //
+    // commit 5 给 cosmetic 规则(art23_medical_claim / art23_misleading_claim /
+    // art23_medical_explicit / art20_claim_basis / art17_special_class /
+    // art9_abs_extended / art8_award_claim / signage_cosmetic_implied_dryness
+    // 共 8 条)与 minor 规则(art10_minor 共 1 条)加 categoryAnchors。
+    // license-type cosmetic 规则(art23_special_regno / art23_general_fileno /
+    // art23_ingredients / art23_license_no / art23_safety_warning 共 5 条)
+    // 关键词本身已强 cosmetic 上下文(国妆特字 / 国妆网备进字 / Ingredients /
+    // 许可证 / 安全警告),不另加 anchor。
+    //
+    // anchor 池:cosmetic=[化妆品, 美容, 护肤, 肌肤, 美容院]
+    //           minor=[儿童, 未成年人, 青少年, 婴儿, 中小学, 学生,
+    //                 婴儿用品, 母婴, 童装, 幼儿, 孕妇]
+    //
+    // 关键场景:
+    //   (a) 食品宣称「祛斑」 → 跨 cosmetic_art23_medical_claim kw,anchor gate 阻断
+    //   (b) 化妆品宣称「本化妆品 美白祛斑霜」 → anchor + kw 双命中,正常触发
+    //   (c) 公交车身户外广告「杜蕾斯首个公益装」 → 「首个」命中 cosmetic 变体
+    //       kw 但文本无化妆品 anchor,anchor gate 阻断
+    //   (d) 儿童菜单「儿童套餐 宝宝最爱 亲子餐厅」 → minor kw 命中但文本无
+    //       minor anchor,anchor gate 阻断
+
+    @Test
+    fun scan_cosmeticArt23MedicalClaim_gateBlocksFoodAd() {
+        // 普通食品电商页宣称「祛斑」等医疗术语,但无化妆品 anchor
+        val r = AdSignageRule(
+            "cosmetic_art23_medical_claim",
+            "cosmetic",
+            "化妆品监督管理条例 §23 + §25(2)",
+            listOf("祛斑", "祛痘", "抗炎", "消炎", "抑菌", "消肿"),
+            Severity.Violation,
+            categoryAnchors = listOf("化妆品", "美容", "护肤", "肌肤"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "千禧小柿子 减脂 祛斑 美白 抗氧化"
+        )
+        assertTrue("cosmetic rule 不应触发食品电商页, 实际: $hits",
+            hits.isEmpty())
+    }
+
+    @Test
+    fun scan_cosmeticArt17SpecialClass_gateAdmitsCosmeticAd() {
+        // 含「化妆品」锚点的真实化妆品广告
+        val r = AdSignageRule(
+            "cosmetic_art17_special_class",
+            "cosmetic",
+            "化妆品监督管理条例 §17 + §18",
+            listOf("美白", "祛斑", "防晒", "防脱", "染发剂", "烫发剂"),
+            Severity.Warning,
+            categoryAnchors = listOf("化妆品", "美容", "护肤", "肌肤", "美容院"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "本化妆品 美白祛斑霜 护肤美容 国妆特字注册"
+        )
+        assertTrue("cosmetic rule 应触发, 实际 0 hits", hits.size >= 1)
+        assertTrue(hits.all { it.ruleId == "cosmetic_art17_special_class" })
+    }
+
+    @Test
+    fun scan_cosmeticArt9AbsExtended_gateBlocksOutdoorNonCosmeticAd() {
+        // 公交车身户外广告「杜蕾斯首个公益装」— 「首个」命中 cosmetic 变体
+        // kw,但文本无化妆品 anchor,anchor gate 阻断
+        val r = AdSignageRule(
+            "cosmetic_art9_abs_extended",
+            "cosmetic",
+            "广告法 §9(三) + 化妆品监督管理条例 §22",
+            listOf("首个", "顶级", "首选", "唯一", "独家", "最强", "最佳", "最好", "第一名", "全球第一"),
+            Severity.Warning,
+            categoryAnchors = listOf("化妆品", "美容", "护肤", "肌肤", "美容院"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "燃情公益红 守护爱她 经典红 杜蕾斯首个公益装 durex 公交 388-12"
+        )
+        assertTrue("cosmetic rule 不应触发公交车身户外广告, 实际: $hits",
+            hits.isEmpty())
+    }
+
+    @Test
+    fun scan_art10Minor_gateBlocksKidsMenuCopy() {
+        // 亲子餐厅文案 — 「少儿」minor kw 命中,但无母婴用品 / 童装 /
+        // 教育等 minor anchor,anchor gate 阻断。
+        // 注:keywords 与 anchor 列表有重叠("儿童" / "青少年" /
+        // "未成年人" 既是 kw 又是 anchor),故选用 "少儿" 这一仅在
+        // kw 集合、不在 anchor 集合的 keyword 验证 gate。
+        val r = AdSignageRule(
+            "ad_signage_art10_minor",
+            "minor",
+            "广告法 §10(2) + §57",
+            listOf("儿童", "宝宝", "少儿", "青少年", "未成年人"),
+            Severity.Violation,
+            categoryAnchors = listOf(
+                "儿童", "未成年人", "青少年", "婴儿", "中小学",
+                "学生", "婴儿用品", "母婴", "童装", "幼儿", "孕妇",
+            ),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "亲子餐厅 少儿最爱 周末家庭聚餐 家庭套餐"
+        )
+        assertTrue("minor rule 不应触发亲子餐厅文案(无母婴 anchor), 实际: $hits",
+            hits.isEmpty())
+    }
 }
