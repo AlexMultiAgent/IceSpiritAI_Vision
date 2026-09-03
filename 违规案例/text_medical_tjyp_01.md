@@ -10,9 +10,7 @@
 预期命中规则:
   - id: ad_signage_med_art11_qualifications
     severity: Info
-  - id: ad_signage_medical_art8_commitment
-    severity: Warning
-  备注_anchor_gate_v0_1_54: commit 2/3 起 pesticide + veterinary 规则加 categoryAnchors 后,本 fixture 文本(体检预约平台 三甲专家亲诊 无效退款)不含任何农药/兽药域锚点,pesticide_art10_commitment + veterinary_art8_commitment 不再触发。后续 commit 4 将对 medical_art8_commitment 同步加 anchor gate。
+  备注_anchor_gate_v0_1_54: commit 2/3/4 起 pesticide + veterinary + medical 规则加 categoryAnchors 后,本 fixture 文本(体检预约平台 三甲专家亲诊 无效退款)不含任何锚点(医疗/器械/药品/医院/三甲 都不在 OCR 文本中;但「三甲」其实是 med_art11_qualifications 的 keyword + anchor,所以它能触发自己),medical_art8_commitment 不再触发。
 处罚结果: 责令停止发布违法广告,罚款 8 万元
 备注: 2025-05-13 焦作市市场监管局、卫健委联合通报。某体检预约平台在 App 与公众号推文中以"三甲专家亲诊"作推荐（违反《医疗广告管理办法》第七条"医疗广告内容仅限于医疗机构第一名称等 8 项"），并以"无效退款"作承诺性内容（违反《广告法》第十六条 + 第五十八条）。注意:「无效退款」是 medical / pesticide / veterinary 三域共享关键词,因此 fixture 的 expected 同时包含 medical 域承诺规则 + pesticide_art10_commitment + veterinary_art8_commitment。同类常见变体:「三甲专家亲诊」「三甲专家团队」「三甲医师」「体检预约 主任医师」「治不好不要钱」「签约体检 无效退款」「无效退款」。
 ---

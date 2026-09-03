@@ -224,6 +224,71 @@ class AdSignageRuleMatcherTest {
         assertEquals(3, hits.size)
     }
 
+    // --- v0.1.54 commit 4: medical 规则 categoryAnchors gate ---
+    //
+    // 茶饮店 fixture 112 OCR 文本除了触发 pesticide/vet 警告,还可能因为含
+    // 「按摩我选东郊」(commit 4 之前)或「按摩仪」(commit 4 之前)触发 medical_art6
+    // / medical_art4_selfuse_label 等医疗规则。本组测试验证 commit 4 给 medical
+    // 规则配 categoryAnchors(医疗/医院/器械/诊所/药品/医师/三甲 等)后:非医疗
+    // 文本下,medical 规则全部不触发;含医疗锚点的文本下,规则照常触发。
+
+    @Test
+    fun scan_medicalArt6Producer_gateBlocksSpaChairAd() {
+        // 「按摩仪」「按摩椅」类家具/家电广告,文本无医疗锚点
+        val r = AdSignageRule(
+            "ad_signage_medical_art4_selfuse_label",
+            "medical",
+            "医疗器械广告审查发布标准 §4",
+            listOf("按摩仪", "按摩椅", "血压计", "血糖仪"),
+            Severity.Warning,
+            categoryAnchors = listOf("医疗", "器械", "医院"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("家用按摩椅 按摩仪 舒适放松 全家适用")
+        assertEquals(0, hits.size)
+    }
+
+    @Test
+    fun scan_medicalArt6Producer_gateAdmitsClinicAd() {
+        // 含「医疗」「医院」锚点的真实医疗广告
+        val r = AdSignageRule(
+            "ad_signage_medical_art4_selfuse_label",
+            "medical",
+            "医疗器械广告审查发布标准 §4",
+            listOf("按摩仪", "按摩椅", "血压计", "血糖仪"),
+            Severity.Warning,
+            categoryAnchors = listOf("医疗", "器械", "医院"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本医院 家用按摩仪 血压计 医疗器械")
+        assertTrue("medical rule 应触发,实际 0 hits", hits.size >= 1)
+        assertTrue(hits.all { it.ruleId == "ad_signage_medical_art4_selfuse_label" })
+    }
+
+    @Test
+    fun scan_teaShopFixture_doesNotFireMedicalRules() {
+        // 廿四熹茶店 fixture 文本 → 20 条 medical 规则全部不应触发
+        val rules = listOf(
+            AdSignageRule("ad_signage_med_art6_indications", "medical", "医疗广告管理办法 §6",
+                listOf("按摩", "推拿", "疗法", "专治", "肩周炎"), Severity.Warning,
+                categoryAnchors = listOf("医疗", "医院", "医师", "诊所")),
+            AdSignageRule("ad_signage_medical_art4_selfuse_label", "medical", "医疗器械广告 §4",
+                listOf("按摩仪", "血压计", "血糖仪"), Severity.Warning,
+                categoryAnchors = listOf("医疗", "器械", "医院")),
+            AdSignageRule("ad_signage_medical_art8_commitment", "medical", "医疗器械广告 §8",
+                listOf("无效退款", "保证有效"), Severity.Warning,
+                categoryAnchors = listOf("医疗", "器械", "药品", "医院")),
+            AdSignageRule("ad_signage_medical_aesthetic_treatment_language", "medical", "广告法 §16",
+                listOf("精准抗衰", "逆龄", "医美超市"), Severity.Warning,
+                categoryAnchors = listOf("医疗", "医美", "医院")),
+            AdSignageRule("ad_signage_medical_national_level_claim", "medical", "广告法 §9",
+                listOf("国家三级", "国家级专科", "国家级医院"), Severity.Warning,
+                categoryAnchors = listOf("医疗", "医院")),
+        )
+        val hits = AdSignageRuleMatcher(rules).scan(
+            "NIAN 廿四熹 本草时令茶咖 PLANT TEA COFFEE 成功无定义 活久最重要 不如自己来一杯"
+        )
+        assertTrue("茶店 fixture 不应触发 medical 规则, 实际: $hits", hits.isEmpty())
+    }
+
     @Test
     fun scan_medArt13Newsform_firesOn健康讲座() {
         val r = AdSignageRule(
