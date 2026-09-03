@@ -7,6 +7,11 @@
 # research notes that should stay local.
 测试集/
 
+# Knowledge base directory — large set of regulation PDFs / DOCX / WPS
+# source files plus per-domain markdowns. 2026-09-02: not pushed to remote
+# (体积大 + 含未授权转载的法源原文,本地留存供规则引擎引用即可)。
+知识库/
+
 # Historical release APK archive. The Gradle release pipeline no longer
 # writes here as of 2026-08-21 (staging moved to build/generated/release-staging/),
 # but the directory persists on disk with prior releases. Keep ignored so
@@ -21,6 +26,7 @@
 .claude/worktrees/
 .claude/scratch/
 .claude/settings.local.json
+.claude/hookify.*.local.md
 
 .kilo/
 .gradle/

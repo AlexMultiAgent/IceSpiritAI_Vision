@@ -10,8 +10,13 @@
 预期命中规则:
   - id: ad_signage_signage_food_disease_target
     severity: Violation
+  - id: ad_signage_med_art6_indications
+    severity: Warning
+    备注: 「关节炎」是 med_art6_indications 的独立 keyword,与 food_disease_target 的「关节炎患者」共现触发两个 ruleId;这是真实案例文本「关节炎患者」的合法 overlap,而非规则污染。fixture set 顺序按 ruleId 字母序排列。
 处罚结果: 罚款 20 万元
 备注: 2025-07-22 市场监管总局公布「六起通过保健品虚假宣传进行'内卷式'竞争典型案例」之一。江苏省张家港市德积徳优迪斯超市在经营场所内通过播放视频向中老年人推介销售"蜂亿健蜂皇浆冻干粉胶囊",宣称该商品具有治疗糖尿病、高血压、冠心病、肝硬化、肾功能衰竭等多种疾病的功效;该商品仅为普通食品(非保健食品),不具有疾病治疗功能。本 fixture 的 `originalAdText` 严格使用「糖尿病患者/高血压患者/冠心病患者/关节炎患者/骨质疏松患者」5 个 food_disease_target 独占 keyword(均 exclusive,hits dedup by `(ruleId, matchedText)`,set 严格等于 1 个 rule id),原案「治疗」类表述在本 fixture 中刻意回避 — `治疗` / `治愈` / `疗效` / `消炎` 与 `cosmetic_art23_medical_claim` 共享,会跨规则污染 set 命中。同类常见变体「癌症病人」「肿瘤病人」「心脑血管病人」「便秘患者」「痔疮患者」「前列腺患者」「男性健康」「妇科疾病」「白癜风」「牛皮癣」「抗癌」「防癌」均命中同一规则。内容来自 WebSearch snippet,非 WebFetch 直读。
+
+> **v0.1.50 set 调整**:`关节炎` 是 `ad_signage_med_art6_indications` 的 3 字 keyword,与 `ad_signage_signage_food_disease_target` 的 5 字 keyword「关节炎患者」共现时,两个 ruleId 都会命中。原 fixture set 期望 `[food_disease_target]`,实际命中 set 是 `{food_disease_target, med_art6_indications}`。这是真实案例文本的合法 overlap(关节炎既是疾病人群,又是医疗广告管理办法第六条规范的诊疗范围),非规则污染。本批同步把 med_art6_indications 加入 fixture 的预期命中规则,使 set 严格相等。
 ---
 
 # 普通食品宣称针对糖尿病/高血压/冠心病/关节炎/骨质疏松患者违法广告案（2025）

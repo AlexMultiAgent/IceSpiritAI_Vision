@@ -180,6 +180,26 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 - **真机冷启动 vs warm 延迟必须分开报**。`PaddleOCR.create()` 模型加载一次性 ~5s,per-image warm 平均 ~2.6s(华为 nova 6 ARM64 + 4-thread),混在一起看不出趋势。harness 模式:1 次 cold + N 次 warm,分别计 `cold_ms` / `warm_total_ms` / `warm_avg_ms`。
 - **华为 nova 6 PackageManager ghost state**:`adb install -r` 可能 `INSTALL_FAILED_UPDATE_INCOMPATIBLE: Existing package ... signatures do not match`,但 `pm list packages` 看不到该包。`pm uninstall` / `pm uninstall -k` 均 `DELETE_FAILED_INTERNAL_ERROR`;`pm clear` 报 "Failed" 但 exit 0。**workaround**:`adb shell pm clear com.icespiritai.vision` 后再 `adb install -r APK` 即可 — `pm clear` 虽报错但会把 ghost state 清掉。
 
+## 违规案例 fixture 工作流 + audit71 真机 e2e (v0.1.49 落地)
+
+新增 N 张广告违规案例夹具的复用模式(audit66 / audit71 已稳定):
+
+| 阶段 | 操作 |
+| --- | --- |
+| 1. 暂存 | 图入 `违规案例/`(gitignored 本地暂存) |
+| 2. 命名审核 | 真机 OCR + AdSignageRuleMatcher 跑一遍,逐张对照 OCR 文本与 filename,标记 mismatch |
+| 3. 重命名 | 同步改 `违规案例/` + `app/src/androidTest/assets/fixtures/audit71/`(canonical test version,committed) |
+| 4. e2e 校验 | `connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.icespiritai.offline.rules.AdSignageAudit71ImageE2ETest` |
+| 5. 覆盖率文档 | `app/src/androidTest/assets/fixtures/audit71/coverage_matrix.md` 由真机 `[OCR_HIT]/[OCR_NO_HIT]` 行 regex 匹配生成 filename ↔ rule_id 表格 |
+
+**filename 约定**:`NN_品牌_违规情形_类别.jpg`,NN 前缀 02d(<100) / 03d(≥100),缺失位补 0。
+
+**audit71 e2e 锚点**:Huawei nova 6 (AGQV023313008161, SDK 35),logcat TAG=`Audit71E2E`,行标记 `[COLD]/[WARM]/[HITS]/[OCR_HIT]/[OCR_NO_HIT]/RESULT_JSON`,harness 在 [AdSignageAudit71ImageE2ETest.kt](app/src/androidTest/java/com/icespiritai/offline/rules/AdSignageAudit71ImageE2ETest.kt),真机烟测记录见 [docs/smoke/2026-09-02-audit71-v11-rules-e2e.md](docs/smoke/2026-09-02-audit71-v11-rules-e2e.md)。
+
+**经验阈值 `ANY_HIT ≥ 60/N`**(v0.1.49 实测):单轮扩展不到位时,在**同一发版号内**做两阶段扩展 — 第二阶段加新规则 + 扩既有规则关键词(AC substring 命中兜底 OCR 漏字)。v10 49/71 → v11 59/71(差 1)→ v12 65/71(达标)。
+
+**OCR 召回上限**:miss 图均为 OCR 召回限制(文本 <10 字 / 严重错位 / 视觉符号未被 OCR),规则引擎 100% 召回,扩展规则无法补回缺失字符(v0.1.49 miss 6 张:99/103/109/110/120/124 — 分别对应 OCR 召回为空 / 仅 21 字 / 严重错位 / 文本无违规 / 视觉符号 I❤Harbin 未被 OCR / 仅 5 字)。
+
 ## Unit test 踩坑(2026-08-21 v0.1.14)
 
 - **Robolectric + Compose `LazyColumn` viewport 太小,首屏 item 不一定 compose**:`composeRule.onNodeWithText("v0.1.X", substring=true).assertExists()` 在 LazyColumn 渲染的列表上稳定失败,即使 LazyColumn 顶部第一个 entry 也没被合成(Robolectric 默认 Activity metrics 太小,LazyColumn 没到 viewport 就跳过 item 合成)。**不要给 LazyColumn 的滚动断言加 `waitForIdle` / `performScrollTo`** — flaky 不会消失。替代方案:把"最新版渲染正确"这种断言改成 **parser-level unit test**(JVM,无 Compose):
@@ -211,7 +231,7 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 
 ## Claude Code 自动化(skills + hooks)
 
-仓库内置 4 个 user-invocable skill + 2 个 hook(`pre-tool-use` + `user-prompt-submit`)+ 2 个自定义 agent(`compliance-checker` / `rule-expander`),把"发版 / 提交 / 防误删 / 规则扩写"四条最容易出错的路径固化成 bash 闸门 + 文档化清单:
+仓库内置 7 个 user-invocable skill + 3 个 hook(`pre-tool-use` + 2× `post-tool-use` + `user-prompt-submit`)+ 2 个 hookify rule + 5 个自定义 agent,把"发版 / 提交 / 防误删 / 规则扩写 / fixture audit / 真机 adb / 资源再生 / 规则编辑期校验 / 法规新鲜度 / 覆盖率分析"十条最容易出错的路径固化成 bash 闸门 + 文档化清单:
 
 | Skill / Hook | 触发方式 | 职责边界 |
 |---|---|---|
@@ -219,8 +239,20 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 | `/project-commit` (`.claude/skills/project-commit/SKILL.md`) | 用户说 `/project-commit` / "commit" / "提交" | 8 步提交 hygiene(作者 AlexMultiAgent 校验 / 无 Claude trailer / 显式 `git add` / 敏感文件扫描 / JDK 17 / build 校验)+ 当 commit 主题含 release marker(`feat(v0.1.X):` / `fix(v0.1.X):` / "发版")时同步执行 **Release 三段式打标**:`versionCode` bump + `user-changelog.md` 顶部条目 + `git tag v0.1.X` + push `latest` ref |
 | `/add-rule-entry` (`.claude/skills/add-rule-entry/SKILL.md`) | 用户说"扩 X 规则" / "加规则" / "把 X 法规落地" | 把一条 stub 法规扩成 `知识库/<域>/<reg>.md` + rule JSON 条目 + matcher 单测 + changelog 条目 |
 | `/fixture-rename-sync` (`.claude/skills/fixture-rename-sync/SKILL.md`) | 用户说"同步 fixture 重命名" / "audit66 fixture 同步" | 同步 androidTest fixture 子文件夹的文件名重命名 + .md fixture 描述 |
+| `/fixture-audit-add` (`.claude/skills/fixture-audit-add/SKILL.md`,v0.1.49 落地) | 用户说"扩 N 张 fixture" / "audit{N} 起来了" / "/fixture-audit-add" | 5 阶段 fixture workflow 打包(暂存 → OCR 命名审核 → 双目录 rename → 真机 e2e → coverage_matrix)+ `ANY_HIT ≥ 60/N` 阈值 + 同发版号 v(N+1) 二阶段扩展(v0.1.49 经验:59/71 → 65/71) |
+| `/regen-mascot` (`.claude/skills/regen-mascot/SKILL.md`,v0.1.49 落地) | 用户说"重新生成吉祥物" / "重做 mascot" / "换 mascot 素材" | 包 `tools/generate_mascot_asset.py` + canonical params(`--engine isnet` + `--smooth 1.4` + `--max-dim 480`)+ `#11212C` 深色 surface 验收清单(右镜片 / 衣领 / 白前襟 / 腿间隙)。三种色度启发式在此图均失败,只能走 rembg isnet-general-use,详见 [docs/knowledge/mascot-ui-asset.md](docs/knowledge/mascot-ui-asset.md) |
+| `/regen-launcher-icon` (`.claude/skills/regen-launcher-icon/SKILL.md`,v0.1.49 落地) | 用户说"重新生成 launcher 图标" / "调启动图标" / "换图标素材" | 包 `tools/generate_launcher_icon.py` + canonical params(`--tolerance 28` + `--crop-fraction 0.7474` → 下沿 1550px)+ 下沿像素 ↔ fraction 换算表。launcher 走泛洪去底(衬衫饱和度高 + 描边深色)即可,与 mascot 反差。详见 [docs/knowledge/launcher-icon-generation.md](docs/knowledge/launcher-icon-generation.md) |
 | `.claude/hooks/pre-tool-use.js` | Claude Code 每次 Bash 调用前自动跑 | Rule 1:`git add -A` / `git add --all` / `git add .` / `git add ./` / `git add ..` / `git add .git` / `git add *`(含 `git -C x add` 全局 flag 变体)拦截;Rule 2:`gradle.token.properties` / `~/.gradle/gradle.properties` / `local.properties` 等敏感文件的 git 操作拦截;Rule 3:`app/libs/*.aar`(PaddleOCR SDK,~70 MB,不被每次 build 重新生成)的破坏性操作(`rm` / `rm -rf` / `mv` / `del` / `unlink` / `truncate` / `git rm` / `find ... -delete`)拦截。规则命中 exit 2 + stderr 解释(v0.1.43 regex 加固 23 case 自测通过) |
+| `.claude/hooks/post-tool-use.js`(v0.1.49 落地,匹配 Bash) | Claude Code 每次 Bash `git commit` 后自动跑 | 拦截任何 `Co-Authored-By:` trailer(含隐性 `AlexMultiAgent <noreply@anthropic.com>` 形式,2026-08-20 audit 发现历史 commit 全部命中)。规则命中 exit 2 + stderr 给 amend 命令。**PostToolUse 而非 PreToolUse** — trailer 检查必须等 commit 落地后看 git log,PreToolUse 看不到 heredoc commit msg。**与 user-level `~/.claude/hooks/block-claude-coauthor.py` 互补**:user-level 走 `Claude` 字符串正则(PreToolUse 拦截显性 `Co-Authored-By: Claude`),本项目 hook 走 `Co-Authored-By:` 行匹配(PostToolUse 拦截任何形式 — 包括 2026-08-20 audit 发现的 anthropic-email 隐性形式) |
+| `.claude/hooks/validate-rule-json.js`(v0.1.49 落地,匹配 Edit\|Write\|MultiEdit) | Claude Code 每次 Edit/Write 修改 `app/src/main/assets/rules/*.json` 后自动跑 | 落地后回读磁盘文件做 4 项校验:(1) JSON 语法 (2) 顶层 `version` 整数 (3) `rules` 非空数组 (4) `id` 全文件唯一。规则命中 exit 2 + stderr。比 `testDebugUnitTest` 早 ~30s 抓到错误(从 Edit 落地到测试运行之间),常见失误:误删版本号 / 复制粘贴时 id 撞车 |
 | `.claude/hooks/user-prompt-submit.js` | Claude Code 每次 user prompt 提交时自动跑 | `.remember/` 历史 buffer / today-*.md / recent.md / archive.md / core-memories.md 搜索触发器(用户消息含 "history" / "remember" 时返回上下文锚点) |
+| `.claude/hookify.block-coauthor-trailer.local.md`(v0.1.49 落地,gitignored) | hookify 声明式规则,PreToolUse Bash | `git commit ...` 命令字符串含 `Co-Authored-By` 时拦截 exit 2(显性 `Claude <x@y>` + 隐性 `AlexMultiAgent <anthropic.com>` 都拦)。**与上述 3 层互补形成 defense-in-depth**:user-level `block-claude-coauthor.py`(PreToolUse,`Claude` 字符串) + 本项目 hookify(PreToolUse,任意 Co-Authored-By 正则) + 本项目 `post-tool-use.js`(PostToolUse,commit 落地后回扫)— 3 层同时存在才能挡住所有已知 + 隐式形式 |
+| `.claude/hookify.warn-gradlew-clean.local.md`(v0.1.49 落地,gitignored) | hookify 声明式规则,PreToolUse Bash | `gradlew[.bat] ... clean` 命令 warn(不 block,留出口)+ 提示合法触发条件(`modelProfile` 切换 / `gradle.properties` 改 / AGP bump / corrupt `.gradle/` 恢复)与替代方案(`assembleDebug` 增量 / `--stop` daemon / `clean<Task>` 单 task) |
+| `compliance-checker` agent (`.claude/agents/compliance-checker.md`) | Claude-only — release 前自动 dispatch | 11 项 release hygiene 审计:v1 signing / cert-pin / PAT 未 stage / Co-Authored-By / 作者身份 / assembleRelease 链路 / Gradle+AGP 版本 / JDK 17 / 规则库新鲜度 |
+| `rule-expander` agent (`.claude/agents/rule-expander.md`) | Claude-only — 规则扩写时 dispatch | `add-rule-entry` skill 的研究 + 实现 + 测试验证完整 10 阶段流程 |
+| `adb-runner` agent (`.claude/agents/adb-runner.md`,v0.1.49 落地) | Claude-only — 真机操作时 dispatch | 封装 CLAUDE.md §"Instrumented test" 5 个 adb gotcha(ghost state / logcat ring buffer / cold vs warm / runBlocking Unit / `connectedDebugAndroidTest` 不接 `--tests`)+ Gitea proxy bypass + GitHub SSH 路由。`/fixture-audit-add` Stage 4 内部消费此 agent |
+| `regulation-freshness-checker` agent (`.claude/agents/regulation-freshness-checker.md`,v0.1.49 落地) | Claude-only — 法规新鲜度审计时 dispatch | 扫 `ad_signage_rules.json` + `food_label_rules.json` 全部 `regulation` 字段,确保都引 `知识库/<域>/<现行>.md` 而非 `知识库/已废止/`。WebSearch 优先级:`flk.npc.gov.cn` > `samr.gov.cn` > `openstd.samr.gov.cn` > `gov.cn`。2026-08-27 批量清理后无人值守,新法规上线 / 旧法规过渡期到期都可能造成 drift |
+| `rule-coverage-analyzer` agent (`.claude/agents/rule-coverage-analyzer.md`,v0.1.49 落地) | Claude-only — 覆盖率分析时 dispatch | 给定 audit{N},从 `coverage_matrix.md` + `ad_signage_rules.json` 聚合 per-rule fixture_count 与 per-fixture hit_count,产出 P0-P4 优先级扩展队列(未覆盖 category cluster / Severity=Violation 未覆盖 / Severity=Warning 未覆盖 / Severity=Info 未覆盖)。audit71 = 71 fixtures × 129 rules ≈ 9159 cell,30 分钟手扫压成一次聚合 |
 
 **关键边界**:`icevision-release` 发版后 smoke 校验通过 → 才调用 `project-commit` 走 Release 三段式(确保 tag SHA = APK SHA = JSON SHA,避免 v0.1.14 那种 APK live 但 JSON 旧版本的 drift)。
 

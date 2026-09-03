@@ -14,6 +14,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.icespiritai.offline.domain.RuleHit
 import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.domain.ViolationReport
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import org.junit.After
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -95,7 +98,10 @@ class ExportActionShareTest {
             timestampMs = 1_700_000_000_000L,
         )
 
-        ExportAction.share(appCtx, report, appVersion = "0.0.0-androidTest")
+        ExportAction.share(
+            appCtx, report, appVersion = "0.0.0-androidTest",
+            ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+        )
 
         // 1. evidence zip landed in cacheDir/evidence/.
         val expected = File(appCtx.cacheDir, "evidence/evidence_${report.timestampMs}.zip")

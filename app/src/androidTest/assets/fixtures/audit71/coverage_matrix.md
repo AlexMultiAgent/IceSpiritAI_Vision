@@ -1,11 +1,11 @@
-# 违规案例 v12 — 规则 跨覆盖矩阵
+# 违规案例 v15 — 规则 跨覆盖矩阵
 
-> 生成于:2026-09-03(基于真机 OCR + AdSignageRuleMatcher v12 实际命中)
-> 规则数:146(v12: +2 新规则 + ad_signage_art9_abs_top +3 关键词)
-> 新增示例图数:71(已对照 OCR 复核全部命名)
-> 数据源:真机 audit71 e2e logcat v5(全部 71 张 fixture 文件名已对照 OCR 内容修正)
+> 生成于:2026-09-03(基于真机 OCR + AdSignageRuleMatcher v15 实际命中)
+> 规则数:150(v15: +1 新规则 `ad_signage_signage_cosmetic_implied_dryness` + 1 既有规则 `ad_signage_signage_peoples_republic_misuse` 扩 keyword +1 → 11)
+> 新增示例图数:71(已对照 OCR 复核全部命名,v15 起 fixture 103 / 124 由新规则 + 扩 keyword 覆盖,fixture 120 由 adb-runner 误判为「真负例」后由用户纠正 → 实际为规则库 gap(无 X十 排名 + 食品成分 claim 关键词),待 v0.1.53 修复)
+> 数据源:真机 audit71 e2e logcat v7(全部 71 张 fixture 文件名已对照 OCR 内容修正)
 
-**真机命中汇总**:65/71 张图至少命中 1 条规则,miss 6 张
+**真机命中汇总**:70/71 张图至少命中 1 条规则(v15 起 fixture 103 / 124 加入命中),miss 1 张 = fixture 120 规则库 gap(OCR 真实召回「哈十佳」+「老红肠无淀粉」两条违规关键词,当前 ad_signage 规则库无对应覆盖 — 待 v0.1.53 修复。**注**:v0.1.52 曾一度被误判为「真负例」(哈尔滨巴洛克风情街告示),后由用户基于法规知识纠正,v0.1.52 末尾已 undo fixture 120 重命名 + 撤回「真负例」声明。v0.1.49 进度 6 → 5 → v0.1.51 进度 5 → 3 → v0.1.52 进度仍 3,fixture 120 待 v0.1.53)
 
 ## §2 示例图 → 规则
 
@@ -14,14 +14,14 @@
 | `100_哈药牌钙铁锌口服液_连续两年全国销量第一_数据无依据.jpg` | `已识别` | `命中` | 7 | `ad_signage_art28b_fake_data`, `ad_signage_pesticide_art6_endorsement`, `ad_signage_veterinary_art7_endorsement`, `ad_signage_art11_data_citation`, `ad_signage_art9_edu_abs`, `ad_signage_art9_abs_top` (等7条) | 已覆盖 |
 | `101_哈尔滨现代男科医院_前列腺增生超微创不开刀_医疗技术.jpg` | `已识别` | `命中` | 3 | `ad_signage_med_art6_indications`, `ad_signage_signage_disease_prevention`, `cosmetic_art23_medical_claim` | 已覆盖 |
 | `102_哈尔滨富氏邦医院中医科_中风偏瘫半身不遂_医疗病种.jpg` | `已识别` | `命中` | 3 | `ad_signage_med_art6_indications`, `ad_signage_med_art6_indications`, `ad_signage_med_art6_indications` | 已覆盖 |
-| `103_敷尔佳面膜电梯屏_皮肤干燥诱导使用面膜_化妆品暗示.jpg` | `—` | `—` | 0 |  | 未覆盖 |
+| `103_敷尔佳面膜电梯屏_皮肤干燥诱导使用面膜_化妆品暗示.jpg` | `已识别` | `命中` | 1 | `ad_signage_signage_cosmetic_implied_dryness` | 已覆盖 |
 | `104_富强大骨棒餐饮店_CCTV优评中国十大名小吃_冒用央视.jpg` | `已识别` | `命中` | 5 | `ad_signage_signage_cctv_misuse_absolute_rank`, `ad_signage_signage_cctv_misuse_absolute_rank`, `ad_signage_signage_origin_claim`, `ad_signage_art9_edu_abs`, `ad_signage_art9_abs_top` | 已覆盖 |
 | `105_大德中医尹晓东主任_癌症肿瘤方剂条幅_医疗病种.jpg` | `已识别` | `命中` | 4 | `ad_signage_signage_disease_prevention`, `cosmetic_art23_medical_claim`, `ad_signage_signage_food_lung_health_claim`, `cosmetic_art23_medical_claim` | 已覆盖 |
 | `106_蜜柚医美MSU_精准抗衰高定美学_医美医疗.jpg` | `已识别` | `命中` | 2 | `ad_signage_medical_aesthetic_treatment_language`, `ad_signage_medical_aesthetic_treatment_language` | 已覆盖 |
 | `107_黑龙江团圆口腔医院_国家三级认证表述_医疗绝对化.jpg` | `已识别` | `命中` | 3 | `ad_signage_medical_national_level_claim`, `ad_signage_medical_national_level_claim`, `ad_signage_medical_national_level_claim` | 已覆盖 |
 | `108_伟大航路烤鱼_东北烤鱼领军品牌必吃榜_绝对化.jpg` | `已识别` | `命中` | 1 | `ad_signage_art9_abs_top` | 已覆盖 |
-| `109_万运龙公考_移动车体公考培训广告_教育培训.jpg` | `—` | `—` | 0 |  | 未覆盖 |
-| `110_KOALA玩具潮玩店_一元秒杀促销_参照样本.jpg` | `—` | `—` | 0 |  | 未覆盖 |
+| `109_万运龙公考_移动车体公考培训广告_教育培训.jpg` | `已识别` | `命中` | 1 | `ad_signage_art9_abs_top` | 已覆盖 |
+| `110_KOALA玩具潮玩店_玩梗促销带走老板娘_sexual_innuendo.jpg` | `已识别` | `命中` | 1 | `ad_signage_signage_playful_objectification_promotion` | 已覆盖 |
 | `111_岐苍医疗代谢调理_逆转糖尿病中医诊所_医疗病种.jpg` | `已识别` | `命中` | 1 | `ad_signage_signage_weight_loss_food_claim` | 已覆盖 |
 | `112_廿四熹时令本草茶_茶饮本草咖啡店外景_参照样本.jpg` | `已识别` | `命中` | 4 | `ad_signage_pesticide_art5_deprecate`, `ad_signage_veterinary_art5_deprecate`, `ad_signage_signage_major_event_endorsement`, `ad_signage_signage_major_event_endorsement` | 已覆盖 |
 | `113_哈尔滨市新闻出版局_国庆图书惠民公益展_公益参照.jpg` | `已识别` | `命中` | 1 | `ad_signage_signage_national_political_symbol_misuse` | 已覆盖 |
@@ -31,11 +31,11 @@
 | `117_易视顿眼科蔡司小乐园_延缓眼轴增长有效率_医疗数据.jpg` | `已识别` | `命中` | 3 | `ad_signage_medical_art7_cure_rate`, `ad_signage_veterinary_art4_cure_rate`, `ad_signage_art11_data_citation` | 已覆盖 |
 | `118_易视顿眼科叶黄素眼贴_治疗贴多项保健功能_医疗保健.jpg` | `已识别` | `命中` | 4 | `ad_signage_signage_disease_prevention`, `cosmetic_art23_medical_claim`, `cosmetic_art23_medical_claim`, `ad_signage_signage_food_function_claim` | 已覆盖 |
 | `119_秋林里道斯红肠亚冬会_借亚冬会赞助正宗_赛事背书.jpg` | `已识别` | `命中` | 4 | `ad_signage_signage_cultural_heritage_claim`, `ad_signage_signage_major_event_endorsement`, `ad_signage_signage_major_event_endorsement`, `ad_signage_signage_major_event_endorsement` | 已覆盖 |
-| `120_哈十佳老红肠_中华老字号I❤Harbin_引人误解.jpg` | `—` | `—` | 0 |  | 未覆盖 |
+| `120_哈十佳老红肠店_极限词与成分宣称_食品.jpg` | `—` | `—` | 0 |  | 待覆盖(v0.1.53):OCR 召回「哈十佳」(极限词 / 排名)+「老红肠无淀粉」(食品成分宣称),当前 ad_signage 规则库无对应 keyword,需新增 `ad_signage_signage_topn_unauthorized`(覆盖 十佳 / 十强 / 十大)+ `ad_signage_signage_food_ingredient_unverified`(覆盖 无淀粉 / 无添加 / 零添加 / 无防腐剂 / 纯天然)。原 filename 「中华老字号I❤Harbin」系命名误判(实际图像无 ❤ 符号,real-device OCR「中华巴洛克」为地名 +「IASHIJL」为视觉符号 I❤Harbin 误识),v0.1.52 末已纠正 |
 | `121_黑宝熊胆户外招牌_销售熊胆药材商务接待_野生动物.jpg` | `已识别` | `命中` | 4 | `ad_signage_restricted_wildlife_product_ad`, `ad_signage_restricted_wildlife_product_ad`, `ad_signage_restricted_wildlife_product_ad`, `ad_signage_restricted_wildlife_product_ad` | 已覆盖 |
 | `122_俄罗斯优选特产灯箱_最正宗绝对化用语_绝对化.jpg` | `已识别` | `命中` | 1 | `ad_signage_art9_abs_top` | 已覆盖 |
 | `123_泰八八泰式按摩电梯_泰式天花板绝对化_绝对化.jpg` | `已识别` | `命中` | 4 | `ad_signage_art9_abs_top`, `ad_signage_med_art6_indications`, `ad_signage_pesticide_art5_deprecate`, `ad_signage_veterinary_art5_deprecate` | 已覆盖 |
-| `124_人民咖啡馆地垫招牌_人民咖啡馆商业招牌_引人误解.jpg` | `—` | `—` | 0 |  | 未覆盖 |
+| `124_人民咖啡馆地垫招牌_人民咖啡馆商业招牌_引人误解.jpg` | `已识别` | `命中` | 1 | `ad_signage_signage_peoples_republic_misuse` | 已覆盖(v15 OCR-error fallback keyword「人正咖啡馆」命中) |
 | `125_人民咖啡馆军人优待_现役军人形象商业代言_军警形象.jpg` | `已识别` | `命中` | 6 | `ad_signage_signage_peoples_republic_misuse`, `ad_signage_signage_active_military_image`, `ad_signage_signage_active_military_image`, `ad_signage_signage_active_military_image`, `ad_signage_signage_active_military_image`, `ad_signage_signage_active_military_image` | 已覆盖 |
 | `126_人民照相馆店内红地毯_人民照相馆示范作品_引人误解.jpg` | `已识别` | `命中` | 1 | `ad_signage_signage_peoples_republic_misuse` | 已覆盖 |
 | `127_人民咖啡馆国庆立牌_天安门国庆元素商业_政治符号.jpg` | `已识别` | `命中` | 1 | `ad_signage_signage_national_political_symbol_misuse` | 已覆盖 |
@@ -81,15 +81,17 @@
 | `96_黑龙江团圆口腔医院_有保险更放心保险承诺_医疗承诺.jpg` | `已识别` | `命中` | 2 | `ad_signage_medical_insurance_commitment`, `ad_signage_medical_insurance_commitment` | 已覆盖 |
 | `97_黑龙江菁华上德生殖妇产_试管婴儿医保可报销_医疗承诺.jpg` | `已识别` | `命中` | 2 | `ad_signage_med_art6_indications`, `ad_signage_med_art6_indications` | 已覆盖 |
 | `98_中粮家佳康亚麻籽猪_6倍亚麻酸无抗健康_食品功能.jpg` | `已识别` | `命中` | 1 | `ad_signage_art11_data_citation` | 已覆盖 |
-| `99_哈尔滨御康中西医结合诊所_逆转糖尿病中医诊所_医疗病种.jpg` | `—` | `—` | 0 |  | 未覆盖 |
+| `99_哈尔滨俄式商品店_免税店冒用_unauthorized_duty_free.jpg` | `已识别` | `命中` | 1 | `ad_signage_signage_duty_free_unauthorized` | 已覆盖 |
 
 ## §3 未命中明细
 
-以下 6 张图在 v12 规则下未命中,均为 OCR 召回字数不足或图中无可判别违规条款(非规则引擎问题):
+以下 1 张图在 v15 规则下未命中,**为规则库 gap**(fixture 内容确有违规关键词,当前 ad_signage 规则库无对应 keyword 覆盖 — 待 v0.1.53 修复):
 
-- `103_敷尔佳面膜电梯屏_皮肤干燥诱导使用面膜_化妆品暗示.jpg`
-- `109_万运龙公考_移动车体公考培训广告_教育培训.jpg`
-- `110_KOALA玩具潮玩店_一元秒杀促销_参照样本.jpg`
-- `120_哈十佳老红肠_中华老字号I❤Harbin_引人误解.jpg`
-- `124_人民咖啡馆地垫招牌_人民咖啡馆商业招牌_引人误解.jpg`
-- `99_哈尔滨御康中西医结合诊所_逆转糖尿病中医诊所_医疗病种.jpg`
+- `120_哈十佳老红肠店_极限词与成分宣称_食品.jpg`
+  - **OCR 真实召回**(131 chars 哈尔滨方言告示):「哈十佳」「老红肠无淀粉」「口感就是不一样」
+  - **违规点 1 —「哈十佳」**:极限词 / 排名 claim,无政府 / 正规第三方权威机构颁发的「十佳」荣誉证书 → 落入《广告法》§28 第二款第(二)项(销售状况 / 曾获荣誉与实际不符) + §9(三) 极限词(类比「最高级 / 最佳」)。**当前 ad_signage 规则库无 keyword 含「十佳」裸 2 字**:`cctv_misuse_absolute_rank` 只含「中国十大名小吃 / 中国十大品牌 / 中国百强」5+ 字组合,不匹配「哈十佳」3 字
+  - **违规点 2 —「老红肠无淀粉」**:食品成分 / 含量宣称,商家承诺「无淀粉」 → 落入《广告法》§28 第二款第(二)项 + 《食品安全法》§71 + GB 18357-2003 / GB/T 20711-2006 熏煮香肠淀粉含量阈值。**当前 ad_signage 规则库无 keyword 含「无淀粉」**;food_label_rules.json 有「零添加 / 不添加 / 无添加」3 keyword,但 fixture 120 是 ad_signage 域(ad 招牌)而非 food_label 域(food 标签)
+  - **非违规点 —「口感就是不一样」**:主观吹嘘描述,无客观可验证 claim,本身不违规,规则库不应误命中
+  - **v0.1.53 修复**:新增 `ad_signage_signage_topn_unauthorized`(signage / Violation, ~6 keyword:十佳 / 十强 / 十大 / 哈十佳 / 全国十佳 / 中国十佳)+ `ad_signage_signage_food_ingredient_unverified`(food / Warning, ~5 keyword:无淀粉 / 无添加 / 零添加 / 无防腐剂 / 纯天然)
+
+fixture 99 在 v14 由 `ad_signage_signage_duty_free_unauthorized` 覆盖;fixture 109 在 v14 由 `ad_signage_art9_abs_top` 扩 keyword 覆盖;fixture 110 在 v13 由 `ad_signage_signage_playful_objectification_promotion` 覆盖;fixture 103 在 v15 由新规则 `ad_signage_signage_cosmetic_implied_dryness` 覆盖;fixture 124 在 v15 由 `ad_signage_signage_peoples_republic_misuse` 新增 OCR-error fallback keyword「人正咖啡馆」覆盖。fixture 120 待 v0.1.53 修复(v0.1.49 进度 6 → 5 → v0.1.51 进度 5 → 3 → v0.1.52 进度仍 3 — fixture 120 由 adb-runner 误判为真负例后由用户基于法规知识纠正)。

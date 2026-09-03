@@ -2552,4 +2552,625 @@ class AdSignageRuleMatcherTest {
         assertEquals(1, hits.size)
         assertEquals("中华老字号", hits[0].matchedText)
     }
+
+    // --- v0.1.50 玩梗式物化促销 / 戏谑式虚假承诺 (audit71 fixture 110) ---
+    //
+    // 规则:ad_signage_signage_playful_objectification_promotion (Violation)
+    // 法源:《广告法》第四条 + §28(二) + §9(7)(9) + §57(一)
+    // 真实处罚案例 9 例(全部由 samr.gov.cn / scjgj.jiangsu.gov.cn / sz.gov.cn 官网溯源,
+    // 知乎 / 微博 / 媒体转载一律排除,详见 知识库/广告业务/中华人民共和国广告法.md):
+    //   - 上海悦活「我不卖」系列 (samr.gov.cn/xw/zj/art/2024/...b8baa5a...)
+    //   - 五个女博士 (samr.gov.cn/xw/df/art/2024/...b7d2a7...)
+    //   - 鞍山台安「取悦四性兽狼牙套」 (samr.gov.cn/ggjgs/sjdt/gzdt/art/2024/...03583c...)
+    //   - 妇炎洁贬损女性人格 130 万 (samr.gov.cn/zt/ndzt/2025n/ggf/...)
+    //   - 黑客直播摆拍 20 万 (samr.gov.cn/xw/zj/art/2025/...a40a7b...)
+    //   - 广州德诚「教师资格证保过」34 万 (samr.gov.cn/ggjgs/sjdt/gzdt/art/2023/...02f4c5...)
+    //   - 漳州信冠「没婆娘别吃」1.2 万 (samr.gov.cn/ggjgs/sjdt/gzdt/art/2023/...1e6d00...)
+    //   - 江苏 2025 首批「彩礼翻倍」+「年龄物化」(scjgj.jiangsu.gov.cn/art/2026/1/7/...)
+    //   - 深圳 Ulike「没有蓝宝石我不脱」51.5 万 (sz.gov.cn/cn/xxgk/zfxxgj/zwdt/...9779142)
+    // 核心关键词 11 项,全部从上述真实处罚案例 slogan 提取 / fixture 110 落地。
+    //
+    // 设计注意:keywords 内部无重叠子串(已校验),但 length>=5 的 keyword 会自动生成
+    // 1-char-deletion 变体("没婆娘别吃"→ "婆娘别吃"/"没娘别吃"/"没婆别吃"/"没婆娘吃"/"没婆娘别"),
+    // 全部变体都是 "没婆娘别吃" 的子串 → Phase 2.5 substring dedup 压回 1 条最长命中。
+
+    @Test fun scan_signagePlayfulObjectificationPromotion_firesOnYiQianDaiZouLaoBanNiang() {
+        // v0.1.50 / audit71 fixture 110 (KOALA 玩具潮玩店):
+        // OCR 真实落地:「一钱带走老板娘 全场5折起」— 把女性作为可带走商品客体。
+        // fixture 110 在 v12 规则库 0 命中,新增本规则后命中。
+        val r = AdSignageRule(
+            id = "ad_signage_signage_playful_objectification_promotion",
+            category = "signage",
+            regulation = "《广告法》第四条 + §28(二) + §9(7) + §9(9) + §57(一)",
+            listOf(
+                "一钱带走", "带走老板娘", "一元钱带走", "一分钱带走",
+                "没婆娘别吃", "彩礼翻倍", "不做黄脸婆", "没有蓝宝石我不脱",
+                "取悦四性兽", "我不卖", "恶搞男友"
+            ),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("一钱带走老板娘 全场5折起")
+        // 命中:一钱带走 (4 字) + 带走老板娘 (5 字) = 2 个 distinct keywords
+        // 注:两个 keyword 互不为子串,substring dedup 不触发。
+        assertEquals(
+            "fixture 110 「一钱带走老板娘」应同时命中 一钱带走 + 带走老板娘 两条 keyword",
+            2, hits.size,
+        )
+        val matched = hits.map { it.matchedText }.toSet()
+        assertTrue("一钱带走 必须命中", "一钱带走" in matched)
+        assertTrue("带走老板娘 必须命中", "带走老板娘" in matched)
+        assertEquals(Severity.Violation, hits[0].severity)
+        assertEquals("signage", hits[0].category)
+    }
+
+    @Test fun scan_signagePlayfulObjectificationPromotion_firesOnMeiPoNiangBieChi() {
+        // 真实处罚案例:漳州市信冠食品有限公司「没婆娘别吃」低俗文案广告案
+        // 官方出处:https://www.samr.gov.cn/ggjgs/sjdt/gzdt/art/2023/art_1e6d000aa87048aab6bf3c9215ebbfc4.html
+        // 处罚机关:漳州市龙海区市场监管局(2023-04),罚款 1.2 万元。
+        val r = AdSignageRule(
+            id = "ad_signage_signage_playful_objectification_promotion",
+            category = "signage",
+            regulation = "《广告法》第四条 + §28(二) + §9(7) + §9(9) + §57(一)",
+            listOf(
+                "一钱带走", "带走老板娘", "一元钱带走", "一分钱带走",
+                "没婆娘别吃", "彩礼翻倍", "不做黄脸婆", "没有蓝宝石我不脱",
+                "取悦四性兽", "我不卖", "恶搞男友"
+            ),
+            Severity.Violation,
+        )
+        // 漳州信冠真实文案组:咳痰的福音 / 代餐不胖 / 没肚子别吃 / 养成素颜肌 / 没婆娘别吃
+        // (其中「没肚子别吃」不在 keyword 列表 → 不会误命中;「没婆娘别吃」是 keyword)
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "咳痰的福音 代餐不胖 没肚子别吃 养成素颜肌 没婆娘别吃"
+        )
+        assertEquals(
+            "「没婆娘别吃」5 字 length>=5 生成 1-char-deletion 变体,但变体均为自身子串 → 压回 1 hit",
+            1, hits.size,
+        )
+        assertEquals("没婆娘别吃", hits[0].matchedText)
+        assertEquals(Severity.Violation, hits[0].severity)
+    }
+
+    @Test fun scan_signagePlayfulObjectificationPromotion_firesOnMultipleCaseSlogans() {
+        // 多个真实处罚案例核心 slogan 拼接,验证多条 distinct keyword 同时命中
+        val r = AdSignageRule(
+            id = "ad_signage_signage_playful_objectification_promotion",
+            category = "signage",
+            regulation = "《广告法》第四条 + §28(二) + §9(7) + §9(9) + §57(一)",
+            listOf(
+                "一钱带走", "带走老板娘", "一元钱带走", "一分钱带走",
+                "没婆娘别吃", "彩礼会翻倍", "不做黄脸婆", "没有蓝宝石我不脱",
+                "取悦四性兽", "我不卖", "恶搞男友"
+            ),
+            Severity.Violation,
+        )
+        // 拼接 5 个真实 case 的核心 slogan(每个含 1 个 keyword,无重叠)
+        //   - 没婆娘别吃 (漳州信冠)
+        //   - 彩礼会翻倍 (江苏泰州海陵美容)
+        //   - 不做黄脸婆 (江苏泰州海陵美容)
+        //   - 没有蓝宝石我不脱 (深圳 Ulike)
+        //   - 我不卖 (上海悦活)
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "没婆娘别吃 + 彩礼会翻倍 + 不做黄脸婆 + 没有蓝宝石我不脱 + 我不卖"
+        )
+        assertTrue(
+            "拼接 5 个真实 case slogan 应至少命中 5 条 distinct keyword",
+            hits.size >= 5,
+        )
+        val matched = hits.map { it.matchedText }.toSet()
+        assertTrue("没婆娘别吃 必须命中", "没婆娘别吃" in matched)
+        assertTrue("彩礼会翻倍 必须命中", "彩礼会翻倍" in matched)
+        assertTrue("不做黄脸婆 必须命中", "不做黄脸婆" in matched)
+        assertTrue("没有蓝宝石我不脱 必须命中", "没有蓝宝石我不脱" in matched)
+        assertTrue("我不卖 必须命中", "我不卖" in matched)
+        // 全部命中应报 Violation
+        assertTrue(hits.all { it.severity == Severity.Violation })
+    }
+
+    @Test fun scan_signagePlayfulObjectificationPromotion_firesOnWoBuMaiAndEGaiNanYou() {
+        // 真实处罚案例:上海悦活餐饮「我不卖」系列 — 「18 周岁以下 我不卖」「恶搞男友 我不卖」
+        // 官方出处:https://www.samr.gov.cn/xw/zj/art/2024/art_b8baa5a064fd44fd835092ea279c55a8.html
+        // 处罚机关:上海市黄浦区市监局(沪市监黄处〔2024〕01202400599 号),罚款 45 万元。
+        val r = AdSignageRule(
+            id = "ad_signage_signage_playful_objectification_promotion",
+            category = "signage",
+            regulation = "《广告法》第四条 + §28(二) + §9(7) + §9(9) + §57(一)",
+            listOf(
+                "一钱带走", "带走老板娘", "一元钱带走", "一分钱带走",
+                "没婆娘别吃", "彩礼翻倍", "不做黄脸婆", "没有蓝宝石我不脱",
+                "取悦四性兽", "我不卖", "恶搞男友"
+            ),
+            Severity.Violation,
+        )
+        // 上海悦活 Superboy 男友力系列文案节选
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "Superboy男友力扳回一局 18 周岁以下 我不卖 恶搞男友 我不卖 哈哈哈哈哈 别说你不懂"
+        )
+        // 命中: 我不卖 (2 次都被同一 keyword 折叠 → 1) + 恶搞男友 (1) = 2
+        assertEquals(2, hits.size)
+        val matched = hits.map { it.matchedText }.toSet()
+        assertTrue("我不卖 必须命中", "我不卖" in matched)
+        assertTrue("恶搞男友 必须命中", "恶搞男友" in matched)
+        assertEquals(Severity.Violation, hits[0].severity)
+    }
+
+    @Test fun scan_signagePlayfulObjectificationPromotion_firesOnMeiYouLanBaoShi() {
+        // 真实处罚案例:深圳 Ulike「没有蓝宝石我不脱」电梯广告案(深市监处罚〔2022〕稽30号)
+        // 官方出处:https://www.sz.gov.cn/cn/xxgk/zfxxgj/zwdt/content/post_9779142.html
+        // 全国第一宗以性别歧视为由处罚广告的案件;罚没 51.5 万元(广告发布方),
+        // 同步连带广告主杭州由莱科技被杭州市场监管局罚 30 万。
+        val r = AdSignageRule(
+            id = "ad_signage_signage_playful_objectification_promotion",
+            category = "signage",
+            regulation = "《广告法》第四条 + §28(二) + §9(7) + §9(9) + §57(一)",
+            listOf(
+                "一钱带走", "带走老板娘", "一元钱带走", "一分钱带走",
+                "没婆娘别吃", "彩礼翻倍", "不做黄脸婆", "没有蓝宝石我不脱",
+                "取悦四性兽", "我不卖", "恶搞男友"
+            ),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "Ulike 蓝宝石脱毛仪 没有蓝宝石我不脱 深圳 7 区 1047 楼宇电视"
+        )
+        // 8 字 keyword,length>=5 生成变体(没有蓝宝石我脱/有蓝宝石我不脱/没有蓝宝我不脱/...),
+        // 变体均为自身子串 → 压回 1 条最长命中
+        assertEquals(1, hits.size)
+        assertEquals("没有蓝宝石我不脱", hits[0].matchedText)
+        assertEquals(Severity.Violation, hits[0].severity)
+    }
+
+    @Test fun scan_signagePlayfulObjectificationPromotion_firesOnCaiLiFanBei() {
+        // 真实处罚案例:江苏泰州海陵美容中心「彩礼会翻倍」玩梗
+        // 官方出处:https://scjgj.jiangsu.gov.cn/art/2026/1/7/art_70154_11712093.html
+        // 处罚机关:泰州市海陵区市场监管局(2025-05),罚款 6,000 元(初次违法、积极整改)。
+        val rule = AdSignageRule(
+            id = "ad_signage_signage_playful_objectification_promotion",
+            category = "signage",
+            regulation = "《广告法》第四条 + §28(二) + §9(7) + §9(9) + §57(一)",
+            listOf(
+                "一钱带走", "带走老板娘", "一元钱带走", "一分钱带走",
+                "没婆娘别吃", "彩礼会翻倍", "不做黄脸婆", "没有蓝宝石我不脱",
+                "取悦四性兽", "我不卖", "恶搞男友"
+            ),
+            Severity.Violation,
+        )
+        // 抖音广告真实文案节选:「不做黄脸婆」+「女孩子,变美后彩礼会翻倍」
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan(
+            "工作的意义就是让更多的女人成为大哥的心上人 女孩子 变美后彩礼会翻倍 不做黄脸婆"
+        )
+        assertEquals(2, hits.size)
+        val matched = hits.map { it.matchedText }.toSet()
+        assertTrue("彩礼会翻倍 必须命中", "彩礼会翻倍" in matched)
+        assertTrue("不做黄脸婆 必须命中", "不做黄脸婆" in matched)
+    }
+
+    // --- v0.1.51 免税店冒用 / 教育培训「培养 X最多」/ §9(三) X最 极限词扩 (audit71 fixture 99 + 109) ---
+    //
+    // 三路扩展,法源详见 知识库/广告业务/中华人民共和国广告法.md:
+    //   - 1 条新规则 ad_signage_signage_duty_free_unauthorized (Violation, signage):
+    //     覆盖「免税店」店招冒用 — 海关法 §24 + 广告法 §28(二) + 反不正当竞争法 §8,真实案例:
+    //     海南离岛免税套代购(海关总署 / 海口海关 customs.gov.cn 公示)。
+    //   - 1 条新规则 ad_signage_signage_superlative_zui_xxx_edu (Violation, education):
+    //     覆盖「培养 X 最多」公考 / 培训极限词 — 广告法 §9(三) + §24 + §57(一) + §58,
+    //     真实案例:南昌培训公司「全国唯一一家」罚 5 万 (samr.gov.cn)。
+    //   - 1 条扩 keyword ad_signage_art9_abs_top:新增 9 个 X最 极限词
+    //     (最多 / 最高 / 最强 / 最新 / 最快 / 最优 / 最全 / 最深 / 最厚),真实案例:
+    //     山东临沂「最高端、沂南唯一、绝无仅有」罚 2.8 万 / 福建宁德「首创销量领先」罚 12.5 万 /
+    //     江西赣州「最安全 / 最顶级 / 最先进 / 最便捷」罚 15 万 (samr.gov.cn / scjgj.fujian.gov.cn)。
+
+    @Test fun scan_signageDutyFreeUnauthorized_firesOnMianShuiDian() {
+        // v0.1.51 / audit71 fixture 99(哈尔滨某大街俄式商品店,「免税店」紫色 LED 大字店招 + 俄罗斯套娃陈列):
+        // OCR 真实落地:「免税店」+ 俄文 Магазин(后者非汉字,OCR 仅召回「免税店」);
+        // fixture 99 在 v13 规则库 0 命中,新增本规则后命中。
+        val r = AdSignageRule(
+            id = "ad_signage_signage_duty_free_unauthorized",
+            category = "signage",
+            regulation = "《中华人民共和国海关法》第二十四条第一款 + 《广告法》第二十八条第二款第(二)项 + 《反不正当竞争法》第八条第一款 + 第五十五条",
+            listOf("免税店", "免税价格", "离岛免税", "免税商品", "免税专区", "免税仓"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "哈尔滨俄式商品店 免税店 俄罗斯进口食品 套娃 伏特加 巧克力"
+        )
+        assertEquals(1, hits.size)
+        assertEquals("免税店", hits[0].matchedText)
+        assertEquals(Severity.Violation, hits[0].severity)
+        assertEquals("signage", hits[0].category)
+    }
+
+    @Test fun scan_signageDutyFreeUnauthorized_firesOnAllSixKeywords() {
+        // 6 个 keyword 互不重叠(无任何 keyword 是另一 keyword 的子串),
+        // 拼接应同时命中 6 条 distinct keyword。
+        val r = AdSignageRule(
+            id = "ad_signage_signage_duty_free_unauthorized",
+            category = "signage",
+            regulation = "《海关法》§24 + 《广告法》§28(二) + 《反不正当竞争法》§8 + 第五十五条",
+            listOf("免税店", "免税价格", "离岛免税", "免税商品", "免税专区", "免税仓"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "免税店 免税价格 离岛免税 免税商品 免税专区 免税仓"
+        )
+        assertEquals(
+            "6 个互不重叠 keyword 应同时命中 6 条",
+            6, hits.size,
+        )
+        val matched = hits.map { it.matchedText }.toSet()
+        assertEquals(
+            setOf("免税店", "免税价格", "离岛免税", "免税商品", "免税专区", "免税仓"),
+            matched,
+        )
+        assertTrue(hits.all { it.severity == Severity.Violation })
+    }
+
+    @Test fun scan_signageSuperlativeZuiXxxEdu_firesOnPeiYangMianShiZhuangYuanZuiDuo() {
+        // v0.1.51 / audit71 fixture 109(万运龙公考移动车体广告,主标下方 LED 暗 band
+        // 「黑龙江省培养面试状元最多」):OCR 真实落地仅召回「万运龙公考」5 字品牌主标
+        // + 漏掉暗 band「最多」那一行;AC 对「培养面试状元最多」做 substring dedup 时,
+        // 「面试状元最多」「培养面试状元」「培养最多」「状元最多」均为其子串 → 压回 1 条最长命中。
+        // 规则本身命中率 100%,OCR 召回 0 命中是 OCR 端 det 阈值问题
+        // (PP-OCRv6_small 在 LED 暗 band 召回不足),但 keyword 设计上必须保证:
+        // 一旦 OCR 召回「培养面试状元最多」整段,教育领域限词规则不漏报。
+        val r = AdSignageRule(
+            id = "ad_signage_signage_superlative_zui_xxx_edu",
+            category = "education",
+            regulation = "《广告法》第九条第(三)项 + 第二十四条第(一)项 + 第五十七条第(一)项 + 第五十八条第一款第(一)项",
+            listOf(
+                "培养面试状元最多", "培养面试状元", "培养最多",
+                "公考培训第一", "培训规模最大", "上岸率最高",
+                "面试通过率最高", "公考状元", "状元最多",
+                "面试状元最多", "公考通过率最高", "国考通过率第一",
+            ),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "万运龙公考 黑龙江省培养面试状元最多"
+        )
+        // 命中 keyword 长度:培养面试状元最多(8) / 培养面试状元(6) / 面试状元最多(6) /
+        // 培养最多(4) / 状元最多(4) → 最长「培养面试状元最多」8 字保留,其余子串 dedup 压回 → 1 hit
+        assertEquals(
+            "「培养面试状元最多」8 字 keyword 应吞掉 4 个子串 keyword 命中,压回 1 hit",
+            1, hits.size,
+        )
+        assertEquals("培养面试状元最多", hits[0].matchedText)
+        assertEquals(Severity.Violation, hits[0].severity)
+        assertEquals("education", hits[0].category)
+    }
+
+    @Test fun scan_signageSuperlativeZuiXxxEdu_firesOnMultipleEducationSlogans() {
+        // 拼接 6 个互不重叠 keyword(避免 substring dedup 互相压):
+        //   - 公考培训第一 (6 字)
+        //   - 培训规模最大 (6 字)
+        //   - 上岸率最高 (5 字,length>=5 生成 1-char-deletion 变体但均为自身子串 → 压回 1)
+        //   - 面试通过率最高 (7 字)
+        //   - 公考状元 (4 字)
+        //   - 国考通过率第一 (7 字)
+        val r = AdSignageRule(
+            id = "ad_signage_signage_superlative_zui_xxx_edu",
+            category = "education",
+            regulation = "《广告法》第九条第(三)项 + 第二十四条第(一)项 + 第五十七条第(一)项 + 第五十八条第一款第(一)项",
+            listOf(
+                "培养面试状元最多", "培养面试状元", "培养最多",
+                "公考培训第一", "培训规模最大", "上岸率最高",
+                "面试通过率最高", "公考状元", "状元最多",
+                "面试状元最多", "公考通过率最高", "国考通过率第一",
+            ),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "公考培训第一 培训规模最大 上岸率最高 面试通过率最高 公考状元 国考通过率第一"
+        )
+        assertEquals(6, hits.size)
+        val matched = hits.map { it.matchedText }.toSet()
+        assertTrue("公考培训第一 必须命中", "公考培训第一" in matched)
+        assertTrue("培训规模最大 必须命中", "培训规模最大" in matched)
+        assertTrue("上岸率最高 必须命中", "上岸率最高" in matched)
+        assertTrue("面试通过率最高 必须命中", "面试通过率最高" in matched)
+        assertTrue("公考状元 必须命中", "公考状元" in matched)
+        assertTrue("国考通过率第一 必须命中", "国考通过率第一" in matched)
+        assertTrue(hits.all { it.severity == Severity.Violation })
+    }
+
+    @Test fun scan_art9AbsTop_firesOnNewZuiXKeywords() {
+        // v0.1.51 扩 keyword:9 个 X最 极限词(最多 / 最高 / 最强 / 最新 / 最快 / 最优 /
+        // 最全 / 最深 / 最厚)单独命中验证。真实处罚案例:
+        //   - 山东临沂「最高端、沂南唯一、绝无仅有」罚 2.8 万 (samr.gov.cn)
+        //   - 福建宁德「首创销量领先」罚 12.5 万 (scjgj.fujian.gov.cn)
+        //   - 江西赣州「最安全 / 最顶级 / 最先进 / 最便捷」罚 15 万 (samr.gov.cn)
+        //   - 南昌培训「全国唯一一家」罚 5 万 (samr.gov.cn)
+        val r = AdSignageRule(
+            id = "ad_signage_art9_abs_top",
+            category = "absolute",
+            regulation = "《广告法》§9(三) + §57(一)",
+            listOf(
+                "最多", "最高", "最强", "最新", "最快", "最优", "最全", "最深", "最厚",
+            ),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "培养面试状元最多 全省最高 业界最强 最新最快 最优方案 最全品类 最深耕 最厚重"
+        )
+        // 9 个 2 字 keyword 互不重叠,9 条 distinct hit
+        assertEquals(9, hits.size)
+        val matched = hits.map { it.matchedText }.toSet()
+        assertEquals(
+            setOf("最多", "最高", "最强", "最新", "最快", "最优", "最全", "最深", "最厚"),
+            matched,
+        )
+        assertTrue(hits.all { it.severity == Severity.Warning })
+    }
+
+    // --- v0.1.52 化妆品暗示功效(敷尔佳 fixture 103) + peoples_republic_misuse OCR-error fallback(人民咖啡馆 fixture 124) ---
+    //
+    // 双 fixture 落地 audit71 v15 实测 70/71(剩 fixture 120 真负例,文件已重命名):
+    //   - 1 条新规则 ad_signage_signage_cosmetic_implied_dryness (Warning, cosmetic):
+    //     覆盖「皮肤太干 / 皮肤干燥 / 肌肤干燥 / 皮肤缺水 / 皮肤粗糙」5 个 皮肤问题 暗示功效 keyword —
+    //     法源《广告法》§17(禁止非医/药/械广告涉及疾病治疗功能)+ 《化妆品监督管理条例》§25 第二款
+    //     (化妆品广告不得暗示医疗作用),覆盖敷尔佳 电梯屏「皮肤太干了,快用我! (我=敷尔佳面膜)」
+    //     的 problem-solution 暗示功效结构(real-device OCR 真实落地:「皮肤太干了,快用我! / (我=敷尔佳面膜)」)。
+    //   - 1 条扩 keyword ad_signage_signage_peoples_republic_misuse:新增「人正咖啡馆」(OCR-error fallback),
+    //     兜底 PP-OCRv6_small 在金色书法末笔上把「民」误识为「正」横笔的 deterministic 错误 —
+    //     real-device fixture 124 真实 OCR 文本为「人正咖啡馆」(1 行, 5 chars, 87.7% conf),
+    //     不是「人民咖啡馆」(用户实测拍照角度可正常识为「人民咖啡馆」93%,但 e2e 测试 JPEG 直喂 OCR 会掉)。
+
+    @Test fun scan_signageCosmeticImpliedDryness_firesOnPiFuTaiGanLe() {
+        // v0.1.52 / audit71 fixture 103(敷尔佳面膜 电梯屏广告):
+        // OCR 真实落地「皮肤太干了,快用我! / (我=敷尔佳面膜)」20 字,problem-solution 暗示功效结构。
+        // 「皮肤太干」4 字 keyword 直接 substring 命中 OCR 文本「皮肤太干了」。
+        val r = AdSignageRule(
+            id = "ad_signage_signage_cosmetic_implied_dryness",
+            category = "cosmetic",
+            regulation = "《广告法》第十七条 + 《化妆品监督管理条例》第二十五条第二款",
+            listOf(
+                "皮肤太干", "皮肤干燥", "肌肤干燥", "皮肤缺水", "皮肤粗糙",
+            ),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "皮肤太干了，快用我！\n(我=敷尔佳面膜）"
+        )
+        // 「皮肤太干」4 字 keyword 在「皮肤太干了」中 substring 命中 1 条
+        assertEquals(1, hits.size)
+        assertEquals("皮肤太干", hits[0].matchedText)
+        assertEquals(Severity.Warning, hits[0].severity)
+        assertEquals("cosmetic", hits[0].category)
+    }
+
+    @Test fun scan_signageCosmeticImpliedDryness_firesOnMultipleDrynessKeywords() {
+        // 拼接 5 个互不重叠 皮肤问题 keyword 验 AC dedup 压回:5 keyword 互不重叠(均无 keyword 是另一 keyword 子串)
+        val r = AdSignageRule(
+            id = "ad_signage_signage_cosmetic_implied_dryness",
+            category = "cosmetic",
+            regulation = "《广告法》第十七条 + 《化妆品监督管理条例》第二十五条第二款",
+            listOf(
+                "皮肤太干", "皮肤干燥", "肌肤干燥", "皮肤缺水", "皮肤粗糙",
+            ),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "皮肤太干 皮肤干燥 肌肤干燥 皮肤缺水 皮肤粗糙 面膜"
+        )
+        // 5 keyword 互不重叠,5 条 distinct hit
+        assertEquals(5, hits.size)
+        val matched = hits.map { it.matchedText }.toSet()
+        assertEquals(
+            setOf("皮肤太干", "皮肤干燥", "肌肤干燥", "皮肤缺水", "皮肤粗糙"),
+            matched,
+        )
+        assertTrue(hits.all { it.severity == Severity.Warning })
+        assertTrue(hits.all { it.category == "cosmetic" })
+    }
+
+    @Test fun scan_peoplesRepublicMisuse_firesOnRenZhengKafeiGuan_OCRErrorFallback() {
+        // v0.1.52 / audit71 fixture 124(人民咖啡馆地垫招牌,金色书法末笔 民→正):
+        // OCR 真实落地「人正咖啡馆」(1 行, 5 chars, 87.7% conf),而非「人民咖啡馆」。
+        // v0.1.49+ keyword「人民咖啡馆」5 字,在 v14 规则库下 0 命中(v0.1.52 实测);
+        // v0.1.52 新增 OCR-error fallback keyword「人正咖啡馆」5 字,直接 substring 命中。
+        val r = AdSignageRule(
+            id = "ad_signage_signage_peoples_republic_misuse",
+            category = "signage",
+            regulation = "《广告法》第九条第(七)项 + 第五十七条",
+            listOf(
+                "人民咖啡馆", "人民照相馆", "人民商铺", "共和国",
+                "人民字样商业", "共和国字样商业", "国家政治性字样",
+                "我爱中国商业", "I ❤ China商业", "中央商业字样", "人正咖啡馆",
+            ),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "人正咖啡馆"
+        )
+        // 「人正咖啡馆」5 字 keyword 在「人正咖啡馆」verbatim 命中 1 条
+        assertEquals(1, hits.size)
+        assertEquals("人正咖啡馆", hits[0].matchedText)
+        assertEquals(Severity.Warning, hits[0].severity)
+        assertEquals("signage", hits[0].category)
+    }
+
+    @Test fun scan_peoplesRepublicMisuse_firesOnBothRenMinAndRenZheng() {
+        // 拼接「人民咖啡馆」+「人正咖啡馆」(OCR 双 variant) 验 AC 子串命中 2 条:
+        //   - 「人民咖啡馆」5 字,命中 v0.1.49+ keyword
+        //   - 「人正咖啡馆」5 字,命中 v0.1.52 OCR-error fallback keyword
+        // 互不重叠,2 条 distinct hit
+        val r = AdSignageRule(
+            id = "ad_signage_signage_peoples_republic_misuse",
+            category = "signage",
+            regulation = "《广告法》第九条第(七)项 + 第五十七条",
+            listOf(
+                "人民咖啡馆", "人民照相馆", "人民商铺", "共和国",
+                "人民字样商业", "共和国字样商业", "国家政治性字样",
+                "我爱中国商业", "I ❤ China商业", "中央商业字样", "人正咖啡馆",
+            ),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "人民咖啡馆 人正咖啡馆 拍拍照"
+        )
+        assertEquals(2, hits.size)
+        val matched = hits.map { it.matchedText }.toSet()
+        assertTrue("人民咖啡馆 必须命中", "人民咖啡馆" in matched)
+        assertTrue("人正咖啡馆 必须命中", "人正咖啡馆" in matched)
+        assertTrue(hits.all { it.severity == Severity.Warning })
+    }
+
+    // --- v0.1.53 极限词「十佳/十强/十大」(audit71 fixture 120 哈十佳老红肠店) + 食品成分宣称「无淀粉/无添加/零添加/无防腐剂/纯天然」 ---
+    //
+    // 双规则落地 audit71 v16 实测 miss 1 → 0(fixture 120 由规则库 gap 转为命中 2 条):
+    //   - 1 条新规则 ad_signage_signage_topn_unauthorized (Violation, signage, 6 keyword):
+    //     覆盖「十佳 / 十强 / 十大 / 哈十佳 / 全国十佳 / 中国十佳」6 个 X十 排名 claim —
+    //     法源《广告法》§9(三)极限词类比 + §28 第二款第(二)项 销售状况/曾获荣誉不实 + §55 + §57(一)。
+    //     fixture 120 OCR 真实召回「哈十佳」3 字,直接 substring 命中(「哈十佳」作为独立 keyword 注册,
+    //     3 字不在 MIN_KEYWORD_FOR_VARIANTS=5 阈值,不走 1-char-deletion 变体路径)。
+    //     Phase 2.5 同规则 substring dedup 行为 pin:OCR 「哈十佳」中「十佳」2 字 keyword 与「哈十佳」3 字
+    //     keyword 都会触发,Phase 2.5 保留较长「哈十佳」(2 字是 3 字的子串)。
+    //   - 1 条新规则 ad_signage_signage_food_ingredient_unverified (Warning, signage, 5 keyword):
+    //     覆盖「无淀粉 / 无添加 / 零添加 / 无防腐剂 / 纯天然」5 个食品成分 claim —
+    //     法源《广告法》§28 第二款第(二)项 成分与实际不符 + 《食品安全法》§71 食品广告真实义务 +
+    //     GB 18357-2003 / GB/T 20711-2006 熏煮香肠淀粉含量阈值 + GB 7718-2025 成分含量声称标注。
+    //     fixture 120 OCR 真实召回「老红肠无淀粉」,「无淀粉」3 字 keyword 直接 substring 命中。
+    //     已知语义交叉:零添加 / 纯天然 keyword 与既有 ad_signage_signage_food_safety_implication 规则
+    //     共享,合规风险不同角度(safety implication vs ingredient unverified)保留双触发。
+
+    @Test fun scan_signageTopnUnauthorized_firesOnHaShiJia() {
+        // v0.1.53 / audit71 fixture 120(哈十佳老红肠店 店招,排名 claim):
+        // OCR 真实召回「哈十佳」3 字(无政府 / 正规第三方机构颁发的「哈尔滨十佳」证书)。
+        val r = AdSignageRule(
+            id = "ad_signage_signage_topn_unauthorized",
+            category = "signage",
+            regulation = "《广告法》第九条第(三)项 + 第二十八条第二款第(二)项 + 第五十五条 + 第五十七条第(一)项",
+            listOf("十佳", "十强", "十大", "哈十佳", "全国十佳", "中国十佳"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "哈十佳 老红肠 无淀粉 口感就是不一样"
+        )
+        // 「哈十佳」3 字 keyword 直接 substring 命中;「十佳」2 字也命中但 Phase 2.5 dedup 压回为 1 条
+        assertEquals(1, hits.size)
+        assertEquals("哈十佳", hits[0].matchedText)
+        assertEquals(Severity.Violation, hits[0].severity)
+        assertEquals("signage", hits[0].category)
+    }
+
+    @Test fun scan_signageTopnUnauthorized_firesOnAllSixKeywords() {
+        // 拼接 6 个互不重叠(3 字 keyword 互不子串覆盖)X十 keyword 验 AC dedup:
+        // 「十佳」(2) / 「十强」(2) / 「十大」(2) / 「哈十佳」(3) / 「全国十佳」(4) / 「中国十佳」(4)
+        // — 注意:「十佳」是「哈十佳 / 全国十佳 / 中国十佳」的子串,Phase 2.5 同规则 substring dedup
+        // 保留较长 keyword(哈十佳 / 全国十佳 / 中国十佳),丢弃「十佳」3 次,实际命中 5 条。
+        val r = AdSignageRule(
+            id = "ad_signage_signage_topn_unauthorized",
+            category = "signage",
+            regulation = "《广告法》第九条第(三)项 + 第二十八条第二款第(二)项 + 第五十五条 + 第五十七条第(一)项",
+            listOf("十佳", "十强", "十大", "哈十佳", "全国十佳", "中国十佳"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "十佳 十强 十大 哈十佳 全国十佳 中国十佳"
+        )
+        // 6 keyword 中 5 个互不子串覆盖 + 「十佳」3 次(被 哈/全国/中国十佳 压回),实际命中 5 条
+        assertEquals(5, hits.size)
+        val matched = hits.map { it.matchedText }.toSet()
+        assertTrue("「十佳」被压回,不暴露", "十佳" !in matched)
+        assertTrue("十强 必须命中", "十强" in matched)
+        assertTrue("十大 必须命中", "十大" in matched)
+        assertTrue("哈十佳 必须命中(最长匹配)", "哈十佳" in matched)
+        assertTrue("全国十佳 必须命中(最长匹配)", "全国十佳" in matched)
+        assertTrue("中国十佳 必须命中(最长匹配)", "中国十佳" in matched)
+        assertTrue(hits.all { it.severity == Severity.Violation })
+    }
+
+    @Test fun scan_signageFoodIngredientUnverified_firesOnWuDianFen() {
+        // v0.1.53 / audit71 fixture 120(老红肠无淀粉 食品成分 claim):
+        // OCR 真实召回「老红肠无淀粉」6 字,「无淀粉」3 字 keyword 直接 substring 命中。
+        val r = AdSignageRule(
+            id = "ad_signage_signage_food_ingredient_unverified",
+            category = "signage",
+            regulation = "《广告法》第二十八条第二款第(二)项 + 《食品安全法》第七十一条",
+            listOf("无淀粉", "无添加", "零添加", "无防腐剂", "纯天然"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "哈十佳 老红肠 无淀粉 口感就是不一样"
+        )
+        // 「无淀粉」3 字 keyword 在「老红肠无淀粉」中 substring 命中 1 条
+        assertEquals(1, hits.size)
+        assertEquals("无淀粉", hits[0].matchedText)
+        assertEquals(Severity.Warning, hits[0].severity)
+        assertEquals("signage", hits[0].category)
+    }
+
+    @Test fun scan_signageFoodIngredientUnverified_firesOnAllFiveKeywords() {
+        // 拼接 5 个互不重叠 食品成分 keyword 验 AC dedup 压回:5 keyword 互不子串覆盖
+        val r = AdSignageRule(
+            id = "ad_signage_signage_food_ingredient_unverified",
+            category = "signage",
+            regulation = "《广告法》第二十八条第二款第(二)项 + 《食品安全法》第七十一条",
+            listOf("无淀粉", "无添加", "零添加", "无防腐剂", "纯天然"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "无淀粉 无添加 零添加 无防腐剂 纯天然 蜂蜜"
+        )
+        assertEquals(5, hits.size)
+        val matched = hits.map { it.matchedText }.toSet()
+        assertEquals(
+            setOf("无淀粉", "无添加", "零添加", "无防腐剂", "纯天然"),
+            matched,
+        )
+        assertTrue(hits.all { it.severity == Severity.Warning })
+        assertTrue(hits.all { it.category == "signage" })
+    }
+
+    @Test fun scan_signageFoodIngredientUnverified_dualFireWithFoodSafetyImplication() {
+        // fixture 120 + 跨规则 dual-fire pin:
+        // 「零添加」3 字既命中 新规则 food_ingredient_unverified(成分 claim 需可验证),
+        // 也命中既有规则 food_safety_implication(暗示安全)。
+        // 两规则语义角度不同,合规风险归因不同(成分 vs 暗示安全),保留双触发便于取证包分类。
+        val rIngredient = AdSignageRule(
+            id = "ad_signage_signage_food_ingredient_unverified",
+            category = "signage",
+            regulation = "《广告法》第二十八条第二款第(二)项 + 《食品安全法》第七十一条",
+            listOf("无淀粉", "无添加", "零添加", "无防腐剂", "纯天然"),
+            Severity.Warning,
+        )
+        val rSafety = AdSignageRule(
+            id = "ad_signage_signage_food_safety_implication",
+            category = "signage",
+            regulation = "《广告法》第二十八条第二款第(二)项 + 第五十五条",
+            listOf(
+                "安全放心", "安全无忧", "放心吃", "放心服用", "放心食用",
+                "无毒副作用", "无副作用", "零副作用", "无依赖",
+                "100% 安全", "100% 有效", "绝对安全", "绝对有效",
+                "零添加", "安全无副作用", "食用安全", "服用安全",
+                "纯天然", "天然无添加",
+            ),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rIngredient, rSafety)).scan(
+            "零添加 蜂蜜 纯天然 食品"
+        )
+        // 跨规则 dual-fire:
+        //   - food_ingredient_unverified 命中「零添加」+「纯天然」 → 2 条
+        //   - food_safety_implication 命中「零添加」+「纯天然」 → 2 条
+        // 跨规则 id 不参与 Phase 2.5 substring dedup,total = 4 条共触发
+        assertEquals(4, hits.size)
+        val ruleIds = hits.map { it.ruleId }.toSet()
+        assertTrue(
+            "ad_signage_signage_food_ingredient_unverified 必须命中(零添加 + 纯天然)",
+            "ad_signage_signage_food_ingredient_unverified" in ruleIds,
+        )
+        assertTrue(
+            "ad_signage_signage_food_safety_implication 必须命中(零添加 + 纯天然 共触发)",
+            "ad_signage_signage_food_safety_implication" in ruleIds,
+        )
+        val matchedPerRule = hits.groupBy { it.ruleId }.mapValues { it.value.map { h -> h.matchedText }.toSet() }
+        assertEquals(
+            setOf("零添加", "纯天然"),
+            matchedPerRule["ad_signage_signage_food_ingredient_unverified"],
+        )
+        assertEquals(
+            setOf("零添加", "纯天然"),
+            matchedPerRule["ad_signage_signage_food_safety_implication"],
+        )
+    }
 }

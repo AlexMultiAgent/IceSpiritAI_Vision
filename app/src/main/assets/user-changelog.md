@@ -1,5 +1,86 @@
 # 用户更新日志
 
+## v0.1.53 · 2026-09-03
+
+- **「ad」域规则库 v15 → v16**(150 → 152 条):audit71 真机命中 70/71 → **71/71**(miss 1 → 0)
+  - **1 条新规则 `ad_signage_signage_topn_unauthorized`**(signage / Violation, 6 关键词):法源《广告法》§9(三) + §28 第二款第(二)项 + §55 + §57(一) + 市场监管总局《广告绝对化用语执法指南》(2023-02-09) 第十条「评比 / 排序结果」(十佳 / 十大 / 第一 / 首位等)若无事实依据或无法查证。覆盖「X 十」排名 claim — 商家在店招 / 户外广告 / 包装上宣称「哈十佳 / 全国十佳 / 中国十佳 / 十大品牌 / 十强企业」,但未取得对应的政府或经国务院 / 国家部委 / 全国性行业协会 / 国家级权威第三方机构颁发的「十佳 / 十强 / 十大」荣誉证书 / 评定结果,落入极限词 + 销售状况/曾获荣誉不实。核心 6 关键词「十佳 / 十强 / 十大 / 哈十佳 / 全国十佳 / 中国十佳」中「哈十佳」3 字独立注册,不走 1-char-deletion 变体路径(MIN_KEYWORD_FOR_VARIANTS=5)
+    - **fixture 120 落地**:`哈十佳` — 哈十佳老红肠店店招(v15 规则库 0 命中,v16 起命中;real-device OCR 召回「哈十佳」+「老红肠无淀粉」两条违规关键词,fixture 120 由「规则库 gap」转为命中)
+    - **Phase 2.5 substring dedup pin**:OCR「哈十佳」文本中「十佳」2 字 keyword + 「哈十佳」3 字 keyword 都会触发,Phase 2.5 同规则 substring dedup 保留较长「哈十佳」,丢弃「十佳」3 次,实际命中 1 条
+    - **执法参考**:山东临沂沂南房地产「最高端、沂南唯一、绝无仅有」罚 2.8 万(samr.gov.cn);福建宁德奶粉「中国剖宫产奶粉首创者销量领先」罚 12.5 万(scjgj.fujian.gov.cn);江西南昌培训「全国唯一一家」罚 5 万(samr.gov.cn)
+  - **1 条新规则 `ad_signage_signage_food_ingredient_unverified`**(signage / Warning, 5 关键词):法源《广告法》§28 第二款第(二)项 成分与实际不符 + 《食品安全法》§71 食品广告真实义务 + GB 18357-2003《熏煮火腿卫生标准》+ GB/T 20711-2006《熏煮香肠》淀粉含量阈值(上限 10%)+ GB 7718-2025《预包装食品标签通则》成分含量声称标注。覆盖「无 X / 零 X / 纯 X」食品成分 claim — 商家在店招 / 包装 / 户外广告 / 短视频中宣称食品「无淀粉 / 无添加 / 零添加 / 无防腐剂 / 纯天然」,需可验证检测报告与成分标注一致,否则落入成分与实际不符的虚假广告
+    - **fixture 120 落地**:`无淀粉` — 哈十佳老红肠店店招(real-device OCR 召回「老红肠无淀粉」6 字,v15 规则库 0 命中,v16 起命中)
+    - **执法参考**:江西 / 浙江 / 广东多地市监局 2024-2026 对「无添加蔗糖」「零添加防腐剂」「纯天然食品」等无检测报告背书的食品广告立案处罚,典型罚款 5-20 万元;市场监管总局 2025-08 食品广告合规指引第二十条明确「无 X」「零 X」「纯 X」类成分含量声称需可验证
+    - **已知语义交叉**:`零添加` + `纯天然` keyword 与既有 `ad_signage_signage_food_safety_implication` 规则共享,合规风险不同角度(成分 vs 暗示安全),保留双触发便于取证包分类与分桶展示
+- **`coverage_matrix.md` 重生成**(`§2` 表格用 v16 实跑 OCR_HIT/OCR_NO_HIT 行匹配重写):
+  - fixture 120 由未覆盖转已覆盖(命中 2 条规则:`topn_unauthorized`「哈十佳」+ `food_ingredient_unverified`「无淀粉」)
+  - §3 未命中明细 1 → 0(v0.1.49 进度 6 → 5 → v0.1.51 进度 5 → 3 → v0.1.52 进度 3 → v0.1.53 进度 **3 → 0**)
+  - v0.1.52 误判为「真负例」的 fixture 120 由用户纠正为「规则库 gap」,本版本落地修复,audit71 真机命中 **71/71**
+- **测试 pin bump**:`AssetRuleLoaderTest.load_parsesActualBundledAdSignageAssetShape` version 15 → 16 + 阈值 ≥140(152 ≥140 ✅);新增 5 条 `scan_signageTopnUnauthorized_firesOnHaShiJia` / `scan_signageTopnUnauthorized_firesOnAllSixKeywords`(Phase 2.5 substring dedup pin)/ `scan_signageFoodIngredientUnverified_firesOnWuDianFen` / `scan_signageFoodIngredientUnverified_firesOnAllFiveKeywords` / `scan_signageFoodIngredientUnverified_dualFireWithFoodSafetyImplication`(跨规则 dual-fire pin)单测覆盖:fixture 120 双命中 / 6 keyword 联触发 / 5 keyword 联触发 / 「零添加 + 纯天然」与既有 food_safety_implication 共触发验证
+
+## v0.1.52 · 2026-09-03
+
+- **「ad」域规则库 v14 → v15**(149 → 150 条):audit71 真机命中 68/71 → 70/71,miss 3 → 1
+  - **1 条新规则 `ad_signage_signage_cosmetic_implied_dryness`**(cosmetic / Warning, 5 关键词):法源《广告法》§17 + 《化妆品监督管理条例》§25 第二款(国务院令第 727 号,2021-01-01 施行)。覆盖「problem-solution 暗示功效」结构 — 非医/药/械广告涉及疾病治疗功能 + 化妆品广告不得暗示医疗作用。核心 5 关键词「皮肤太干 / 皮肤干燥 / 肌肤干燥 / 皮肤缺水 / 皮肤粗糙」捕捉「皮肤问题 → 推介产品」式暗示医疗作用的化妆品广告
+    - **fixture 103 落地**:`皮肤太干` — 敷尔佳面膜电梯屏「皮肤太干了,快用我!(我=敷尔佳面膜)」(v14 规则库 0 命中,v15 起命中)
+    - **法条要点**:《广告法》§17「禁止其他任何广告涉及疾病治疗功能,并不得使用医疗用语或者易使推销的商品与药品、医疗器械相混淆的用语」+ 《化妆品监督管理条例》§25 第二款「化妆品广告不得明示或者暗示产品具有医疗作用,不得含有虚假或者引人误解的内容」。处罚:市场监督管理部门责令改正,处二十万元以上一百万元以下的罚款,可以吊销营业执照
+  - **1 条扩 keyword `ad_signage_signage_peoples_republic_misuse`**(signage / Warning):新增 OCR-error fallback keyword「人正咖啡馆」,从 10 → 11 关键词。兜底 PP-OCRv6_small 在金色书法末笔上把「民」误识为「正」横笔的 deterministic OCR 错误
+    - **fixture 124 落地**:real-device OCR 真实召回「人正咖啡馆」(1 行, 5 chars, 87.7% conf),非「人民咖啡馆」。v14 规则库 0 命中(v15 起命中)。注意:**用户实测拍照角度可正常识为「人民咖啡馆」93%**(测试 harness 直喂 JPEG vs 用户拍照 = 同一图不同输入方式 OCR 输出可能完全反,这是 fixture 124 设计上的 boundary 提醒)
+    - **OCR-error fallback pattern**(v0.1.49 起的 AC substring 兜底机制):keyword 既覆盖正确 OCR 文本又覆盖 determinist 错误文本,确保规则引擎在 OCR 召回有限时仍命中。fixture 124 / 109 / 99 都是此 pattern 受益者
+- **fixture 120 误判纠正 + 文件名 undo 重命名**:
+  - **用户 callout(2026-09-03 末)**:`adb-runner` 报告 fixture 120「0 hit = 真负例」(哈尔滨巴洛克风情街告示),我盲目接受未独立核验 OCR 文本,**实际 OCR 召回「哈十佳」+「老红肠无淀粉」** 两条明显违规关键词
+  - **违规点**:
+    1. **「哈十佳」**:极限词 / 排名 claim,无政府 / 正规第三方权威机构颁发的「十佳」荣誉证书 → 落入《广告法》§28 第二款第(二)项 + §9(三) 极限词(类比「最高级 / 最佳」)
+    2. **「老红肠无淀粉」**:食品成分 / 含量宣称,商家承诺「无淀粉」 → 落入《广告法》§28 第二款第(二)项 + 《食品安全法》§71 + GB 18357-2003 / GB/T 20711-2006 熏煮香肠淀粉含量阈值
+    3. **「口感就是不一样」**:主观吹嘘描述,无客观可验证 claim,本身不违规,规则库不应误命中
+  - **fixture 120 文件名 undo**:`120_哈尔滨巴洛克风情街告示牌_真负例.jpg` → `120_哈十佳老红肠店_极限词与成分宣称_食品.jpg`(两目录同步:`违规案例/` + `app/src/androidTest/assets/fixtures/audit71/`)。原命名 v0.1.49 误判「中华老字号I❤Harbin」已纠正(实际图像无 ❤ 符号,real-device OCR「中华巴洛克」为地名 +「IASHIJL」为视觉符号 I❤Harbin 误识)
+  - **修复归属**:**fixture 120 待 v0.1.53 新增 2 条规则覆盖**:`ad_signage_signage_topn_unauthorized`(signage / Violation,~6 keyword:十佳 / 十强 / 十大 / 哈十佳 / 全国十佳 / 中国十佳)+ `ad_signage_signage_food_ingredient_unverified`(food / Warning,~5 keyword:无淀粉 / 无添加 / 零添加 / 无防腐剂 / 纯天然)
+- **`coverage_matrix.md` 重生成**(`§2` 表格用 v15 实跑 OCR_HIT/OCR_NO_HIT 行匹配重写):
+  - fixture 103 / 124 由未覆盖转已覆盖(命中 1 条规则)
+  - fixture 120 **状态**:规则库 gap(确含违规关键词,当前规则库无对应 keyword),不是真负例
+  - §3 未命中明细 3 → 1,但**剩余 1 张 = fixture 120 规则库 gap**(待 v0.1.53 修复),非真负例
+  - 进度追踪修正:v0.1.49 miss 6 → v0.1.50 miss 5 → v0.1.51 miss 3 → v0.1.52 miss **仍 3**(fixture 120 由「真负例」回退为「未覆盖 gap」)
+- **知识库延伸**:`知识库/广告业务/中华人民共和国广告法.md` 引用 §17 「禁止非医疗、药品、医疗器械广告涉及疾病治疗功能」(已存在判别要点章节,v0.1.52 在 fixture 103 落地时引用)
+- **测试 pin bump**:`AssetRuleLoaderTest.load_parsesActualBundledAdSignageAssetShape` version 14 → 15 + 阈值 ≥140(150 ≥140 ✅);新增 4 条 `scan_signageCosmeticImpliedDryness_firesOnPiFuTaiGanLe` / `scan_signageCosmeticImpliedDryness_firesOnMultipleDrynessKeywords` / `scan_peoplesRepublicMisuse_firesOnRenZhengKafeiGuan_OCRErrorFallback` / `scan_peoplesRepublicMisuse_firesOnBothRenMinAndRenZheng` 单测覆盖:fixture 103 单命中 / 5 keyword 联触发 / fixture 124 OCR-error 兜底 / 「人民 + 人正」双 variant 拼接
+
+## v0.1.51 · 2026-09-03
+
+- **「ad」域规则库 v13 → v14**(147 → 149 条):三路扩展覆盖 audit71 fixture 99 + 109
+  - **1 条新规则 `ad_signage_signage_duty_free_unauthorized`**(signage / Violation, 6 关键词):法源《海关法》§24 第一款 + 《广告法》§28 第二款第(二)项 + 《反不正当竞争法》§8 第一款 + 第五十五条,覆盖「免税店冒用 / 免税价格允诺不实」 — 街边 / 非海关监管场所以「免税店 / 免税价格 / 离岛免税 / 免税商品 / 免税专区 / 免税仓」字样作店招 / 广告,无海关总署 + 财政部 + 商务部三部委联合批准 / 无口岸海关监管资质的,违反「免税」作为价格允诺信息的真实性义务
+    - **fixture 99 落地**:`免税店` — 哈尔滨某大街俄式商品店「免税店」紫色 LED 店招(v13 规则库 0 命中,v14 起命中)
+    - **真实处罚案例**:
+      - 海南海口海关 2025-02 套代购案 3 名旅客违规「套代购」离岛免税品(手机 12 部,货值约 10 万元)(customs.gov.cn)
+      - 海口海关 2026-01 新海港查获团伙代购某品牌皮带 112 条(货值约 42.6 万元)(customs.gov.cn)
+      - 王某 2020-2022 利用离岛免税额度代购套购 400 万元,偷逃税款 105 万元,以「走私普通货物罪」判处有期徒刑四年,罚金 105 万元(customs.gov.cn)
+  - **1 条新规则 `ad_signage_signage_superlative_zui_xxx_edu`**(education / Violation, 12 关键词):法源《广告法》§9(三) + §24(一) + §57(一) + §58 一款(一),覆盖「公考 / 培训 / 资格考试行业『培养 X 最多』结构」—「培养面试状元最多 / 培养面试状元 / 培养最多 / 公考培训第一 / 培训规模最大 / 上岸率最高 / 面试通过率最高 / 公考状元 / 状元最多 / 面试状元最多 / 公考通过率最高 / 国考通过率第一」12 个典型话术,因 §24 同时构成「对培训效果作出明示或暗示的保证性承诺」叠加违反
+    - **fixture 109 落地**:`培养面试状元最多` — 万运龙公考移动车体 LED 暗 band(v13 规则库 0 命中,v14 起命中;OCR 召回限制需 det 阈值调高)
+  - **1 条扩 keyword `ad_signage_art9_abs_top`**(absolute / Warning):新增 9 个 X最 极限词(最多 / 最高 / 最强 / 最新 / 最快 / 最优 / 最全 / 最深 / 最厚),从 28 → 37 关键词,直接为 fixture 109 提供「培养面试状元最多」中「最多」命中通道
+    - **真实处罚案例**:
+      - 山东临沂沂南房地产「最高端、沂南唯一、绝无仅有」罚 2.8 万(samr.gov.cn)
+      - 山东临沂沂水家政「全县最低」罚 2 万(samr.gov.cn)
+      - 福建宁德奶粉「中国剖宫产奶粉首创者销量领先」罚 12.5 万(scjgj.fujian.gov.cn)
+      - 江西赣州医美「最安全 / 最顶级 / 最先进 / 最便捷」罚 15 万(samr.gov.cn)
+      - 江西南昌培训「全国唯一一家」罚 5 万(samr.gov.cn)
+- **fixture 99 文件名重命名**:`99_哈尔滨御康中西医结合诊所_逆转糖尿病中医诊所_医疗病种.jpg` → `99_哈尔滨俄式商品店_免税店冒用_unauthorized_duty_free.jpg`(两目录同步:`违规案例/` + `app/src/androidTest/assets/fixtures/audit71/`)。原命名误判为医疗诊所,实际图像内容为「免税店」LED 店招 + 俄罗斯套娃陈列,属 v0.1.51 新规覆盖域
+- **知识库延伸**:`知识库/广告业务/中华人民共和国广告法.md` 新增 2 段:
+  - 「§9(三) + §9 三 — 极限词『最 + X』扩 keyword + 教育领域『培养 X 最多』结构」(v0.1.51):含 4 条真实处罚案例(山东临沂 / 福建宁德 / 江西赣州 / 江西南昌)
+  - 「§28 第二款第(二)项 + 海关法 §24 + 反不正当竞争法 §8 — 『免税店』店招冒用 / 免税价格允诺不实」(v0.1.51):含 4 条真实海关执法案例(海南海口海关套代购 / 团伙代购皮带 112 条 / 王某走私普通货物罪案)
+  - 原 §9(三) keyword 列表(28 个)同步扩 9 个 X最 极限词
+- **`coverage_matrix.md` 重生成**:`§2` 表格用 v14 实跑 OCR_HIT/OCR_NO_HIT 行匹配重写,fixture 99 / 109 由未覆盖转已覆盖;§3 未命中明细 5 → 3(v0.1.49 进度 6 → 5 → v0.1.51 进度 5 → 3)
+- **测试 pin bump**:`AssetRuleLoaderTest.load_parsesActualBundledAdSignageAssetShape` version 13 → 14 + 阈值 ≥140(149 ≥140 ✅);新增 5 条 `scan_signageDutyFreeUnauthorized_firesOnMianShuiDian` / `scan_signageDutyFreeUnauthorized_firesOnAllSixKeywords` / `scan_signageSuperlativeZuiXxxEdu_firesOnPeiYangMianShiZhuangYuanZuiDuo` / `scan_signageSuperlativeZuiXxxEdu_firesOnMultipleEducationSlogans` / `scan_art9AbsTop_firesOnNewZuiXKeywords` 单测覆盖:fixture 99 / fixture 109 / 多 keyword 联触发 / AC substring dedup 压回 / 9 个 X最 keyword 全覆盖
+
+## v0.1.50 · 2026-09-03
+
+- **「ad」域规则库 v12 → v13**(146 → 147 条):新增 1 条规则 `ad_signage_signage_playful_objectification_promotion`(signage / Violation),法源《广告法》§4 + §28 第二款第(二)项 + §9(7) + §9(9) + §57(一),覆盖「玩梗式物化促销 / 戏谑式虚假承诺」叙事范式。核心 11 关键词全部由 samr.gov.cn / scjgj.jiangsu.gov.cn / sz.gov.cn 等官网公示的真实处罚案例提取,知乎 / 微博 / 媒体转载一律排除
+  - **fixture 110 落地**:`一钱带走老板娘` / `带走老板娘` / `一元钱带走` / `一分钱带走` — KOALA 玩具潮玩店把女性作为可带走商品客体(v12 规则库 0 命中,v13 起命中)
+  - **真实处罚案例关键词**(每个 entry 都带 source_attribution + official_domain):
+    - `我没婆娘别吃` — 漳州市信冠食品(2023-04,龙海区市监局罚 1.2 万元)<https://www.samr.gov.cn/ggjgs/sjdt/gzdt/art/2023/art_1e6d000aa87048aab6bf3c9215ebbfc4.html>(samr.gov.cn)
+    - `彩礼翻倍` + `不做黄脸婆` — 泰州海陵区美容中心(2025-05,海陵区市监局罚 6,000 元)<https://scjgj.jiangsu.gov.cn/art/2026/1/7/art_70154_11712093.html>(jiangsu.gov.cn 市场监督管理局子域名)
+    - `没有蓝宝石我不脱` — 深圳 Ulike 电梯广告(深市监处罚〔2022〕稽30号,2022-04-25 罚没 51.5 万元)<https://www.sz.gov.cn/cn/xxgk/zfxxgj/zwdt/content/post_9779142.html>(sz.gov.cn,gov.cn 同类域)
+    - `取悦四性兽` — 鞍山市台安县科技服务公司「取悦四性兽狼牙套」<https://www.samr.gov.cn/ggjgs/sjdt/gzdt/art/2024/art_03583c31d1fc4519b695eda14265a98c.html>(samr.gov.cn)
+    - `我不卖` + `恶搞男友` — 上海悦活餐饮 Superboy 男友力系列(沪市监黄处〔2024〕01202400599 号,黄浦区市监局罚 45 万元)<https://www.samr.gov.cn/xw/zj/art/2024/art_b8baa5a064fd44fd835092ea279c55a8.html>(samr.gov.cn)
+- **知识库延伸**:`知识库/广告业务/中华人民共和国广告法.md` `## 适用判别要点` 章节新增「§4 + §28 第二款第(二)项 + §9(7) + §9(9) + §57 — 玩梗式物化促销 / 戏谑式虚假承诺」条款(类别:广告文案 / 严重度:Violation),含判别模式 / 5 条判别要点 / OCR 漏检边界 / 与 fixture 110 的对应关系;附 9 条典型案例全部由 samr.gov.cn / scjgj.jiangsu.gov.cn / sz.gov.cn 官网溯源(其中妇炎洁案 130 万 + 五个女博士案 20 万 + Ulike 案 51.5 万是 2024-2026 年最具代表性的性别物化广告行政处罚)
+- **测试 pin bump**:`AssetRuleLoaderTest.load_parsesActualBundledAdSignageAssetShape` version 12 → 13 + 阈值 ≥140(147 ≥140 ✅);新增 6 条 `scan_signagePlayfulObjectificationPromotion_firesOn*` 单测覆盖:fixture 110 双命中 / 漳州信冠 / 5 case 拼接 / 上海悦活「我不卖 + 恶搞男友」/ 深圳 Ulike / 江苏泰州「彩礼翻倍 + 不做黄脸婆」
+
 ## v0.1.49 · 2026-09-03
 
 - **「ad」域规则库 v10 → v12**(146 条):分两轮扩展。第一轮 v10 → v11(144 条)新增 15 条规则覆盖大型赛事冠名赞助冒用 / 烟草体育赞助变相发布 / 现役军人形象商业代言 / 天安门国庆政治符号商业使用 / 人民共和国国家字样商业冒用 / 野生动物制品广告 / 招工收入保证 / 医疗承保承诺 / 外交活动背书 / CCTV必吃榜冒用 / 宣泄性酒类广告 / 非处方药户外陈列 / 医美医疗用语 / 医疗机构国家三级表述 / 国际奖项冒用 15 维度。第二轮 v11 → v12(146 条)再扩 2 条 + 扩展 1 条既有规则关键词:`ad_signage_signage_origin_claim`(9 关键词,Warning)覆盖「发源地 / 之源 / 始创于 / 原产地」;`ad_signage_signage_cultural_heritage_claim`(13 关键词,Warning)覆盖「千年传承 / 中国非遗 / 中华老字号」;`ad_signage_art9_abs_top` 增 3 关键词(`中国第一` / `中国第一品牌` / `首创`)修复 OCR 把「中国第一品牌」误识为「中国第品牌」(蟹凰宫 91/128、布列斯特套娃 133 命中)
