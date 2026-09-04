@@ -1,5 +1,16 @@
 # 用户更新日志
 
+## v0.1.58 · 2026-09-04
+
+- **「ad」域规则库法规新鲜度审计 + 3 P0 修复**(per v0.1.57 follow-up workflow Phase 2 synthesis 报告):synthesis 标识出 3 条 ad_signage 规则 `regulation` 字段引用了已废止法规或错号条款,违反 CLAUDE.md §"知识库时效性整理(2026-08-27)" 的"规则 JSON 条目 regulation 必须能指回 知识库/&lt;域&gt;/&lt;现行法规&gt;.md,不得指已废止法规"约束。本次修复 3 条 P0 法规新鲜度问题:
+  - **`ad_signage_restricted_tobacco_health_relief`** — 原引《烟草广告管理暂行办法》§6(2016-02-01 施行 / 2016-12 实质被《广告法》§22 吸收 / 2018-10 已废止) → 现行《广告法》第二十二条 + 第五十七条。`知识库/广告业务/烟草广告管理暂行办法_广告法§22实质替代.md` 同步 `git mv` 到 `知识库/已废止/烟草广告管理暂行办法_2016工商总局令86号废止.md`,README.md 链接同步更新
+  - **`ad_signage_restricted_tobacco_buy_gift_promotion`** — 原引《烟草专卖法》§19(1991 原版编号) → 现行 §18(2015 第三次修正版,§19 已变为商标注册专用)。错误根源:本档历史上用 1991 原版结构,§18/§19 在 2015 修正版中整体重排,本档 §18=广告禁令 / §19=商标注册。`知识库/广告业务/中华人民共和国烟草专卖法(广告节选).md` 新增 "v0.1.58 编号同步" 章节明示
+  - **`ad_signage_signage_duty_free_unauthorized`** — 原引《反不正当竞争法》§8(2017/2019 版「虚假宣传」) → 现 §9(2025-10-15 修订版主席令第五十号整体重排,原 §8→现 §9;现 §8 是商业贿赂与广告无关)。新建 `知识库/广告业务/中华人民共和国反不正当竞争法.md` + `中华人民共和国海关法(广告节选).md`(本地,gitignored) 给 dev/research 留文本锚点
+  - **behavior delta**:**仅 regulation 字段字符串 + lawText 字段文本变化**,keywords / severity / category / sourceMarkers / categoryAnchors 全部不变,OCR 命中行为字节级一致。已跑 AdSignageRuleMatcherTest 4 条 P0 相关测试(v0_1_57_tobacco_buy_gift_promotion_firesWithAnchor / blockedWithoutAnchor / v0_1_57_tobacco_health_relief_firesWithAnchor / v0_1_57_duty_free_extended_keywords_fire),**全过**
+  - **构建 / 数据**:`versionCode` 57 → 58,`versionName` 0.1.57 → 0.1.58,`ad_signage_rules.json` 规则数 / keywords 全部不变,仅 regulation/lawText 字段字符串更新
+
+- **`知识库/广告业务/直播电商监督管理办法.md` 主目录迁移**(v0.1.57 follow-up scratch review P0 建议):v0.1.57 落地的 2 条规则 `ad_signage_internet_art34_live_ecommerce_fake` / `ad_signage_internet_art37_ai_digital_human` regulation 字段已引《直播电商监督管理办法》,但 `知识库/广告业务/` 主目录无对应 .md,违反知识库时效性整理约束。从 `_tmp_convert/直播电商监督管理办法.md`(2025-12-18 国家市场监督管理总局 / 国家互联网信息办公室令第 117 号公布,2026-02-01 起施行)迁入主目录,加 canonical 头(发文字号 / 通过日期 / 施行日期 / 替代关系 / 与 v0.1.57 规则对应 §34/§37),dev/research 引用锚点已就位
+
 ## v0.1.57 · 2026-09-04
 
 - **「ad」域规则引擎全量扩写(知识库/广告业务/ 17 部法规全量阅读后落地的合规扩写)**:用户 2026-09-04 反馈「广告业务有更新,全部认真阅读一遍该文件夹下所有的法律法规,完善识别规则」,逐部研读 17 部现行法规(广告法 / 广告管理条例 / 烟草专卖法 / 野生动物保护法 / 就业促进法 / 药品医疗器械保健食品广告审查暂行办法 / 兽药广告审查发布规定 / 农药广告审查发布规定 / 房地产广告发布规定 / 互联网广告管理办法 / 直播电商监督管理办法 2026 / 广告绝对化用语执法指南 / 广告引证内容执法指南 2026 等),落地为 **21 新规则 + 2 severity 升级 + 4 既有规则 keyword 扩展**:
