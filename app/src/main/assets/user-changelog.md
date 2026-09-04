@@ -1,5 +1,33 @@
 # 用户更新日志
 
+## v0.1.55 · 2026-09-04
+
+- **「ad」域规则引擎新增 `categoryAnchorsAbsent` schema 字段 + gate**(v0.1.54 `categoryAnchors` 反向极性版本,`AdSignageRule.categoryAnchorsAbsent: List<String> = emptyList()`,默认空 = 行为不变):解决 v0.1.54 设计取舍留下的 fixture 76「易树堂推拿按摩店 兼列病种」通用性缺口
+  - **设计取舍背景**:v0.1.54 commit 4-6 给 medical 规则加 anchor gate 时,为不误伤 fixture 129「东郊到家按摩 APP」+ fixture 123「泰八八泰式按摩」,medical anchor 池刻意不包含 `推拿 / 按摩` 字串,导致 fixture 75 / 76「马驹堂 / 易树堂 推拿按摩店 兼列颈椎病 / 腰间盘突出」anchor gate 阻断、`ad_signage_signage_disease_prevention` 0 hit
+  - **用户原则(2026-09-04)**:"不管怎么修复、必须要具有通用性,不能这样照片可以、另外同类型照片又不成"。fixture 76 实际是**真违规**(《广告法》§17:除医疗、药品、医疗器械广告外,禁止其他任何广告涉及疾病治疗功能,并不得使用医疗用语),不应为「按摩服务」而妥协
+  - **新方案**:新增反向极性 gate `categoryAnchorsAbsent` — 文本**不含**任一 anchor 时才放行(inverse of `categoryAnchors`,镜像 `sourceMarkers` 既有通路 ~20 行,见 `AdSignageRuleMatcher.kt` 新增 `anchorAbsentTrie` / `anchorAbsentHandler` / `anchorAbsentHitRules` 字段)。极性表:`sourceMarkers` 出现就抑制 / `categoryAnchors` 出现才放行 / `categoryAnchorsAbsent` 出现就抑制
+  - **新规则 `ad_signage_non_medical_institution_disease_advertisement`**(`signage` / `Violation`,《广告法》§17 + §58,`ad_signage_rules.json` version 16 → 17,153 条):
+    - **31 keywords**:慢性病名(颈椎病 / 肩周炎 / 腰间盘突出 / 坐骨神经痛 / 网球肘 / 风湿 / 类风湿 / 关节炎 / 腱鞘炎 / 骨质增生 / 椎间盘突出 / 半月板损伤 / 强直性脊柱炎 / 滑膜炎 / 筋膜炎 / 肩袖损伤 / 腰肌劳损 / 退行性关节炎 / 扭伤 / 崴脚) + 中医医疗术语(正骨 / 理筋 / 推拿 / 复位 / 整脊 / 推油 / 针灸 / 艾灸 / 拔罐 / 刮痧 / 整复)
+    - **17 absent anchors**:`医院 / 医师 / 诊所 / 门诊 / 中医 / 卫健委 / 卫生所 / 药品 / OTC / 国药准字 / 制药 / 药业 / 处方 / 临床 / 保健食品 / 适应症 / 禁忌症`(任一出现即抑制 = 文本为合法医疗 / 医药产品广告时,本规则不应触发)
+    - **故意排除**:`按摩`(fixture 129/123 合法按摩服务,会误命中本规则)、`脚气 / 脚癣 / 手足癣`(fixture 70 OTC 药品通用病名,会误命中本规则)
+  - **Phase 3 dedup 扩展**:本规则类同 absence rule,`categoryAnchorsAbsent` 非空时也按 `dedupOncePerRule` 路径走(每个 ruleId 最多 1 hit,避免 fixture 76 OCR 命中 6 个 keyword 变成 6 条视觉噪声;`longest matchedText` wins)
+  - **7 条新单测**(全过,`./gradlew.bat testDebugUnitTest --tests AdSignageRuleMatcherTest`,**206 tests / 0 failures / 0 errors**):
+    - `gateFiresOnMassageShopWithDiseaseList` — fixture 76 风格(推拿按摩店 + 疾病名 + 医疗术语 → 触发,1 hit)
+    - `gateBlocksOnMedicalClinic` — fixture 79「中研专科门诊」回归 pin(文本含 `门诊` → 抑制)
+    - `gateBlocksOnHospitalAd` — fixture 102「富氏邦医院」回归 pin(文本含 `医院` → 抑制)
+    - `gateBlocksOnOtcProduct` — fixture 70「施玛脚气水 OTC」回归 pin(文本含 `OTC / 制药 / 适应症` → 抑制)
+    - `doesNotFireWhenNoDiseaseKeyword` — fixture 123/129 风格纯按摩服务(无 disease kw → 0 hit)
+    - `firesOnMassageShopWithMedicalTermOnly` — 仅医疗术语「正骨 / 理筋 / 推拿 / 推油」无 disease kw(用户强调「正骨」本身即医疗术语,单 kw 即触发)
+    - `emptyAbsentListFiresOnAny` — 退化路径 pin(空 list = 不 gate,行为字节级不变)
+- **真机 e2e 验证**(`audit71` 71 张图,`connectedDebugAndroidTest -PmodelProfile=ice_ocr_rules`,Huawei nova 6 SDK 35):
+  - **anyHitCount = 70/71**(v0.1.54 baseline = 68/71,**+2**)
+  - **fixture 76「易树堂推拿按摩 + 列病种」= 1 hit**(v0.1.54 = 0 hit,`MISS → 1 hit`),命中 `ad_signage_non_medical_institution_disease_advertisement` — **核心修复落地**
+  - fixture 75「马驹堂推拿按摩 + 列病种」= 1 hit(同 fixture 76 模式,新规则同时修复)
+  - 5 个医疗 anchor regression pin **全部不动**:fixture 70(施玛脚气水 OTC)= 1 hit,fixture 79(中研专科门诊)= 3 hit,fixture 102(富氏邦医院)= 3 hit,fixture 123(泰八八按摩)= 1 hit,fixture 129(东郊到家按摩)= 1 hit,**`non_medical_institution_disease_advertisement` 在 5 张图上均不触发**(absent-anchor gate 正确阻断 `医院 / 诊所 / 门诊 / OTC / 制药 / 适应症` 等合法医疗 / 医药 marker 出现)
+  - fixture 136「公交220喝水提醒」= 0 hit,与 v0.1.54 一致(OCR-recall-limited,本规则不适用)
+  - **冷启动 / warm 平均**:`cold_ms=2205`(v0.1.54 ≈ 5000)/ `warm_avg_ms=1351`(v0.1.54 ≈ 2600),latency 改善
+- **构建 / 数据**:`versionCode` 54 → 55,`versionName` 0.1.54 → 0.1.55,`ad_signage_rules.json` version 16 → 17(rules 数 152 → 153,新规则 `ad_signage_non_medical_institution_disease_advertisement`)
+
 ## v0.1.54 · 2026-09-04
 
 - **「ad」域规则引擎新增 `categoryAnchors` schema 字段 + gate**(`AdSignageRule.categoryAnchors: List<String> = emptyList()`,默认空 = 行为不变):解决 ~30 条 category-specific 规则因通用 2-3 字 keyword(如「不如」「按摩」「儿童」)跨域污染导致的 false positive

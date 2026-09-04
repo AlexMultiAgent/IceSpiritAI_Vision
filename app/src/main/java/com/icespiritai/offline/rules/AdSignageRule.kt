@@ -29,6 +29,22 @@ data class AdSignageRule(
      * non-domain ads. The anchor gate scopes the rule to its real domain.
      */
     val categoryAnchors: List<String> = emptyList(),
+    /**
+     * Inverse-polarity domain-anchor: when this list is non-empty, the rule
+     * ONLY fires if the scanned text contains NONE of these anchors after
+     * `TextNormalizer.forMatching` normalization. Inverse of `categoryAnchors`
+     * (which requires presence; `categoryAnchorsAbsent` requires absence).
+     * Default empty = backward-compatible, no gating.
+     *
+     * Use case: rules whose legal target is "non-medical-institution ads
+     * advertising disease treatment" (广告法 §17). The keywords are chronic
+     * disease names + TCM medical terminology — those substrings are ALSO
+     * legitimately used by registered medical institutions (hospital /
+     * clinic / OTC product) to describe their own indications. The absent
+     * gate scopes it to the illegal-target subset (non-medical ad text
+     * mentioning those same terms).
+     */
+    val categoryAnchorsAbsent: List<String> = emptyList(),
 )
 
 /**

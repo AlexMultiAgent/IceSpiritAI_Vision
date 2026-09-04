@@ -3607,4 +3607,182 @@ class AdSignageRuleMatcherTest {
         assertTrue("药店海报无 anchor 但 kw 自身应触发, 实际 0 hits", hits.size >= 1)
         assertTrue(hits.all { it.ruleId == "ad_signage_art16_med_abs" })
     }
+
+    // --- categoryAnchorsAbsent gate tests (v0.1.55 通用修复) ---
+
+    @Test
+    fun scan_nonMedicalInstitutionDisease_gateFiresOnMassageShopWithDiseaseList() {
+        // 通用修复核心 pin — fixture 76 「易树堂推拿按摩 列病种违规医疗广告」
+        // (用户 2026-09-04 分析:广告法 §17「非医疗机构 + 疾病名 + 医疗术语」
+        // 违规)。原 v0.1.54 fixture 76 = 0 hit(MISS),因 medical anchor gate
+        // 误判为「非 medical 域不应触发 medical rule」。v0.1.55 改为
+        // categoryAnchorsAbsent 反向极性 gate:文本不含医疗机构 / 医药产品
+        // markers 时即触发(因为那正是违规情形),含 markers 时阻断(那是
+        // 合法医疗广告)。
+        val r = AdSignageRule(
+            "ad_signage_non_medical_institution_disease_advertisement",
+            "signage",
+            "广告法 §17 + §58",
+            listOf(
+                "颈椎病", "肩周炎", "腰间盘突出", "坐骨神经痛", "网球肘",
+                "风湿", "类风湿", "关节炎", "腱鞘炎", "骨质增生",
+                "椎间盘突出", "扭伤", "崴脚",
+                "正骨", "理筋", "推拿", "复位", "整脊", "推油",
+                "针灸", "艾灸", "拔罐", "刮痧",
+            ),
+            Severity.Violation,
+            categoryAnchorsAbsent = listOf(
+                "医院", "医师", "诊所", "门诊", "中医", "卫健委", "卫生所",
+                "药品", "OTC", "国药准字", "制药", "药业",
+                "处方", "临床", "保健食品", "适应症", "禁忌症",
+            ),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "易树堂 推拿按摩 理筋正骨 扭伤崴脚 坐骨神经痛 颈椎病 肩周炎 腰间盘 网球肘"
+        )
+        assertTrue("推拿按摩店 + 疾病名 + 医疗术语应触发广告法 §17 规则, 实际 0 hits",
+            hits.isNotEmpty())
+        assertEquals("dedupOncePerRule 同一规则应只 1 hit(避免 keyword 多触发视觉噪声)",
+            1, hits.size)
+        assertTrue(hits.all { it.ruleId == "ad_signage_non_medical_institution_disease_advertisement" })
+    }
+
+    @Test
+    fun scan_nonMedicalInstitutionDisease_gateBlocksOnMedicalClinic() {
+        // 回归 pin — fixture 79 「中研专科门诊」是中研专科门诊(医疗诊所),
+        // 不是非医疗机构。其 OCR 含「门诊」+ 疾病名,categoryAnchorsAbsent
+        // gate 阻断(文本含「门诊」,即合法医疗广告)。fixture 79 应继续由
+        // 既有 medical rules(med_art6_indications 等)覆盖。
+        val r = AdSignageRule(
+            "ad_signage_non_medical_institution_disease_advertisement",
+            "signage",
+            "广告法 §17 + §58",
+            listOf("颈椎病", "肩周炎", "腰间盘突出", "静脉曲张", "脉管炎"),
+            Severity.Violation,
+            categoryAnchorsAbsent = listOf(
+                "医院", "医师", "诊所", "门诊", "中医", "药品",
+                "OTC", "国药准字", "制药", "药业", "处方", "临床", "保健食品",
+            ),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "中研专科门诊 咨询热线 0451-87625888 静脉曲张 脉管炎 静脉血栓 静脉炎 " +
+                "动脉硬化 糖尿病足 老烂腿 雷诺氏 介入治疗"
+        )
+        assertTrue("医疗诊所(中研专科门诊)+ 疾病名 不应触发 §17 non-medical 规则," +
+            " 实际: $hits", hits.isEmpty())
+    }
+
+    @Test
+    fun scan_nonMedicalInstitutionDisease_gateBlocksOnHospitalAd() {
+        // 回归 pin — fixture 102 「富氏邦医院」是医院(医疗 institution),
+        //  OCR 含「医院」+ 男科疾病名。categoryAnchorsAbsent gate 阻断。
+        val r = AdSignageRule(
+            "ad_signage_non_medical_institution_disease_advertisement",
+            "signage",
+            "广告法 §17 + §58",
+            listOf("颈椎病", "前列腺炎", "男科", "排尿困难"),
+            Severity.Violation,
+            categoryAnchorsAbsent = listOf(
+                "医院", "医师", "诊所", "门诊", "中医", "药品",
+                "OTC", "国药准字", "制药", "药业", "处方", "临床", "保健食品",
+            ),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "富氏邦医院 FSBEUSHIBANG 哈尔滨富氏邦医院 前列腺炎 排尿困难 男科疾病"
+        )
+        assertTrue("医院广告不应触发 §17 non-medical 规则, 实际: $hits", hits.isEmpty())
+    }
+
+    @Test
+    fun scan_nonMedicalInstitutionDisease_gateBlocksOnOtcProduct() {
+        // 回归 pin — fixture 70 「施玛脚气水 OTC」是合法 OTC 药品,广告法允许
+        // 药品说明适应症(虽含「脚气」等病名)。本规则故意把「脚气 / 脚癣 /
+        // 手足癣」等通用病名排除在 keyword 之外(避免误报 OTC 产品)。同时
+        // categoryAnchorsAbsent 含「药品 / OTC / 制药 / 药业 / 适应症」
+        // 等医药产品 markers — 即使后续扩 keyword 含「脚气」,gate 也会
+        // 阻断合法药品广告。
+        val r = AdSignageRule(
+            "ad_signage_non_medical_institution_disease_advertisement",
+            "signage",
+            "广告法 §17 + §58",
+            listOf("颈椎病", "脚气", "脚癣", "手足癣"),
+            Severity.Violation,
+            categoryAnchorsAbsent = listOf(
+                "医院", "医师", "诊所", "门诊", "中医", "药品",
+                "OTC", "国药准字", "制药", "药业", "处方", "临床", "保健食品",
+                "适应症", "禁忌症",
+            ),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "施玛脚气水 适应症：杀菌止痒 脚气 脚癣 香港脚 手足癣 股癣 真菌感染"
+        )
+        assertTrue("OTC 药品广告(适应症合法说明)不应触发 §17 non-medical 规则," +
+            " 实际: $hits", hits.isEmpty())
+    }
+
+    @Test
+    fun scan_nonMedicalInstitutionDisease_doesNotFireWhenNoDiseaseKeyword() {
+        // 通用性 pin — fixture 123 「泰八八泰式按摩」/ fixture 129 「东郊
+        // 到家按摩 APP」是合法按摩服务 APP,不列疾病名 / 不用医疗术语。
+        // 即便 non-medical 规则 keyword 含「推拿」,fixture 123/129 OCR 都
+        // 没有 disease keyword 命中,规则不触发。
+        val r = AdSignageRule(
+            "ad_signage_non_medical_institution_disease_advertisement",
+            "signage",
+            "广告法 §17 + §58",
+            listOf("颈椎病", "肩周炎", "正骨", "理筋", "推拿", "艾灸"),
+            Severity.Violation,
+            categoryAnchorsAbsent = listOf(
+                "医院", "医师", "诊所", "门诊", "中医", "药品",
+                "OTC", "国药准字", "制药", "药业", "处方", "临床", "保健食品",
+            ),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "泰八八 泰式按摩SPA标杆品牌 严选泰国好技师 纯泰手法才解压 全身放松又解压"
+        )
+        assertTrue("纯按摩服务广告(无 disease kw)不应触发 §17 non-medical 规则," +
+            " 实际: $hits", hits.isEmpty())
+    }
+
+    @Test
+    fun scan_nonMedicalInstitutionDisease_firesOnMassageShopWithMedicalTermOnly() {
+        // 通用性 pin — 仅含医疗术语(正骨 / 理筋)但无明显 disease kw 的非
+        // 医疗机构广告,也应触发。用户 2026-09-04 强调「正骨」本身即属医疗
+        // 术语,仅此 1 kw 即构成 §17 违规。
+        val r = AdSignageRule(
+            "ad_signage_non_medical_institution_disease_advertisement",
+            "signage",
+            "广告法 §17 + §58",
+            listOf("正骨", "理筋", "推拿", "颈椎病"),
+            Severity.Violation,
+            categoryAnchorsAbsent = listOf(
+                "医院", "医师", "诊所", "门诊", "中医", "药品",
+                "OTC", "国药准字", "制药", "药业", "处方", "临床", "保健食品",
+            ),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "易树堂 推拿 按摩 正骨 理筋 推油"
+        )
+        assertTrue("推拿按摩店仅用医疗术语(无 disease kw)也应触发 §17," +
+            " 实际: $hits", hits.isNotEmpty())
+    }
+
+    @Test
+    fun scan_nonMedicalInstitutionDisease_emptyAbsentListFiresOnAny() {
+        // 退化路径 — 如果某条规则误设 categoryAnchorsAbsent 为空 list,gate
+        // 不阻断(行为同未设)。回归 pin 防止「空 absent list 误改为 drop all」
+        // 类的语义回退。
+        val r = AdSignageRule(
+            "ad_signage_non_medical_institution_disease_advertisement",
+            "signage",
+            "广告法 §17 + §58",
+            listOf("颈椎病"),
+            Severity.Violation,
+            categoryAnchorsAbsent = emptyList(),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "中研专科门诊 颈椎病治疗 经验丰富"
+        )
+        assertTrue("categoryAnchorsAbsent=空 list 应等同无 gate,实际 0 hits", hits.isNotEmpty())
+    }
 }
