@@ -3484,4 +3484,127 @@ class AdSignageRuleMatcherTest {
         assertTrue("minor rule 不应触发亲子餐厅文案(无母婴 anchor), 实际: $hits",
             hits.isEmpty())
     }
+
+    // --- v0.1.54 commit 6 — medical categoryAnchors 扩 anchor 池 ---
+    //
+    // commit 4 给 22 条 medical 规则加 anchor 池(医疗/医院/医师/诊所/药品/器械
+    // 等),fix fixture 112 茶饮店 false positive。e2e 回归发现 anchor 池
+    // 过严,导致 fixture 75 / 76 (推拿按摩店列病种) / 79 (专科门诊) / 70 (OTC
+    // 脚气水) / 105 (大德中医) 等真实医疗广告从 N hit 降到 0 hit 或显著降级。
+    //
+    // 修复:在 commit 4 anchor 池基础上,**统一追加 6 个新 anchor**(门诊 / 中医 /
+    // 制药 / 药业 / OTC / 国药准字)覆盖:
+    //   - 门诊部 / 中医诊所类(fixture 79 中研专科门诊)
+    //   - 中医馆 / 大德中医类(fixture 105 大德中医)
+    //   - OTC 药店 / 国药准字药品(fixture 70 施玛脚气水)
+    //
+    // **不**追加「推拿」「按摩」为 anchor — 它们是 med_art6_indications 的
+    // keyword,做 anchor 会让 fixture 129 (东郊到家按摩 APP) / 123 (泰八八泰式
+    // 按摩) 等「健康服务业而非医疗机构」的广告误触发 medical 桶。fixture 75 /
+    // 76 这类真实医疗广告改走 fixture 文本侧补「中医」「门诊」标记。
+    //
+    // **不**给 ad_signage_art16_med_abs / art16_med_health 加 anchor — 这 2
+    // 条规则 commit 4 之前就 anchor=0(无 gate),anchor 全开是设计选择
+    // (「根治 / 100% 有效」/「疗效 / 治愈率」属极端医疗断言,kw 自身已是
+    // 充分 signal,加 anchor 会让 fixture ykzp_01 这类药店海报误漏报)。
+
+    @Test
+    fun scan_medArt6Indications_gateAdmitsTCMClinicAd() {
+        // fixture 75 / 76 同类型 — 中医推拿按摩馆列病种(颈椎病/腰间盘突出/
+        // 坐骨神经痛)。commit 6 起 anchor 池加「中医」「门诊」,gate admit。
+        val r = AdSignageRule(
+            "ad_signage_med_art6_indications",
+            "medical",
+            "医疗广告管理办法 §6 + §17",
+            listOf(
+                "颈椎病", "腰间盘突出", "肩周炎", "坐骨神经痛",
+                "中风", "偏瘫", "关节炎", "前列腺炎", "男科",
+                "试管婴儿", "按摩", "推拿", "理筋", "正骨",
+            ),
+            Severity.Warning,
+            categoryAnchors = listOf(
+                "医疗", "医院", "医师", "诊所",
+                "门诊", "中医", "制药", "药业", "OTC", "国药准字",
+            ),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "中医推拿按摩馆 颈椎病 腰间盘突出 坐骨神经痛"
+        )
+        assertTrue("中医推拿按摩馆列病种应触发 medical rule, 实际 0 hits", hits.size >= 1)
+        assertTrue(hits.all { it.ruleId == "ad_signage_med_art6_indications" })
+    }
+
+    @Test
+    fun scan_medicalOtDisplayOutdoor_gateAdmitsDrugStoreAd() {
+        // fixture 70 同类型 — OTC 脚气水药店海报(国药准字 + 制药公司)。
+        // commit 6 起 anchor 池加 OTC + 国药准字 + 制药。
+        val r = AdSignageRule(
+            "ad_signage_medical_otc_display_outdoor",
+            "medical",
+            "药品广告审查发布标准 + 广告法 §15/§57",
+            listOf(
+                "OTC", "非处方药", "国药准字", "国药准字 H",
+                "脚气水", "脚气", "达克宁", "皮炎平",
+                "购买请凭处方", "请仔细阅读说明书",
+            ),
+            Severity.Warning,
+            categoryAnchors = listOf(
+                "医疗", "药品", "药店", "药房",
+                "门诊", "中医", "制药", "药业", "OTC", "国药准字",
+            ),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "本药业 OTC 脚气水 国药准字 H12345 国妆特字专柜"
+        )
+        assertTrue("OTC 脚气水药店海报应触发 medical rule, 实际 0 hits", hits.size >= 1)
+        assertTrue(hits.all { it.ruleId == "ad_signage_medical_otc_display_outdoor" })
+    }
+
+    @Test
+    fun scan_medArt6Indications_gateBlocksMassageServiceAPP() {
+        // 回归 pin — fixture 129 「东郊到家按摩 APP」(健康服务业而非
+        // 医疗机构)。commit 6 **不**把「按摩」加进 anchor 池,gate 仍
+        // 阻断此类广告,确保对 fixture 129 的 false-positive 修复不被回退。
+        val r = AdSignageRule(
+            "ad_signage_med_art6_indications",
+            "medical",
+            "医疗广告管理办法 §6 + §17",
+            listOf(
+                "颈椎病", "腰间盘突出", "肩周炎", "坐骨神经痛",
+                "中风", "偏瘫", "关节炎", "前列腺炎", "男科",
+                "试管婴儿", "按摩", "推拿", "理筋", "正骨",
+            ),
+            Severity.Warning,
+            categoryAnchors = listOf(
+                "医疗", "医院", "医师", "诊所",
+                "门诊", "中医", "制药", "药业", "OTC", "国药准字",
+            ),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "东郊到家 anmo.com 按摩 APP 9万人 1000万次"
+        )
+        assertTrue("按摩服务 APP 不应触发 medical rule(非医疗机构), 实际: $hits",
+            hits.isEmpty())
+    }
+
+    @Test
+    fun scan_medicalArt16MedAbs_unGatedByDesign() {
+        // 「根治 / 100% 有效 / 彻底治愈」属极端医疗断言,kw 自身是充分 signal。
+        // commit 4 之前 anchor=0(无 gate),commit 6 保持不动。任何含此 kw 的
+        // 广告都触发 — 典型如 fixture ykzp_01 药店海报(本店糖尿病专用药
+        // 服用七天 根治糖尿病)。
+        val r = AdSignageRule(
+            "ad_signage_art16_med_abs",
+            "medical",
+            "广告法 §16(1) + §58",
+            listOf("根治", "100% 有效", "彻底治愈", "断根"),
+            Severity.Violation,
+            // 故意不传 categoryAnchors — 空 = 无 gate
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "本店糖尿病专用药 服用七天 根治糖尿病"
+        )
+        assertTrue("药店海报无 anchor 但 kw 自身应触发, 实际 0 hits", hits.size >= 1)
+        assertTrue(hits.all { it.ruleId == "ad_signage_art16_med_abs" })
+    }
 }
