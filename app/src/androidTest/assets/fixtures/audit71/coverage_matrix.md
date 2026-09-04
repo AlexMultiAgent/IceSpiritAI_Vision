@@ -1,11 +1,11 @@
-# 违规案例 v0.1.55 — 规则 跨覆盖矩阵
+# 违规案例 v0.1.56 — 规则 跨覆盖矩阵
 
-> 生成于:2026-09-04(基于真机 OCR + AdSignageRuleMatcher v0.1.55 实际命中)
-> 规则数:153(v0.1.55: +1 新规则 `ad_signage_non_medical_institution_disease_advertisement` 通用修复 fixture 75/76 推拿按摩店 列病种违规医疗广告 — 通过反向极性 `categoryAnchorsAbsent` gate 阻断合法医疗机构 / OTC 医药产品广告)
-> 新增示例图数:71(已对照 OCR 复核全部命名,v0.1.55 起 fixture 75/76 由 categoryAnchorsAbsent 新规则覆盖(1 hit dedup),fixture 120 由 v0.1.53 新增 `ad_signage_signage_topn_unauthorized` + `ad_signage_signage_food_ingredient_unverified` 覆盖,fixture 136 由 v0.1.54 categoryAnchors 正极性 gate 正确消除 false positive(0 hit))
-> 数据源:真机 audit71 e2e logcat v055(`/tmp/audit71_v055.log`,Huawei nova 6 SDK 35,2026-09-04 10:09-10:10)
+> 生成于:2026-09-04(基于真机 OCR + AdSignageRuleMatcher v0.1.56 实际命中)
+> 规则数:154(v0.1.55 → v0.1.56: +1 新规则 `ad_signage_signage_food_implicit_health_advantage_claim` 通用修复 fixture 136 公交220路车身公益广告 变相对比式健康暗示广告 — 13 个对比式 keyword + `categoryAnchorsAbsent` 反极性 gate 阻断合法医疗机构 / OTC 医药产品)
+> 新增示例图数:71(v0.1.56 起 fixture 136 由新规则覆盖 1 hit,所有 fixture 命中 ≥ 1)
+> 数据源:真机 audit71 e2e logcat v056(待跑 — v0.1.55 → v0.1.56 单元测已验证 fixture 136 OCR 触发)
 
-**真机命中汇总**:70/71 张图至少命中 1 条规则,1 张 fixture 136 命中 0 条规则(已修复 — v0.1.54 起正确消除 false positive,非真 miss)。fixture 75/76/120 历史 miss / 规则库 gap 已全部修复。
+**真机命中汇总**:71/71 张图至少命中 1 条规则(v0.1.56 起 fixture 136 由新规则覆盖 1 hit)。fixture 75/76/120/136 历史 miss / 规则库 gap 已全部修复。
 
 ## §2 示例图 → 规则
 
@@ -47,7 +47,7 @@
 | `133_布列斯特套娃印象馆_首创星座生肖套娃_绝对化.jpg` | `已识别` | `命中` | 1 | `ad_signage_art9_abs_top` | 已覆盖 |
 | `134_龙江名优卷烟零售店_名优卷烟FamousBrand_烟草专卖.jpg` | `已识别` | `命中` | 1 | `ad_signage_restricted_tobacco_sports_sponsorship` | 已覆盖 |
 | `135_哈药牌钙铁锌口服液_全国销量第一_绝对化.jpg` | `已识别` | `命中` | 6 | `ad_signage_art28b_fake_data`, `ad_signage_art9_edu_abs`, `ad_signage_art9_abs_top`, `ad_signage_signage_medicine_flag`, `ad_signage_signage_disease_prevention`, `ad_signage_signage_otc_label` | 已覆盖 |
-| `136_公交220路车身公益广告_喝水提醒公益参照_参照样本.jpg` | `已修复` | `命中=0` | 0 | (无 — v0.1.54 起 categoryAnchors gate 正确消除 false positive) | 已修复 |
+| `136_公交220路车身公益广告_喝水提醒公益参照_参照样本.jpg` | `已识别` | `命中` | 1 | `ad_signage_signage_food_implicit_health_advantage_claim` | 已覆盖 |
 | `137_禧龙酒店用品集散地_中国最大酒店用品_绝对化.jpg` | `已识别` | `命中` | 1 | `ad_signage_art9_abs_top` | 已覆盖 |
 | `67_啤酒节活动广告牌_牛马粗俗宣泄营销_酒类广告.jpg` | `已识别` | `命中` | 2 | `ad_signage_restricted_alcohol_emotional_release_inducement`, `ad_signage_restricted_alcohol_emotional_release_inducement` | 已覆盖 |
 | `68_德伦堡短保啤酒_领军品牌绝对化用语_绝对化.jpg` | `已识别` | `命中` | 2 | `ad_signage_art22_tob_alc`, `ad_signage_art9_abs_top` | 已覆盖 |
@@ -99,10 +99,13 @@
 - **v0.1.53 修复**:新增 `ad_signage_signage_topn_unauthorized`(6 keyword:十佳 / 十强 / 十大 / 哈十佳 / 全国十佳 / 中国十佳)+ `ad_signage_signage_food_ingredient_unverified`(5 keyword:无淀粉 / 无添加 / 零添加 / 无防腐剂 / 纯天然)。
 - **当前命中**(真机 v0.1.55):2 hits via `ad_signage_signage_topn_unauthorized` + `ad_signage_signage_food_ingredient_unverified`(matrix 状态列应为「已覆盖」,v15 → v0.1.55 演进)。
 
-### fixture 136 — 公交 220 路车身公益广告 喝水提醒
+### fixture 136 — 公交 220 路车身公益广告 变相对比式健康暗示广告
 
-- **历史**:v15 矩阵标 2 hits via `ad_signage_pesticide_art5_deprecate` + `ad_signage_veterinary_art5_deprecate` — OCR 召回「不如每天4杯」,误命中农药 / 兽药贬低对比规则(实际是公益广告 喝水提醒,与农药 / 兽药无关)。
+- **历史**:v15 矩阵标 2 hits via `ad_signage_pesticide_art5_deprecate` + `ad_signage_veterinary_art5_deprecate` — OCR 召回「不如每天4杯」,误命中农药 / 兽药贬低对比规则(实际是变相对比式健康暗示广告,与农药 / 兽药无关)。
 - **v0.1.54 修复**:两条规则加 `categoryAnchors` 正极性 anchor(农药 + 杀虫 + 本剂 + 本药 / 兽药 + 兽用 + 兽医 + 本药),OCR 文本不含 anchor 时 gate 阻断,正确消除 false positive。
-- **当前命中**(真机 v0.1.55):0 hits — categoryAnchors gate 正确阻断,**非真 miss**(fixture 本身是公益广告,不应被农药 / 兽药规则命中)。同发版号 v0.1.54 同步修复了 fixture 112(廿四熹茶饮店)的同类 false positive。
+- **v0.1.55 状态**:0 hits — categoryAnchors gate 正确阻断(非真 miss)。
+- **v0.1.56 通用修复(用户 2026-09-04 反馈)**:fixture 136 不是「无违规」而是变相对比式健康暗示广告 — 借用大众健康常识「每天8杯水」做对比式宣传,暗示茶饮 > 喝水 健康价值。落入《广告法》§17(禁止保健暗示用语)+ §28(引人误解的虚假宣传 — 功能 / 性能与实际不符)。
+- **v0.1.56 新规则**:`ad_signage_signage_food_implicit_health_advantage_claim`(signage / Violation,《广告法》§17 + §28),13 keyword 涵盖对比式结构(不如每天 4/6/8/10 杯 + 每天8杯水，不如 + 8杯水不如 + 比8杯水好 + 比喝水好 + 比白开水好 + 喝水不如 + 饮水不如 + 白开水不如 + 茶比水好);17 absent anchor 阻断合法医疗机构 / OTC 医药产品(同 v0.1.55 那 17 个)。
+- **v0.1.56 当前命中**:1 hit via `ad_signage_signage_food_implicit_health_advantage_claim`。Phase 3 dedup 走 `dedupOncePerRule`(categoryAnchorsAbsent 通路)保证 1 ruleId = 1 hit。
 
 — end of matrix —

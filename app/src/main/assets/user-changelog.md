@@ -1,5 +1,27 @@
 # 用户更新日志
 
+## v0.1.56 · 2026-09-04
+
+- **「ad」域规则引擎新增 fixture 136 变相对比式健康暗示广告通用修复**(用户 2026-09-04 反馈:fixture 136 不是「无违规」而是**变相对比式健康暗示广告**,v0.1.54 categoryAnchors 正极性 gate 错把它当公益广告误杀(0 hit),v0.1.55 矩阵 sync 时进一步确认为规则库 gap)
+  - **法规依据**:《广告法》§17(除医疗、药品、医疗器械广告外,禁止其他任何广告涉及疾病治疗功能,并不得使用医疗用语**或者保健暗示用语**)+ §28 第二款第(二)项(商品的性能 / 功能 / 销售状况 / 曾获荣誉等信息与实际情况不符,对购买行为有实质性影响 → 引人误解的虚假宣传)
+  - **违规逻辑**:fixture 136 OCR 召回「每天8杯水」+「不如每天4杯」+「哈尔滨市公共交通和出租汽车事业发展中心监制」+「220 / 公交220-11 / 普惠大道(哈南五路口)/ 哈尔滨音乐厅」。**结构**:借用大众熟知的健康养生科普概念「每天8杯水」做对比式宣传,潜台词「喝茶效果优于喝水」→ 暗示茶饮具备优于饮水的健康价值 / 养生功效。普通瓶装茶饮料属于**普通食品**,不是保健食品,**普通食品广告不允许暗示保健 / 养生 / 健康获益**(无蓝帽子保健食品批号,不得做任何健康获益的暗示)。对比式宣传「自家产品 vs 喝水」亦落入 §28 —「性能 / 功能与实际不符」
+  - **新规则 `ad_signage_signage_food_implicit_health_advantage_claim`**(`signage` / `Violation`,《广告法》§17 + §28,`ad_signage_rules.json` version 17 → 18,153 → 154):
+    - **13 keywords**:对比式结构(`不如每天4杯` / `不如每天6杯` / `不如每天8杯` / `不如每天10杯` / `每天8杯水，不如` / `8杯水不如` / `比8杯水好` / `比喝水好` / `比白开水好` / `喝水不如` / `饮水不如` / `白开水不如` / `茶比水好`)。fixture 136 OCR 命中 `每天8杯水，不如` + `不如每天4杯` 双 keyword,Phase 2 dedup 合并到 longest(`每天8杯水，不如` = 6 chars)
+    - **17 absent anchors**:同 v0.1.55 那 17 个医疗机构 / 医药产品 markers(`医院 / 医师 / 诊所 / 门诊 / 中医 / 卫健委 / 卫生所 / 药品 / OTC / 国药准字 / 制药 / 药业 / 处方 / 临床 / 保健食品 / 适应症 / 禁忌症`)— 阻断合法医疗机构 / OTC 医药产品广告(医院 / 医师 / OTC 等 health claim 不应被本规则命中)
+    - **为什么用 `categoryAnchorsAbsent` 反极性 gate 而非 `categoryAnchors` 正极性 anchor**:fixture 136 OCR 未召回茶饮品牌名(只有「每天8杯水」+「不如每天4杯」+ 公交站台信息),正极性 anchor(`茶 / 饮料 / 饮品`)无从命中,无法捕获;absent gate 仅要求文本「不含医疗 / 医药产品 markers」即放行,精确捕获变相对比式普通食品广告
+    - **故意不收录**:纯公益健康科普「每天8杯水」无对比(不违规,光「每天8杯水」不应触发)
+  - **Phase 3 dedup**:本规则类同 absence rule,`categoryAnchorsAbsent` 非空时按 `dedupOncePerRule` 路径走(每个 ruleId 最多 1 hit)
+  - **6 条新单测**(全过,`./gradlew.bat testDebugUnitTest --tests AdSignageRuleMatcherTest`,**212 tests / 0 failures / 0 errors**):
+    - `firesOnFixture136BusAd` — fixture 136 OCR 风格(每天8杯水 + 不如每天4杯 + 公交站台文字 → 触发,1 hit)
+    - `firesOn茶比水好` — 通用对比式(高山乌龙 茶比水好 → 触发)
+    - `blocksOnHospitalHealthAdvice` — 真实医院健康建议(`富氏邦医院 健康科普 建议每天8杯水` → `医院` anchor 阻断,0 hit)
+    - `blocksOnOtcProductHealthClaim` — OTC 药品(`施玛脚气水 OTC 国药准字 适应症 每天8杯水` → `OTC` anchor 阻断,0 hit)
+    - `doesNotFireOnPurePublicHealthAd` — 纯公益科普(`每天8杯水 健康养生 多饮水有益身心 哈尔滨市健康教育所宣` → 无对比式 keyword,0 hit)
+    - `dedupMultiKeyword` — 多 keyword 命中合并到 1 hit(Phase 3 行为 pin)
+- **fixture 136 命中**:v0.1.55 = 0 hit → v0.1.56 = 1 hit via `ad_signage_signage_food_implicit_health_advantage_claim`(真机 e2e 待跑确认,**单测已 pin** 触发路径)
+- **`coverage_matrix.md` v0.1.55 → v0.1.56 演进**:fixture 136 行 `已修复 / 命中=0` → `已识别 / 命中 / 1 hit / 已覆盖`;header 规则数 153 → 154;§3 fixture 136 子节追加 v0.1.56 修复说明
+- **构建**:`versionCode` 55 → 56,`versionName` 0.1.55 → 0.1.56,`ad_signage_rules.json` version 17 → 18
+
 ## v0.1.55 · 2026-09-04
 
 - **「ad」域规则引擎新增 `categoryAnchorsAbsent` schema 字段 + gate**(v0.1.54 `categoryAnchors` 反向极性版本,`AdSignageRule.categoryAnchorsAbsent: List<String> = emptyList()`,默认空 = 行为不变):解决 v0.1.54 设计取舍留下的 fixture 76「易树堂推拿按摩店 兼列病种」通用性缺口

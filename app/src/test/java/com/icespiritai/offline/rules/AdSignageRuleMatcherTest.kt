@@ -3785,4 +3785,156 @@ class AdSignageRuleMatcherTest {
         )
         assertTrue("categoryAnchorsAbsent=空 list 应等同无 gate,实际 0 hits", hits.isNotEmpty())
     }
+
+    // --- ad_signage_signage_food_implicit_health_advantage_claim tests (v0.1.56) ---
+
+    @Test
+    fun scan_foodImplicitHealthAdvantage_firesOnFixture136BusAd() {
+        // 通用修复核心 pin — fixture 136 「公交220路车身公益广告 喝水提醒」
+        // OCR 真实召回:「每天8杯水」+「不如每天4杯」(OCR 未召回茶饮品牌名,
+        // 但图片上是茶饮广告)。结构:对比式宣传 暗示茶饮 > 喝水 健康价值。
+        // 法规:广告法 §17(禁止保健暗示用语)+ §28(引人误解的虚假宣传 —
+        // 功能 / 性能与实际不符,普通食品不得暗示养生 / 保健)。
+        //
+        // 用户 2026-09-04 强调:fixture 136 不是「公益广告无违规」而是变相对比式
+        // 健康暗示广告。v0.1.54 categoryAnchors 正极性 gate(农药 / 兽药)
+        // 错把它当公益广告误杀(0 hit);v0.1.56 起本规则(categoryAnchorsAbsent
+        // 反向极性 + 17 absent anchor 阻断合法医疗机构 / 医药产品)+ 13 个对比
+        // 式 keyword 通用捕获。
+        val r = AdSignageRule(
+            "ad_signage_signage_food_implicit_health_advantage_claim",
+            "signage",
+            "广告法 §17 + §28",
+            listOf(
+                "不如每天4杯", "不如每天6杯", "不如每天8杯", "不如每天10杯",
+                "每天8杯水，不如", "8杯水不如", "比8杯水好", "比喝水好",
+                "比白开水好", "喝水不如", "饮水不如", "白开水不如", "茶比水好",
+            ),
+            Severity.Violation,
+            categoryAnchorsAbsent = listOf(
+                "医院", "医师", "诊所", "门诊", "中医", "卫健委", "卫生所",
+                "药品", "OTC", "国药准字", "制药", "药业",
+                "处方", "临床", "保健食品", "适应症", "禁忌症",
+            ),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "公交220-11 普惠大道（哈南五路口）哈尔滨音乐厅 220 " +
+                "每天8杯水 哈尔滨市公共交通和出租汽车事业发展中心监制 不如每天4杯"
+        )
+        assertTrue("fixture 136 风格对比式宣传(每天8杯水 + 不如每天4杯)应触发 §17 + §28," +
+            " 实际: $hits", hits.isNotEmpty())
+        assertEquals("dedupOncePerRule(categoryAnchorsAbsent) 同一规则应只 1 hit",
+            1, hits.size)
+        assertTrue(hits.all { it.ruleId == "ad_signage_signage_food_implicit_health_advantage_claim" })
+    }
+
+    @Test
+    fun scan_foodImplicitHealthAdvantage_firesOn茶比水好() {
+        // 通用性 pin — 「茶比水好」是更直接的对比式宣传,无需数字杯量。
+        // 普通食品(茶)对比白开水暗示健康价值,落入 §17 + §28。
+        val r = AdSignageRule(
+            "ad_signage_signage_food_implicit_health_advantage_claim",
+            "signage",
+            "广告法 §17 + §28",
+            listOf("茶比水好", "茶比白开水好"),
+            Severity.Violation,
+            categoryAnchorsAbsent = listOf(
+                "医院", "医师", "诊所", "门诊", "中医", "药品",
+                "OTC", "国药准字", "制药", "药业", "处方", "临床", "保健食品",
+            ),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "高山乌龙 茶比水好 健康养生天然饮品"
+        )
+        assertTrue("茶饮对比式「茶比水好」应触发, 实际 0 hits", hits.isNotEmpty())
+    }
+
+    @Test
+    fun scan_foodImplicitHealthAdvantage_blocksOnHospitalHealthAdvice() {
+        // 回归 pin — 真实医院健康建议(如「每天8杯水」由医院发布的健康科普)
+        // 不应被本规则命中,因 absent anchor 「医院」阻断。fixture 102(富氏邦医院)
+        // 等医院广告若有「每天8杯水」相关健康科普文字应继续 0 hit。
+        val r = AdSignageRule(
+            "ad_signage_signage_food_implicit_health_advantage_claim",
+            "signage",
+            "广告法 §17 + §28",
+            listOf("不如每天4杯", "每天8杯水，不如", "喝水不如"),
+            Severity.Violation,
+            categoryAnchorsAbsent = listOf(
+                "医院", "医师", "诊所", "门诊", "中医", "药品",
+                "OTC", "国药准字", "制药", "药业", "处方", "临床", "保健食品",
+            ),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "富氏邦医院 健康科普 建议每天8杯水 多饮水有益健康"
+        )
+        assertTrue("医院健康科普不应触发 §17 + §28(医院 anchor 阻断)," +
+            " 实际: $hits", hits.isEmpty())
+    }
+
+    @Test
+    fun scan_foodImplicitHealthAdvantage_blocksOnOtcProductHealthClaim() {
+        // 回归 pin — OTC 药品(适应症合法说明)若有「每天8杯水」相关用法说明,
+        // 不应被本规则命中,因 absent anchor 「OTC / 药品 / 制药」阻断。
+        val r = AdSignageRule(
+            "ad_signage_signage_food_implicit_health_advantage_claim",
+            "signage",
+            "广告法 §17 + §28",
+            listOf("不如每天4杯", "喝水不如", "比喝水好"),
+            Severity.Violation,
+            categoryAnchorsAbsent = listOf(
+                "医院", "医师", "诊所", "门诊", "中医", "药品",
+                "OTC", "国药准字", "制药", "药业", "处方", "临床", "保健食品",
+            ),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "施玛脚气水 OTC 国药准字 适应症 每天8杯水 注意事项"
+        )
+        assertTrue("OTC 药品不应触发(OTC anchor 阻断), 实际: $hits", hits.isEmpty())
+    }
+
+    @Test
+    fun scan_foodImplicitHealthAdvantage_doesNotFireOnPurePublicHealthAd() {
+        // 通用性 pin — 真实公益广告「每天8杯水」(无对比)不应触发,因为
+        // 本规则所有 keyword 都含「不如 / 比 ... 好 / 茶比水」对比式结构。
+        // 单纯「每天8杯水 健康养生」是健康科普,不违规。
+        val r = AdSignageRule(
+            "ad_signage_signage_food_implicit_health_advantage_claim",
+            "signage",
+            "广告法 §17 + §28",
+            listOf("不如每天4杯", "每天8杯水，不如", "8杯水不如", "比8杯水好"),
+            Severity.Violation,
+            categoryAnchorsAbsent = listOf(
+                "医院", "医师", "诊所", "门诊", "中医", "药品",
+                "OTC", "国药准字", "制药", "药业", "处方", "临床", "保健食品",
+            ),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "每天8杯水 健康养生 多饮水有益身心 哈尔滨市健康教育所宣"
+        )
+        assertTrue("纯公益健康科普(无对比式宣传)不应触发, 实际: $hits", hits.isEmpty())
+    }
+
+    @Test
+    fun scan_foodImplicitHealthAdvantage_dedupMultiKeyword() {
+        // 通用性 pin — fixture 136 OCR 同时含「每天8杯水」+「不如每天4杯」,
+        // 多 keyword 命中应 dedup 到 1 hit(Phase 3 absence rule 行为)。
+        // 验证 dedupOncePerRule 对 categoryAnchorsAbsent 也生效。
+        val r = AdSignageRule(
+            "ad_signage_signage_food_implicit_health_advantage_claim",
+            "signage",
+            "广告法 §17 + §28",
+            listOf("每天8杯水，不如", "不如每天4杯", "不如每天8杯", "8杯水不如"),
+            Severity.Violation,
+            categoryAnchorsAbsent = listOf(
+                "医院", "医师", "诊所", "门诊", "中医", "药品",
+                "OTC", "国药准字", "制药", "药业", "处方", "临床", "保健食品",
+            ),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "每天8杯水 不如每天4杯 不如每天8杯 8杯水不如"
+        )
+        assertTrue("多 keyword 命中应至少 1 hit, 实际 0 hits", hits.isNotEmpty())
+        assertEquals("dedupOncePerRule 同一规则应只 1 hit, 实际: $hits", 1, hits.size)
+    }
 }
