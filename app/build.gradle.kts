@@ -980,5 +980,14 @@ dependencies {
     // on a real device so we can assert MIME, FLAG_GRANT_READ_URI_PERMISSION
     // and FileProvider authority.
     androidTestImplementation(libs.androidx.espresso.intents)
+    // PaddleOCR SDK + OpenCV: re-declared for androidTest scope because the
+    // `implementation(...)` lines at module top are NOT visible from
+    // androidTest sources under AGP 9.x strict classpath isolation. Without
+    // this, AdSignageAudit71ImageE2ETest + 9 other androidTest files fail
+    // to compile with `Unresolved reference: PaddleOcrEngine / OpenCVLoader`.
+    // (v0.1.54 follow-up; pre-existing in v0.1.53 but masked because
+    //  `connectedDebugAndroidTest` was not part of CI.)
+    androidTestImplementation(files("libs/ppocr-sdk.aar"))
+    androidTestImplementation(libs.opencv.android)
     debugImplementation(libs.compose.ui.test.manifest)
 }
