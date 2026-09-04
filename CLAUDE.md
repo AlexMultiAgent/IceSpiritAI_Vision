@@ -117,6 +117,36 @@ Gradle property `modelProfile` 控制当前构建启用哪个模型配置:
 - `知识库/已废止/*.md` = 已废止 / 被上位法替代 / 过渡期已结束的法规,仅作历史溯源用
 - 政策:新增规则或扩规则时,先用 WebSearch 确认 `regulation` 字段所引法规仍现行(2026-08-27 已完成批量清理:户外广告登记规定、母乳代用品销售管理办法、烟草广告管理暂行办法 → 已废止 / 实质替代;GB 7718-2011 / GB 28050-2011 / 食品标识管理规定 → 已废止并替换为 2025/2027 新版)
 
+### 规则库时效性更新(v0.1.58,2026-09-04)
+
+v0.1.58 是首个把"规则库时效性扫描"作为发版前置条件的发版号(commit `f254049`)。v0.1.57 follow-up workflow Phase 2 synthesis 报告(见 [`_reports/v0157_synthesis_plan.md`](_reports/v0157_synthesis_plan.md))扫出 ad_signage_rules.json 全 175 条规则的 `regulation` 字段,标识出 3 P0 drift(regulation / lawText 字段字符串变化,keywords / severity / category / sourceMarkers / categoryAnchors 全部不变,OCR 命中行为字节级一致 — 法规文本变化不应当连带影响 OCR 命中行为):
+
+| Rule | 原引用 → 现行引用 | Drift 形态 | KB 同步 |
+|---|---|---|---|
+| `ad_signage_restricted_tobacco_health_relief` | 《烟草广告管理暂行办法》§6 → 《广告法》§22 + §57 | **已废止**(2016-02-01 施行 / 2016-12 实质被《广告法》§22 吸收 / 2018-10 已废止) | 烟草广告管理暂行办法 `git mv` 到 [`知识库/已废止/烟草广告管理暂行办法_2016工商总局令86号废止.md`](知识库/已废止/烟草广告管理暂行办法_2016工商总局令86号废止.md) |
+| `ad_signage_restricted_tobacco_buy_gift_promotion` | 《烟草专卖法》§19(1991 原版) → §18(2015 第三次修正版现行) | **错号**(§18 = 广告禁令 / §19 = 商标注册,2015 修正版整体重排) | [`知识库/广告业务/中华人民共和国烟草专卖法(广告节选).md`](知识库/广告业务/中华人民共和国烟草专卖法(广告节选).md) 加 v0.1.58 编号同步 section |
+| `ad_signage_signage_duty_free_unauthorized` | 《反不正当竞争法》§8(2017/2019 版「虚假宣传」)→ §9(2025-10-15 修订版主席令第五十号) | **整体重排**(原 §8 → 现 §9;现 §8 是商业贿赂与广告无关) | 新建 [`知识库/广告业务/中华人民共和国反不正当竞争法.md`](知识库/广告业务/中华人民共和国反不正当竞争法.md) + [`中华人民共和国海关法(广告节选).md`](知识库/广告业务/中华人民共和国海关法(广告节选).md) |
+
+**drift 三种形态**(命名规范化,后续发版沿用):
+
+- **(A) 已废止** — 法规被上位法整体替代 / 过渡期已结束 / 明确废止令。处置:`git mv` 到 `知识库/已废止/`,README 链接同步换 `../已废止/`。
+- **(B) 错号** — 法规仍现行,但规则 JSON 引用的条款编号是旧版本结构(如 1991 原版 vs 2015 修正版)。处置:KB 加版本同步 section 解释现行编号。
+- **(C) 整体重排** — 法规经历实质修订,条款编号在修订版中整体前移/后移/合并/拆分(如《反不正当竞争法》2025 修订版 §8→§9)。处置:KB 新建 markdown(若是新引法规)或加修订版现行编号 section。
+
+**KB 同步范围(本地,gitignored)**:`知识库/` 目录整体 `.gitignore`(2026-09-02 起,体积大 + 含未授权转载的法源原文,本地留存供规则引擎引用)。dev/research 引用锚点(KB markdown)本地留存,但**不进 git,也不进 APK**;真正进 APK 的是 `app/src/main/assets/rules/*.json` 的 `regulation` + `lawText` 字段。本档作为"v0.1.58 以后发版前必须做的事"清单:
+
+1. **必跑** `.claude/agents/regulation-freshness-checker.md` agent(扫所有规则 `regulation` 字段 + WebSearch 法规新鲜度)
+2. **修 P0 drift**(已废止 / 错号 / 整体重排)→ 单个 commit 走 `fix(rules): ad_signage <X> 法规新鲜度 <原→现>` 格式
+3. **KB 同步**(新建 + 编号 sync + git mv 到 `已废止/`)→ 本地,gitignored
+4. **真机 e2e 不破**:`./gradlew.bat testDebugUnitTest` 必须全过(法规文本变化不影响 keywords / OCR 命中)
+5. **Triple-SHA 对齐**:tag = HEAD = gitea `latest` ref,见 §"发布流水线踩坑" 末尾
+
+**已知遗留 / 后续 PR 范围**(synthesis P1+):
+
+- 仍引《广告法》§17+§58 的 `ad_signage_signage_food_disease_target` 跨域引用(ad → food),按 [`feedback-followup-ad-signage-cross-cite`](.claude/agents/feedback-followup-ad-signage-cross-cite.md) 已 closed,根本 domain 拆分留单独 PR
+- v0.1.57 落地的 `ad_signage_internet_art34_live_ecommerce_fake` / `ad_signage_internet_art37_ai_digital_human` 引《直播电商监督管理办法》,但 `知识库/广告业务/` 主目录 .md 缺失(只在 `_tmp_convert/` 有)→ v0.1.58 已从 scratch 迁主目录并加 canonical 头(本地)
+- 剩余 fixture 验证 / 真机 e2e audit75 扩展 → 留给后续发版号
+
 ## 视觉/OCR 模型路线(2026-08 锁定)
 
 Phase 1 走 OCR + 规则库路线(**PP-OCRv6_small** + PaddleOCR 官方 SDK v3.7.0 + HankCS AC 自动机)。候选从 PaddleOCR-slim / Paddle-Lite / ONNX Runtime / MediaPipe Tasks 收敛到:**PaddleOCR 官方 SDK** 走 **ONNX Runtime + OpenCV**(Android 端 nn 推理),不再 hardcode 视觉模型路线。
