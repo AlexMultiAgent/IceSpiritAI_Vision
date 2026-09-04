@@ -3937,4 +3937,504 @@ class AdSignageRuleMatcherTest {
         assertTrue("多 keyword 命中应至少 1 hit, 实际 0 hits", hits.isNotEmpty())
         assertEquals("dedupOncePerRule 同一规则应只 1 hit, 实际: $hits", 1, hits.size)
     }
+
+    // ===================================================================
+    //  v0.1.57 — 知识库/广告业务 全量法律扩展
+    //  21 new rules + 2 severity flips + 4 keyword extensions.
+    //  Test strategy: 1 unit test per new rule + 1 per severity flip
+    //  + 1 per extension. All anchor-gated rules use a positive
+    //  sample containing the anchor + a negative sample without it.
+    // ===================================================================
+
+    @Test
+    fun v0_1_57_tobacco_buy_gift_promotion_firesWithAnchor() {
+        val r = AdSignageRule(
+            "ad_signage_restricted_tobacco_buy_gift_promotion",
+            "restricted",
+            "烟草专卖法 §19 + 广告法 §22",
+            listOf("买1条赠", "买烟得好礼", "凭烟盒兑换"),
+            Severity.Violation,
+            categoryAnchors = listOf("烟", "卷烟", "烟草"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "本店卷烟促销 买1条赠"
+        )
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+        assertEquals("ad_signage_restricted_tobacco_buy_gift_promotion", hits[0].ruleId)
+        assertEquals(Severity.Violation, hits[0].severity)
+    }
+
+    @Test
+    fun v0_1_57_tobacco_buy_gift_promotion_blockedWithoutAnchor() {
+        val r = AdSignageRule(
+            "ad_signage_restricted_tobacco_buy_gift_promotion",
+            "restricted",
+            "烟草专卖法 §19",
+            listOf("买1条赠"),
+            Severity.Violation,
+            categoryAnchors = listOf("烟", "卷烟"),
+        )
+        // Text contains keyword but no tobacco-domain anchor
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "本超市洗衣液促销 买1条赠"
+        )
+        assertTrue("无 anchor 时应 gate, 实际 $hits", hits.isEmpty())
+    }
+
+    @Test
+    fun v0_1_57_tobacco_health_relief_firesWithAnchor() {
+        val r = AdSignageRule(
+            "ad_signage_restricted_tobacco_health_relief",
+            "restricted",
+            "烟草广告管理暂行办法 §6",
+            listOf("提神烟", "养生烟"),
+            Severity.Violation,
+            categoryAnchors = listOf("烟", "卷烟"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("新品养生烟 提神醒脑")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+    }
+
+    @Test
+    fun v0_1_57_recruitment_gender_discrimination_firesWithAnchor() {
+        val r = AdSignageRule(
+            "ad_signage_signage_recruitment_gender_discrimination",
+            "signage",
+            "就业促进法 §26",
+            listOf("只招男性", "仅限男性", "男性优先"),
+            Severity.Violation,
+            categoryAnchors = listOf("招聘", "招工", "急招"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("高薪急招 只招男性")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+        assertEquals(Severity.Violation, hits[0].severity)
+    }
+
+    @Test
+    fun v0_1_57_recruitment_age_discrimination_firesWithAnchor() {
+        val r = AdSignageRule(
+            "ad_signage_signage_recruitment_age_discrimination",
+            "signage",
+            "就业促进法 §26",
+            listOf("35岁以下", "限35岁以下"),
+            Severity.Warning,
+            categoryAnchors = listOf("招聘", "招工", "急招"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("招聘销售 限35岁以下")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+        assertEquals(Severity.Warning, hits[0].severity)
+    }
+
+    @Test
+    fun v0_1_57_party_leader_commercial_fires() {
+        val r = AdSignageRule(
+            "ad_signage_signage_party_leader_commercial",
+            "signage",
+            "广告法 §9(2)",
+            listOf("主席同款", "主席卡通", "领导人形象"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("主席同款 高端礼盒 全国限量")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+    }
+
+    @Test
+    fun v0_1_57_special_supply_fires() {
+        val r = AdSignageRule(
+            "ad_signage_signage_special_supply",
+            "signage",
+            "广告法 §3+§9(2)",
+            listOf("特供", "国宴特供", "机关特供"),
+            Severity.Violation,
+            categoryAnchorsAbsent = listOf("特许经营"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("国宴特供 高端白酒")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+    }
+
+    @Test
+    fun v0_1_57_special_supply_suppressedForFranchise() {
+        val r = AdSignageRule(
+            "ad_signage_signage_special_supply",
+            "signage",
+            "广告法 §3+§9(2)",
+            listOf("特供", "国宴特供"),
+            Severity.Violation,
+            categoryAnchorsAbsent = listOf("特许经营", "特许加盟"),
+        )
+        // 特许经营含"特"字 + 特许加盟,缺席门应抑制
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "本品牌特许经营 全国招商"
+        )
+        assertTrue("特许经营场景应被缺席门抑制, 实际 $hits", hits.isEmpty())
+    }
+
+    @Test
+    fun v0_1_57_minor_under14_pester_parent_firesWithAnchor() {
+        val r = AdSignageRule(
+            "ad_signage_signage_minor_under14_pester_parent",
+            "minor",
+            "广告法 §40(2)",
+            listOf("妈妈我要", "爸爸买", "哭闹要"),
+            Severity.Violation,
+            categoryAnchors = listOf("儿童", "宝宝", "奶粉"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("儿童奶粉 妈妈我要")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+    }
+
+    @Test
+    fun v0_1_57_minor_under14_pester_parent_blockedWithoutAnchor() {
+        val r = AdSignageRule(
+            "ad_signage_signage_minor_under14_pester_parent",
+            "minor",
+            "广告法 §40(2)",
+            listOf("妈妈我要"),
+            Severity.Violation,
+            categoryAnchors = listOf("儿童", "宝宝", "奶粉"),
+        )
+        // 妈妈我要 出现,但无儿童/母婴 anchor
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本餐厅招牌菜 妈妈我要")
+        assertTrue("无 anchor 应 gate, 实际 $hits", hits.isEmpty())
+    }
+
+    @Test
+    fun v0_1_57_compare_dismiss_fires() {
+        val r = AdSignageRule(
+            "ad_signage_art13_compare_dismiss",
+            "absolute",
+            "广告法 §13",
+            listOf("碾压XX", "完爆XX", "吊打XX"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("碾压XX 全场最低价")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+    }
+
+    @Test
+    fun v0_1_57_citation_radish_fires() {
+        val r = AdSignageRule(
+            "ad_signage_art9_citation_radish",
+            "absolute",
+            "广告引证内容执法指南 §13",
+            listOf("某市第一", "本省第一", "全市第一"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本省第一 高端品牌")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+    }
+
+    @Test
+    fun v0_1_57_medical_induce_sales_firesWithAnchor() {
+        val r = AdSignageRule(
+            "ad_signage_medical_art11_induce_sales",
+            "medical",
+            "药品医疗器械保健食品广告审查暂行办法 §11(1)",
+            listOf("免费治疗", "家庭必备", "限量抢购"),
+            Severity.Warning,
+            categoryAnchors = listOf("药品", "OTC", "国药准字"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("OTC国药准字 家庭必备 限量抢购")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+    }
+
+    @Test
+    fun v0_1_57_medical_induce_sales_blockedWithoutAnchor() {
+        val r = AdSignageRule(
+            "ad_signage_medical_art11_induce_sales",
+            "medical",
+            "药品医疗器械保健食品广告审查暂行办法 §11(1)",
+            listOf("家庭必备", "限量抢购"),
+            Severity.Warning,
+            categoryAnchors = listOf("药品", "OTC"),
+        )
+        // "家庭必备" 出现于食品广告,无 medical anchor
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本饼干 家庭必备 限量抢购")
+        assertTrue("无 medical anchor 应 gate, 实际 $hits", hits.isEmpty())
+    }
+
+    @Test
+    fun v0_1_57_medical_art21_prohibited_ad_fires() {
+        val r = AdSignageRule(
+            "ad_signage_medical_art21_prohibited_ad",
+            "medical",
+            "药品医疗器械保健食品广告审查暂行办法 §21",
+            listOf("麻醉药品", "精神药品", "戒毒药品"),
+            Severity.Violation,
+            categoryAnchors = listOf("药品", "医药", "制药"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("专业制药 麻醉药品 临床")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+    }
+
+    @Test
+    fun v0_1_57_medical_clinic_promotion_fires() {
+        val r = AdSignageRule(
+            "ad_signage_medical_art11_clinic_promotion",
+            "medical",
+            "药品医疗器械保健食品广告审查暂行办法 §11(7)",
+            listOf("义诊", "特约门诊", "医疗咨询电话"),
+            Severity.Warning,
+            categoryAnchors = listOf("药品", "OTC", "医疗器械"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("OTC药品 免费义诊 特约门诊")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+    }
+
+    @Test
+    fun v0_1_57_veterinary_overrange_firesWithAnchor() {
+        val r = AdSignageRule(
+            "ad_signage_veterinary_art9_overrange",
+            "veterinary",
+            "兽药广告 §9",
+            listOf("百病皆治", "万能", "包治百病"),
+            Severity.Warning,
+            categoryAnchors = listOf("兽药", "兽用", "兽医"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本兽药 万能 百病皆治")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+    }
+
+    @Test
+    fun v0_1_57_veterinary_overrange_blockedWithoutAnchor() {
+        val r = AdSignageRule(
+            "ad_signage_veterinary_art9_overrange",
+            "veterinary",
+            "兽药广告 §9",
+            listOf("万能"),
+            Severity.Warning,
+            categoryAnchors = listOf("兽药", "兽用"),
+        )
+        // "万能" 出现在普通广告,无 vet anchor
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本工具 万能 厨房必备")
+        assertTrue("无 vet anchor 应 gate, 实际 $hits", hits.isEmpty())
+    }
+
+    @Test
+    fun v0_1_57_veterinary_no_residue_fires() {
+        val r = AdSignageRule(
+            "ad_signage_veterinary_no_residue",
+            "veterinary",
+            "兽药广告 §4(1)",
+            listOf("无残留", "无停药期", "零休药期"),
+            Severity.Violation,
+            categoryAnchors = listOf("兽药", "兽用"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("兽用本药 无残留 无停药期")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+    }
+
+    @Test
+    fun v0_1_57_pesticide_suggestive_firesWithAnchor() {
+        val r = AdSignageRule(
+            "ad_signage_pesticide_art7_suggestive",
+            "pesticide",
+            "农药广告 §7",
+            listOf("独家配方", "特效", "一喷就死"),
+            Severity.Warning,
+            categoryAnchors = listOf("农药", "杀虫", "本剂"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本杀虫剂 独家配方 一喷就死")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+    }
+
+    @Test
+    fun v0_1_57_pesticide_suggestive_blockedOnFood() {
+        val r = AdSignageRule(
+            "ad_signage_pesticide_art7_suggestive",
+            "pesticide",
+            "农药广告 §7",
+            listOf("独家配方", "特效"),
+            Severity.Warning,
+            categoryAnchors = listOf("农药", "杀虫", "本剂"),
+            categoryAnchorsAbsent = listOf("食品", "茶饮"),
+        )
+        // 食品广告,无 pesticide anchor 且命中 absent
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本食品 独家配方 特效 健康")
+        assertTrue("食品广告应被 gate, 实际 $hits", hits.isEmpty())
+    }
+
+    @Test
+    fun v0_1_57_pesticide_pseudoscience_fires() {
+        val r = AdSignageRule(
+            "ad_signage_pesticide_art8_pseudoscience",
+            "pesticide",
+            "农药广告 §8",
+            listOf("纳米农药", "太空育种", "量子农药"),
+            Severity.Warning,
+            categoryAnchors = listOf("农药", "本剂"),
+            categoryAnchorsAbsent = listOf("食品", "茶饮"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本农药 纳米农药 太空育种")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+    }
+
+    @Test
+    fun v0_1_57_re_financing_fires() {
+        val r = AdSignageRule(
+            "ad_signage_re_art16_financing",
+            "realestate",
+            "房地产广告 §16",
+            listOf("首付贷", "首付分期", "售后包租"),
+            Severity.Violation,
+            categoryAnchors = listOf("房地产", "楼盘", "售楼"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本楼盘 首付分期 售后包租")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+    }
+
+    @Test
+    fun v0_1_57_re_hukou_education_fires() {
+        val r = AdSignageRule(
+            "ad_signage_re_art18_hukou_education",
+            "realestate",
+            "房地产广告 §18",
+            listOf("解决户口", "包分配", "保证入学"),
+            Severity.Violation,
+            categoryAnchors = listOf("房地产", "楼盘", "学区"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本学区楼盘 解决户口 保证入学")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+    }
+
+    @Test
+    fun v0_1_57_re_property_mgmt_fires() {
+        val r = AdSignageRule(
+            "ad_signage_re_art19_property_mgmt",
+            "realestate",
+            "房地产广告 §19",
+            listOf("高端物业", "24小时管家", "私人管家"),
+            Severity.Warning,
+            categoryAnchors = listOf("房地产", "物业", "小区"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本小区 高端物业 24小时管家")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+    }
+
+    @Test
+    fun v0_1_57_internet_live_ecommerce_fake_fires() {
+        val r = AdSignageRule(
+            "ad_signage_internet_art34_live_ecommerce_fake",
+            "internet_ad",
+            "直播电商监督管理办法 §34",
+            listOf("直播间", "上链接", "主播亲测"),
+            Severity.Violation,
+            categoryAnchors = listOf("直播", "主播"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("直播间上链接 主播亲测")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+    }
+
+    @Test
+    fun v0_1_57_internet_ai_digital_human_fires() {
+        val r = AdSignageRule(
+            "ad_signage_internet_art37_ai_digital_human",
+            "internet_ad",
+            "直播电商监督管理办法 §37",
+            listOf("AI主播", "数字人主播", "虚拟主播"),
+            Severity.Warning,
+            categoryAnchors = listOf("直播", "AI主播"),
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("AI主播 直播带货 数字人主播")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+    }
+
+    // ---- Severity flips ----
+
+    @Test
+    fun v0_1_57_edu_abs_severityPromotedToViolation() {
+        val r = AdSignageRule(
+            "ad_signage_art9_edu_abs",
+            "absolute",
+            "广告法 §9(3)+§24(1)+绝对化用语执法指南 §11",
+            listOf("最", "第一", "顶级"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本课程 顶级 培训 第一选择")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+        assertEquals(Severity.Violation, hits[0].severity)
+    }
+
+    @Test
+    fun v0_1_57_finance_investment_abs_severityPromotedToViolation() {
+        val r = AdSignageRule(
+            "finance_art9_abs_investment",
+            "finance",
+            "广告法 §9(3)+§25(1)+绝对化用语执法指南 §11",
+            listOf("最高回报", "最稳赚", "第一收益"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本项目 最高回报 第一收益")
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+        assertEquals(Severity.Violation, hits[0].severity)
+    }
+
+    // ---- Keyword extensions ----
+
+    @Test
+    fun v0_1_57_wildlife_extended_keywords_fire() {
+        val r = AdSignageRule(
+            "ad_signage_restricted_wildlife_product_ad",
+            "restricted",
+            "野生动物保护法 §27",
+            listOf(
+                "熊胆", "麝香", "玳瑁", "玳瑁制品", "象牙", "象牙制品",
+                "犀角杯", "藏羚羊绒", "赛加羚羊角", "野山参", "象骨", "鲸骨",
+            ),
+            Severity.Violation,
+        )
+        // 老 keyword
+        val hitsOld = AdSignageRuleMatcher(listOf(r)).scan("本店 熊胆 商务接待")
+        assertEquals(1, hitsOld.size)
+        // 新 keyword
+        val hitsNew = AdSignageRuleMatcher(listOf(r)).scan("本品 玳瑁制品 象牙 藏羚羊绒")
+        assertTrue("新 keyword 应命中, 实际 0", hitsNew.isNotEmpty())
+        val hitsNew2 = AdSignageRuleMatcher(listOf(r)).scan("野山参 象骨 鲸骨")
+        assertTrue("新 keyword 应命中, 实际 0", hitsNew2.isNotEmpty())
+    }
+
+    @Test
+    fun v0_1_57_duty_free_extended_keywords_fire() {
+        val r = AdSignageRule(
+            "ad_signage_signage_duty_free_unauthorized",
+            "signage",
+            "海关法 §24",
+            listOf("免税店", "离岛免税", "离境免税", "免税额度"),
+            Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "本店 离境免税 免税额度 独家"
+        )
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+    }
+
+    @Test
+    fun v0_1_57_cosmetic_implied_dryness_extended_keywords_fire() {
+        val r = AdSignageRule(
+            "ad_signage_signage_cosmetic_implied_dryness",
+            "signage",
+            "广告法 §17 + 化妆品监督管理条例 §25",
+            listOf("皮肤干燥", "屏障受损", "屏障破坏", "易过敏"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "本护肤品 修复屏障受损 屏障破坏"
+        )
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+    }
+
+    @Test
+    fun v0_1_57_internet_paid_search_extended_keywords_fire() {
+        val r = AdSignageRule(
+            "internet_art21_paid_search",
+            "internet_ad",
+            "互联网广告管理办法 §21",
+            listOf("百度推广", "竞价排名", "搜索品专", "品牌专区", "品专"),
+            Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(r)).scan(
+            "百度推广 搜索品专 品牌专区"
+        )
+        assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
+    }
 }

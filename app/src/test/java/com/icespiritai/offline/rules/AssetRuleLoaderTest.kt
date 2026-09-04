@@ -68,13 +68,13 @@ class AssetRuleLoaderTest {
             "src/main/assets/rules/ad_signage_rules.json"
         ).readText(Charsets.UTF_8)
         val set = json.decodeFromString(AdSignageRuleSet.serializer(), src)
-        assertEquals(16, set.version)
+        assertEquals(19, set.version)
         assertTrue(
             "shipped ad_signage_rules.json must carry at least one rule (10 golden + 70+ incremental rules)",
             set.rules.size >= 1,
         )
         assertTrue(
-            "shipped ad_signage_rules.json must bundle 10 golden + 70+ incremental rules (v1: 10, v2: +32, v3: +43 = 85, v4: +31 = 116, v5: +3 = 119, v6: +1 = 120, v7: +0 new + 1 keyword = 120, v8: +0 new + 4 regulation fixes = 120, v9: +8 new + 2 strengthened = 129, v10: +0 new + keyword extensions = 129, v11: +15 new = 144, v12: +2 new = 146, v13: +1 new = 147, v14: +2 new = 149, v15: +1 new + 1 keyword extension = 150, v16: +2 new = 152)",
+            "shipped ad_signage_rules.json must bundle 10 golden + 70+ incremental rules (v1: 10, v2: +32, v3: +43 = 85, v4: +31 = 116, v5: +3 = 119, v6: +1 = 120, v7: +0 new + 1 keyword = 120, v8: +0 new + 4 regulation fixes = 120, v9: +8 new + 2 strengthened = 129, v10: +0 new + keyword extensions = 129, v11: +15 new = 144, v12: +2 new = 146, v13: +1 new = 147, v14: +2 new = 149, v15: +1 new + 1 keyword extension = 150, v16: +2 new = 152, v17: +1 new + keyword extension = 153, v18: +1 new + 1 regulation = 154, v19: +21 new + 2 severity flips + 4 keyword extensions = 175)",
             set.rules.size >= 140,
         )
         assertTrue("every shipped rule must bundle its full provision text", set.rules.all { it.lawText.isNotBlank() })

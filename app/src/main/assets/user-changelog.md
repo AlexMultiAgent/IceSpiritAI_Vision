@@ -1,5 +1,32 @@
 # 用户更新日志
 
+## v0.1.57 · 2026-09-04
+
+- **「ad」域规则引擎全量扩写(知识库/广告业务/ 17 部法规全量阅读后落地的合规扩写)**:用户 2026-09-04 反馈「广告业务有更新,全部认真阅读一遍该文件夹下所有的法律法规,完善识别规则」,逐部研读 17 部现行法规(广告法 / 广告管理条例 / 烟草专卖法 / 野生动物保护法 / 就业促进法 / 药品医疗器械保健食品广告审查暂行办法 / 兽药广告审查发布规定 / 农药广告审查发布规定 / 房地产广告发布规定 / 互联网广告管理办法 / 直播电商监督管理办法 2026 / 广告绝对化用语执法指南 / 广告引证内容执法指南 2026 等),落地为 **21 新规则 + 2 severity 升级 + 4 既有规则 keyword 扩展**:
+  - **`ad_signage_rules.json` version 18 → 19,规则数 154 → 175(+21)**
+  - **新规则 21 条**(按法规分):
+    - **烟草专卖法 / 烟草广告管理暂行办法** — `ad_signage_restricted_tobacco_buy_gift_promotion` (Violation,买烟得好礼 / 凭烟盒兑换 / 买1条赠,锚烟/卷烟/烟草)+ `ad_signage_restricted_tobacco_health_relief` (Violation,养生烟/保健烟/解乏烟,锚烟)
+    - **就业促进法 §26** — `ad_signage_signage_recruitment_gender_discrimination` (Violation,只招男性/男性优先,锚招聘/招工)+ `ad_signage_signage_recruitment_age_discrimination` (Warning,35岁以下/45岁以下,锚招聘)
+    - **广告法 §9(2)** — `ad_signage_signage_party_leader_commercial` (Violation,主席同款/领导人形象/主席卡通,无 anchor — 国家机关形象全场景违规)
+    - **广告法 §3+§9(2)+绝对化用语执法指南** — `ad_signage_signage_special_supply` (Violation,特供/专供/国宴特供/国宾专供,`categoryAnchorsAbsent=[特许经营,特许加盟]` 屏蔽加盟广告合法使用「特许」字)
+    - **广告法 §40(2)** — `ad_signage_signage_minor_under14_pester_parent` (Violation,妈妈我要/爸爸买/哭闹要,锚儿童/宝宝/奶粉 — 阻断餐饮等无关广告)
+    - **广告法 §13** — `ad_signage_art13_compare_dismiss` (Warning,碾压XX/完爆XX/吊打XX — 贬低同业比较广告)
+    - **广告引证内容执法指南 §13(2026)** — `ad_signage_art9_citation_radish` (Violation,某市第一/本省第一/全市第一 — 萝卜坑式绝对化新解释)
+    - **药品医疗器械保健食品广告审查暂行办法 §11(1) / §21 / §11(7)** — `ad_signage_medical_art11_induce_sales` (Warning,免费治疗/家庭必备/限量抢购,锚药品/OTC/国药准字)+ `ad_signage_medical_art21_prohibited_ad` (Violation,麻醉药品/精神药品/戒毒药品/放射性药品,锚药品/制药)+ `ad_signage_medical_art11_clinic_promotion` (Warning,义诊/特约门诊/医疗咨询电话,锚药品/医疗器械)
+    - **兽药广告 §9 / §4(1)** — `ad_signage_veterinary_art9_overrange` (Warning,万能/百病皆治/包治百病,锚兽药/兽医)+ `ad_signage_veterinary_no_residue` (Violation,无残留/无停药期/零休药期,锚兽药)
+    - **农药广告 §7 / §8** — `ad_signage_pesticide_art7_suggestive` (Warning,独家配方/特效/一喷就死,锚农药/杀虫,`categoryAnchorsAbsent=[食品,茶饮,化妆品,美容]` 屏蔽跨域)+ `ad_signage_pesticide_art8_pseudoscience` (Warning,纳米农药/太空育种/量子农药,锚农药,absent 同上)
+    - **房地产广告 §16 / §18 / §19** — `ad_signage_re_art16_financing` (Violation,首付贷/售后包租/返本销售,锚房地产/楼盘)+ `ad_signage_re_art18_hukou_education` (Violation,解决户口/保证入学,锚学区,`categoryAnchorsAbsent=[已交付,已划片]`)+ `ad_signage_re_art19_property_mgmt` (Warning,高端物业/24小时管家,锚物业)
+    - **直播电商监督管理办法 §34 / §37(2026-02-01 施行)** — `ad_signage_internet_art34_live_ecommerce_fake` (Violation,直播间/上链接/主播亲测,锚直播)+ `ad_signage_internet_art37_ai_digital_human` (Warning,AI主播/数字人主播/虚拟主播,锚AI主播)
+  - **Severity 升级 2 条**(per 绝对化用语执法指南 §11 strict-domain list):`ad_signage_art9_edu_abs` 教育培训类 + `finance_art9_abs_investment` 招商投资类 — Warning → Violation(2026-09-03 研判:医疗 / 医美 / 教育 / 招商投资 4 类严领域,绝对化用语无免罚)
+  - **既有规则 keyword 扩展 4 条**:
+    - `ad_signage_restricted_wildlife_product_ad` +10 keywords(玳瑁/象牙/犀角杯/藏羚羊绒/赛加羚羊角/野山参/象骨/鲸骨 — 野生动物保护法 §27 §31 列举)
+    - `ad_signage_signage_duty_free_unauthorized` +2(离境免税/免税额度 — 海关法 §24 适用扩展)
+    - `ad_signage_signage_cosmetic_implied_dryness` +3(屏障受损/屏障破坏/易过敏 — 化妆品监督管理条例 §25 第二款)
+    - `internet_art21_paid_search` +3(搜索品专/品牌专区/品专 — 百度搜索产品官方名)
+  - **33 条新单测**(全过,`./gradlew.bat testDebugUnitTest --tests AdSignageRuleMatcherTest`,**245 tests / 0 failures / 0 errors**):每条新规则 1-2 测(正向 + anchor gate 反向),severity 升级 2 测,keyword 扩展 4 测
+  - **构建 / 数据**:`versionCode` 56 → 57,`versionName` 0.1.56 → 0.1.57,`ad_signage_rules.json` version 18 → 19
+  - **真机 e2e 待跑**:audit71 fixture set 本次主要扩 category-anchor gated rules(medical / vet / pesticide / re / internet_ad),后续真机烟测关注 `anyHitCount` 是否破 ≥60/N 阈值
+
 ## v0.1.56 · 2026-09-04
 
 - **「ad」域规则引擎新增 fixture 136 变相对比式健康暗示广告通用修复**(用户 2026-09-04 反馈:fixture 136 不是「无违规」而是**变相对比式健康暗示广告**,v0.1.54 categoryAnchors 正极性 gate 错把它当公益广告误杀(0 hit),v0.1.55 矩阵 sync 时进一步确认为规则库 gap)
