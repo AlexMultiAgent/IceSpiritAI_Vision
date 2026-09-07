@@ -360,6 +360,51 @@ fun HomeTopBar(
 
 **测试**:`ResultPanelA11yTest` 加 case — 0 命中时 footer 节点存在且 `contentDescription` 含 "AI 识别仅供参考"。
 
+### 6.4 首次启动免责声明对话框(主动接受机制)
+
+**触发**:`MainActivity.onCreate` 后,`SettingsRepository.disclaimerAcceptedAt: Flow<Long?>` 首次发射 `null` 时,根 composable 顶层弹 `AlertDialog`。
+
+**视觉**:
+
+```
+┌────────────────────────────────────────┐
+│  使用提示                                │
+├────────────────────────────────────────┤
+│  本应用通过 OCR 与规则匹配辅助识别广告招牌违│
+│  规情形,识别结果仅供参考,实际合规判断请以│
+│  现场检查为准。                          │
+│                                        │
+│  规则库可能滞后于最新法规,OCR 可能漏字或  │
+│  误识,语音朗读由系统/兜底引擎合成,质量受  │
+│  设备引擎能力影响。                      │
+│                                        │
+│  请将本应用作为现场辅助工具使用,不要作为  │
+│  最终合规判定依据。                      │
+│                                        │
+├────────────────────────────────────────┤
+│            [    我了解    ]              │
+└────────────────────────────────────────┘
+```
+
+- `Material3 AlertDialog`,背景 `colorScheme.surfaceContainerHigh`,corner 16dp
+- title `使用提示`(titleLarge + Source Han Serif SC Bold)
+- body 三段(bodyMedium)
+- positive button 唯一,`[ 我了解 ]`,click 后写 `disclaimerAcceptedAt = System.currentTimeMillis()` 到 DataStore 并 dismiss
+- `setCancelable(false)`(按 back 不关) + `setCanceledOnTouchOutside(false)`
+- 强制视觉走 Phase 3 Editorial palette + Hairline + accent border(不破坏既有设计语言)
+
+**为什么强制一次性**:DataStore `Flow<Long?>` first() 仅取首次,后续启动跳过;`setCancelable(false)` 防 back 键绕过。这提供法律层面"主动接受"证据 — 比单纯 Settings footer 强很多。
+
+**测试**:
+- `DisclaimerDialogTest`(Robolectric):(a) 首次启动 dialog 显示;(b) 点 "我了解" 后 `disclaimerAcceptedAt` 非 null;(c) 后续启动 dialog 不显示;(d) back 键不关闭
+
+**v1 文件清单增量**:
+- `ui/common/DisclaimerDialog.kt`(composable,接 `SettingsRepository`)
+- `data/settings/SettingsRepository.kt` 新增 `disclaimerAcceptedAt: Flow<Long?>` + `acceptDisclaimer(): Unit`
+- `data/settings/SettingsKeys.kt` 新增 `DISCLAIMER_ACCEPTED_AT`
+- `strings.xml` 新增 `tts_disclaimer_title` / `tts_disclaimer_body_*`(3 段)/ `tts_disclaimer_ack`
+- `app/src/test/java/com/icespiritai/offline/ui/common/DisclaimerDialogTest.kt`
+
 ---
 
 ## 7. UI: Settings "语音播报" section
@@ -707,6 +752,14 @@ Logcat TAG = `IceSpiritTtsE2E`,仿 `Audit71E2E` pattern。
 - `LocalTtsController.kt`
 - `ScriptBuilder.kt`
 
+**新建**(`app/src/main/java/com/icespiritai/offline/ui/common/`):
+
+- `DisclaimerDialog.kt`(§6.4 首次启动免责声明对话框,Material3 AlertDialog + 一次性 DataStore)
+
+**新建**(`app/src/test/java/com/icespiritai/offline/ui/common/`):
+
+- `DisclaimerDialogTest.kt`(Robolectric,4 用例:首次显示 / 点 ack 写时间戳 / 二次启动不显示 / back 键不关)
+
 **新建**(`app/src/test/java/com/icespiritai/offline/tts/`):
 
 - `ScriptBuilderTest.kt`
@@ -756,8 +809,9 @@ Logcat TAG = `IceSpiritTtsE2E`,仿 `Audit71E2E` pattern。
 - `app/src/main/java/com/icespiritai/offline/ui/settings/TtsEnginePickerScreen.kt` — 新建(整个 screen)
 - `app/src/main/java/com/icespiritai/offline/ui/nav/IceSpiritNavHost.kt` — 新增 `Routes.TTS_ENGINE_PICKER` 路由 + transition
 - `app/src/main/java/com/icespiritai/offline/ui/nav/Routes.kt` — 新增 `TTS_ENGINE_PICKER` const
-- `app/src/main/java/com/icespiritai/offline/settings/SettingsRepository.kt` — 新增 `ttsEnabled` + `ttsEnginePackage` Flow + DataStore key
-- `app/src/main/res/values/strings.xml` — 新增 ~10 个 key
+- `app/src/main/java/com/icespiritai/offline/settings/SettingsRepository.kt` — 新增 `ttsEnabled` + `ttsEnginePackage` + `disclaimerAcceptedAt: Flow<Long?>` + `acceptDisclaimer()` + DataStore key
+- `app/src/main/java/com/icespiritai/offline/MainActivity.kt` — `onCreate` 顶层订阅 `disclaimerAcceptedAt.first() == null` 触发 DisclaimerDialog 显示
+- `app/src/main/res/values/strings.xml` — 新增 ~10 个 TTS key + `tts_disclaimer_title` + `tts_disclaimer_body_*`(3 段)+ `tts_disclaimer_ack`
 - `app/src/main/AndroidManifest.xml` — 新增 FileProvider 注册
 - `app/build.gradle.kts` — 无新依赖(FileProvider 已由 androidx.core 提供,代码已存在)
 - `.gitignore` — **无新增**(cacheDir 文件不入 git)
@@ -845,9 +899,7 @@ dependencies {
 5. **CLAUDE.md 是否需要补"vision + 引擎 APK 双仓"工作流章节**:等 plan 落地后再补
 6. **sherpa-onnx Android AAR 的精确 Maven 坐标**:版本、group/artifact id 需 plan 阶段去 k2-fsa 官方文档核实,不在 spec 阶段锁死
 7. **断点续传测试的真机可行性**:nova 6 网络限速下是否能可靠触发 50% 杀进程场景?若不可靠,改用 `mockk` / `Robolectric` 模拟 Range 行为
-8. **首次启动免责对话框是否 v1 落地**:当前 spec 已在 §6.1 / §6.3 / §7.1 三处做通道强化,但仍缺"主动接受"机制。是否需要 `MainActivity.onCreate` 一次性弹 `AlertDialog`(`AlertDialog.Builder.setCancelable(false).setPositiveButton("我了解")`),记录到 DataStore `disclaimerAcceptedAt: Long?` 仅弹一次?**建议 v1 落地**(零成本,但提供法律告知证据);**反对意见**:弹窗打断首次体验,可留 v2
-   - 若 v1 落地:plan 阶段需新增 strings `tts_disclaimer_title` + `tts_disclaimer_body` + `tts_disclaimer_ack`,新增 DataStore key,新增 1 个 dialog composable + Robolectric 测试
-   - 若 v1 不落地:§16 此条移至 §17「Phase 4+ 范围」清单
+8. **首次启动免责对话框 v1 落地** ✅ resolved 2026-09-08:在 `MainActivity.onCreate` 一次性弹 `AlertDialog`(`setCancelable(false).setPositiveButton("我了解")`),记录到 DataStore `disclaimerAcceptedAt: Long?` 仅弹一次。详见 §6.4。
 
 ---
 
