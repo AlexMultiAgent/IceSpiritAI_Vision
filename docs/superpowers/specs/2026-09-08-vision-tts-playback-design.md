@@ -9,7 +9,7 @@
 | 关联项目根指令 | [`CLAUDE.md`](../../CLAUDE.md) |
 | 关联 plan | 待写作 `docs/superpowers/plans/2026-09-08-vision-tts-playback.md` |
 
-本文档记录冰灵锐目 **识别结果语音播放功能** 的设计决策:TTS 抽象 + Android 内置引擎 + 兜底引擎 APK 下载/安装(用于设备零中文 TTS 引擎场景)。实施细节(文件清单 / 依赖 / 发版切分 / 测试路径 / 引擎 APK 打包脚本)在后续 plan 中。
+本文档记录冰灵锐目 **识别结果语音播放功能** 的设计决策:TTS 抽象 + 系统当前首选 TTS(Android `TextToSpeech` API 路由到用户在系统设置选定的引擎)+ 兜底引擎 APK 下载/安装(用于设备零中文 TTS 引擎场景)。实施细节(文件清单 / 依赖 / 发版切分 / 测试路径 / 引擎 APK 打包脚本)在后续 plan 中。
 
 ---
 
@@ -56,11 +56,16 @@
 
 ### 3.1 TTS 引擎选择
 
+**术语统一**(本 spec 全文遵循):
+
+- "**系统当前首选 TTS**" = `android.speech.tts.TextToSpeech` API 抽象,实际运行时路由到 `Settings → 语言和输入法 → 文字转语音 → 首选引擎` 当前用户选定的那个 — 华为 nova 6 = 荣耀 AI 语音引擎 / Pixel = Google TTS / 三星 = Samsung TTS / 小米 = Xiaomi TTS 等。**不是** 特指 "Google TTS" 或 "Android OS 内嵌引擎"。
+- "**跟随系统首选**" = `enginePackage = null`,Android 自动按用户首选引擎路由
+
 | 方向 | 取舍 | 选定 |
 |---|---|---|
-| A:仅 Android 内置 TTS | 零开发,直接调 `TextToSpeech`;但用户设备必须装有中文引擎,否则降级到英文或无声 | |
+| A:仅系统当前首选 TTS | 零开发,直接调 `TextToSpeech`;但用户设备必须装有中文引擎,否则降级到英文或无声 | |
 | B:集成 sherpa-onnx 端侧 ONNX TTS 到 vision APK | 完全离线 + 中文;但 vision APK 体积 +150MB(`sherpa-onnx AAR` + `ONNX Runtime` + `matcha-zh-baker 123MB 模型`),与 `feedback-release-hygiene`(不发版号不 bump + 不膨胀 APK)冲突 | |
-| **C:Android 内置 TTS 优先 + 独立 `icespirit-tts-engine` APK 兜底** | v1 APK 不增体积;设备有中文引擎走系统,没有走兜底 APK(下载 ~150MB 装上后与系统引擎统一体验) | ✓ |
+| **C:系统当前首选 TTS 优先 + 独立 `icespirit-tts-engine` APK 兜底** | v1 APK 不增体积;设备有中文引擎走系统,没有走兜底 APK(下载 ~150MB 装上后与系统引擎统一体验) | ✓ |
 
 **为什么不选 A**:`giteaadmin/Model` 仓库 `sherpa-onnx-matcha-zh-baker` 已存在,但用户原始诉求 `http://125.211.45.14:3000/giteaadmin/Model/releases` 明确指向该模型。仅 A 等于绕过用户给出的兜底意图。
 
@@ -104,6 +109,13 @@
 | **C:朗读"未筛查出违规事项,AI识别仅供参考"** | 显式表达"AI 仅供参考,可能漏" — 不让用户过度信任结果 | ✓ |
 
 **为什么选 C**:`feedback-zero-hit-not-true-negative` memory 教训:规则匹配 0 hit 不等于真负例。朗读文案必须传递"仅供参考"的不确定性,避免执法人员把 AI 结果当最终结论。
+
+**为什么 C 不构成充分免责申明**(2026-09-08 评审补充):仅 TTS 朗读在法律告知层面**不充分**,原因是(1)现场嘈杂用户可能听错;(2)有命中时**不读**"AI 仅供参考",但 OCR 漏字 / 规则库 gap 同样会让结果不完整;(3)免责申明通常需要"明确告知 + 主动接受"机制。**C 必须搭配**:
+
+- **ResultPanel 0 命中卡片 visible footer**:`⚠ AI 识别仅供参考,实际以现场判断为准`(见 §6.3)
+- **HomeTopBar 朗读按钮 a11y contentDescription**:`朗读识别结果;AI 识别仅供参考`(见 §6.1)
+- **Settings "语音播报" section footer**:`ℹ 朗读内容仅供参考,实际合规判断请以现场检查为准`(见 §7.1)
+- **(可选)首次启动免责声明对话框**:`AlertDialog`,用户必须点 "我了解" — 详见 §16 Open question 8
 
 ### 3.5 Settings 集成粒度
 
@@ -301,7 +313,7 @@ HomeTopBar tap (state == Complete && setting.enabled):
 | `setting.enabled=false` | 不渲染 | — | — | — |
 | `setting.enabled && state≠Complete && ttsState.mode!=InitFailed` | `Icons.AutoMirrored.Filled.VolumeUp` | `onSurface.copy(alpha=0.38f)` (灰禁) | 无 | "朗读,当前无可朗读结果" |
 | `setting.enabled && ttsState.mode==InitFailed` | 同上 | grey | 无 | "朗读功能不可用,设置中查看详情" |
-| `setting.enabled && state==Complete && ttsState.mode==Idle` | `VolumeUp` | `colorScheme.primary` (accent) | 1px accent border | "朗读识别结果" |
+| `setting.enabled && state==Complete && ttsState.mode==Idle` | `VolumeUp` | `colorScheme.primary` (accent) | 1px accent border | "朗读识别结果;AI 识别仅供参考" |
 | `setting.enabled && state==Complete && ttsState.mode==Speaking` | `Icons.Default.Stop` | `colorScheme.primary` | 1px accent border | "停止朗读" |
 
 **位置**:HomeTopBar 右侧 Row,settings gear 左侧 8dp gap。`Modifier.size(40.dp)`,`IconButton` 包 `Modifier.semantics(mergeDescendants=true) { contentDescription = ... }`(Phase 3 Task 4 belt-and-braces pattern)。
@@ -324,6 +336,30 @@ fun HomeTopBar(
 
 向后兼容(默认值让既有 Robolectric 测试不传也通过)。
 
+### 6.3 ResultPanel 0 命中卡片 visible footer(免责申明第二通道)
+
+**触发**:`state==Complete && report.hits.isEmpty()` 时,ResultPanel 主结果区上方显示 footer。
+
+**视觉**(沿用 Phase 3 Hairline section + Warning accent 左侧条):
+
+```
+识别完成
+─────────────────────────────────────────
+✓ 未发现违规
+─────────────────────────────────────────
+⚠ AI 识别仅供参考,实际以现场判断为准
+─────────────────────────────────────────
+```
+
+- 整段用 `MaterialTheme.typography.bodySmall` + `LocalSpacing.s`
+- `⚠` 图标 + 文本 `AI 识别仅供参考,实际以现场判断为准`
+- 左侧 4dp Warning accent 边条(severity 系统提供 `sev.container(Warning)` token,与 HitCard 左侧色条语言一致)
+- 位于 ResultPanel 顶部 stats 区下方,HitCard LazyColumn 上方,**用户视线扫结果时必看**
+
+**为什么不只用 TTS**:见 §3.4 "为什么 C 不构成充分免责申明"。屏幕可见 + 声音 + Settings footer 三通道强化。
+
+**测试**:`ResultPanelA11yTest` 加 case — 0 命中时 footer 节点存在且 `contentDescription` 含 "AI 识别仅供参考"。
+
 ---
 
 ## 7. UI: Settings "语音播报" section
@@ -342,7 +378,8 @@ fun HomeTopBar(
   │                                       onClick → navigateToTtsEnginePicker()
   └────────────────────────────────────────
 
-  ┌ (footer muted, BodySmallMuted)
+  ┌ (footer muted, BodySmallMuted, 两行)
+  │ ℹ 朗读内容仅供参考,实际合规判断请以现场检查为准。
   │ 语速 / 音调请在系统「文本转语音」设置中调整。
   └────────────────────────────────────────
 ```
@@ -808,6 +845,9 @@ dependencies {
 5. **CLAUDE.md 是否需要补"vision + 引擎 APK 双仓"工作流章节**:等 plan 落地后再补
 6. **sherpa-onnx Android AAR 的精确 Maven 坐标**:版本、group/artifact id 需 plan 阶段去 k2-fsa 官方文档核实,不在 spec 阶段锁死
 7. **断点续传测试的真机可行性**:nova 6 网络限速下是否能可靠触发 50% 杀进程场景?若不可靠,改用 `mockk` / `Robolectric` 模拟 Range 行为
+8. **首次启动免责对话框是否 v1 落地**:当前 spec 已在 §6.1 / §6.3 / §7.1 三处做通道强化,但仍缺"主动接受"机制。是否需要 `MainActivity.onCreate` 一次性弹 `AlertDialog`(`AlertDialog.Builder.setCancelable(false).setPositiveButton("我了解")`),记录到 DataStore `disclaimerAcceptedAt: Long?` 仅弹一次?**建议 v1 落地**(零成本,但提供法律告知证据);**反对意见**:弹窗打断首次体验,可留 v2
+   - 若 v1 落地:plan 阶段需新增 strings `tts_disclaimer_title` + `tts_disclaimer_body` + `tts_disclaimer_ack`,新增 DataStore key,新增 1 个 dialog composable + Robolectric 测试
+   - 若 v1 不落地:§16 此条移至 §17「Phase 4+ 范围」清单
 
 ---
 
