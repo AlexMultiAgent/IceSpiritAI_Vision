@@ -5,18 +5,26 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.icespiritai.offline.R
 import com.icespiritai.offline.domain.RuleHit
@@ -60,6 +68,17 @@ fun ResultPanel(
 
     if (report.hits.isEmpty()) {
         Column(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+            // Spec §6.3 — visible footer that surfaces the "AI 仅供参考" disclaimer
+            // explicitly when the result card would otherwise be empty (0 hits).
+            // This is the second channel of the disclaimer (the first is the
+            // TtsSection footer in Settings, see plan Task 9). Without this row
+            // a user could mistake "no hits" for "all clear", so the accent bar
+            // + bodySmall text gives an unmistakable "this isn't a verdict".
+            DisclaimerFooter()
+            HorizontalDivider(
+                thickness = 1.dp,
+                color = MaterialTheme.colorScheme.outline,
+            )
             Text(
                 text = stringResource(R.string.status_no_violation_card),
                 style = MaterialTheme.typography.titleMedium,
@@ -154,5 +173,42 @@ private fun SeveritySectionHeader(severity: Severity, count: Int) {
                 )
             }
         }
+    }
+}
+
+/**
+ * Spec §6.3 — visible disclaimer row shown above the "no violation" card
+ * when [ViolationReport.hits] is empty.
+ *
+ * Layout: 4 dp wide × 32 dp tall accent box (uses [MaterialTheme.colorScheme.secondary]
+ * which the theme maps to the Warning bucket) + 8 dp spacer + bodySmall text
+ * sourced from [R.string.tts_result_panel_footer_disclaimer].
+ *
+ * The accent bar gives an unmistakable "this isn't a verdict" signal even when
+ * the user only glances at the result panel. TalkBack gets a dedicated
+ * `contentDescription` ("AI 识别仅供参考") independent from the visible label
+ * so the screen reader doesn't have to wait for the Chinese body to finish.
+ */
+@Composable
+private fun DisclaimerFooter(modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .semantics { contentDescription = "AI 识别仅供参考" },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(4.dp)
+                .height(32.dp)
+                .background(MaterialTheme.colorScheme.secondary),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = stringResource(R.string.tts_result_panel_footer_disclaimer),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+        )
     }
 }
