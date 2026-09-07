@@ -135,3 +135,6 @@ release.keystore
 
 # audit66 OCR fixtures — recorded locally by tools/ocr-audit66-fixtures.py; regenerable.
 app/src/test/resources/fixtures/audit66_ocr/
+
+# Local worktree directories (subagent-driven plan execution)
+.worktrees/
