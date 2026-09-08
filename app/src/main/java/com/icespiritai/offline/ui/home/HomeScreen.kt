@@ -46,6 +46,7 @@ import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.domain.ViolationReport
 import com.icespiritai.offline.domain.severityRank
 import com.icespiritai.offline.export.ExportAction
+import com.icespiritai.offline.tts.TtsState
 import java.io.File
 
 @Composable
@@ -68,6 +69,29 @@ fun HomeScreen(
      * fresh ViewModel via `LocalViewModelStoreOwner.current`.
      */
     viewModel: IceSpiritVisionViewModel = viewModel(),
+    /**
+     * TTS controller state machine (spec §5.1). Threaded from
+     * `IceSpiritNavHost` so the top-bar speaker icon can flip between
+     * Idle / Speaking / InitFailed. Defaulted to `Disabled` so the
+     * existing Robolectric tests (which don't stand up a TTS controller)
+     * don't render the speaker button at all.
+     */
+    ttsState: TtsState = TtsState.Disabled,
+    /**
+     * Drives the top-bar speaker button's enabled + accent-border visual.
+     * Defaults to `false`; real wiring (derive from `state is
+     * AnalysisState.Complete`) happens when the speak toggle gets
+     * controller-connected — Task 16 follow-up.
+     */
+    isAnalysisComplete: Boolean = false,
+    /**
+     * Speak / stop callback wired from `IceSpiritNavHost`. Defaulted to
+     * a no-op so callers without a controller (tests, screenshots) stay
+     * unchanged. Production wires `ttsController.toggle()` (parameterless —
+     * the controller reads the latest pushed ViolationReport from its own
+     * state). Full OCR→rules→speak end-to-end is the Task 16 follow-up.
+     */
+    onSpeakToggle: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
@@ -227,6 +251,9 @@ fun HomeScreen(
             },
             tabEnabled = state !is AnalysisState.Loading,
             onOpenSettings = onOpenSettings,
+            ttsState = ttsState,
+            isAnalysisComplete = isAnalysisComplete,
+            onSpeakToggle = onSpeakToggle,
         )
 
         StatusBannerFor(state = state)

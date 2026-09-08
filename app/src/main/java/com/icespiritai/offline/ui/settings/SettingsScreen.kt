@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -18,6 +20,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -33,6 +36,7 @@ import com.icespiritai.offline.BuildConfig
 import com.icespiritai.offline.R
 import com.icespiritai.offline.settings.SettingsRepository
 import com.icespiritai.offline.settings.SettingsViewModel
+import com.icespiritai.offline.tts.TtsState
 
 /**
  * Modernized Settings screen (Phase 3.5 Task 21).
@@ -51,6 +55,11 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onOpenChangelog: () -> Unit,
     onOpenUpdateDetail: () -> Unit,
+    ttsState: TtsState = TtsState.Disabled,
+    ttsEnabled: Boolean = true,
+    onSetTtsEnabled: (Boolean) -> Unit = {},
+    currentEngineLabel: String = "跟随系统默认",
+    onOpenEnginePicker: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -84,6 +93,7 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -115,6 +125,14 @@ fun SettingsScreen(
                     )
                 }
             }
+            Card(modifier = Modifier.fillMaxWidth()) {
+                TtsSection(
+                    ttsEnabled = ttsEnabled,
+                    onSetTtsEnabled = onSetTtsEnabled,
+                    currentEngineLabel = currentEngineLabel,
+                    onOpenEnginePicker = onOpenEnginePicker,
+                )
+            }
             Spacer(modifier = Modifier.height(8.dp))
             Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                 Text(
@@ -131,5 +149,83 @@ fun SettingsScreen(
                 )
             }
         }
+    }
+}
+
+/**
+ * "语音播报" settings card(spec §7.1)。
+ *
+ * 总开关 Switch + 引擎 row(gated on enabled)+ footer disclaimer 双行。
+ * 引擎 row clickable → onOpenEnginePicker,Activity 侧路由到 picker 子页。
+ */
+@Composable
+private fun TtsSection(
+    ttsEnabled: Boolean,
+    onSetTtsEnabled: (Boolean) -> Unit,
+    currentEngineLabel: String,
+    onOpenEnginePicker: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.tts_section_title),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onSetTtsEnabled(!ttsEnabled) },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.tts_total_switch),
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f),
+            )
+            Switch(
+                checked = ttsEnabled,
+                onCheckedChange = onSetTtsEnabled,
+            )
+        }
+        if (ttsEnabled) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenEnginePicker)
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.tts_engine_label),
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = currentEngineLabel,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                )
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = stringResource(R.string.tts_section_footer_disclaimer),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+        )
+        Text(
+            text = stringResource(R.string.tts_section_footer_settings_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+        )
     }
 }

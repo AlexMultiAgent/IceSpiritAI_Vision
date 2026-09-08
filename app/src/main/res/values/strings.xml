@@ -133,4 +133,41 @@
     <string name="pick_image_fab_desc">从相册选图</string>
     <string name="loading_ocr_skeleton">OCR 识别中…</string>
     <string name="loading_rule_skeleton">规则扫描中…</string>
+
+    <!-- TTS playback (vision TTS spec §6.1, §7.1, §8) -->
+    <string name="tts_button_desc">朗读识别结果;AI 识别仅供参考</string>
+    <string name="tts_button_disabled_desc">朗读,当前无可朗读结果</string>
+    <string name="tts_button_init_failed_desc">朗读功能不可用,设置中查看详情</string>
+    <string name="tts_button_stop_desc">停止朗读</string>
+
+    <string name="tts_section_title">语音播报</string>
+    <string name="tts_total_switch">启用朗读功能</string>
+    <string name="tts_total_switch_desc">识别完成后朗读违规命中要点</string>
+
+    <string name="tts_engine_label">引擎</string>
+    <string name="tts_engine_follow_system">跟随系统默认</string>
+    <string name="tts_engine_picker_title">选择 TTS 引擎</string>
+
+    <string name="tts_empty_title">未找到中文 TTS 引擎</string>
+    <string name="tts_empty_solution_1_title">方案 1</string>
+    <string name="tts_empty_solution_1_body">在系统「文本转语音」设置中安装或启用中文语音包</string>
+    <string name="tts_empty_open_system_settings">打开系统 TTS 设置</string>
+    <string name="tts_empty_solution_2_title">方案 2</string>
+    <string name="tts_empty_solution_2_body">下载冰灵中文 TTS 引擎(约 150 MB,首次需联网,仅一次)</string>
+    <string name="tts_empty_download">下载引擎</string>
+    <string name="tts_empty_downloading">下载冰灵 TTS 引擎… %1$d%%</string>
+    <string name="tts_empty_download_long_press_to_cancel">长按取消下载</string>
+
+    <string name="tts_section_footer_disclaimer">ℹ 朗读内容仅供参考,实际合规判断请以现场检查为准。</string>
+    <string name="tts_section_footer_settings_hint">语速 / 音调请在系统「文本转语音」设置中调整。</string>
+
+    <!-- First-launch disclaimer dialog (§6.4) -->
+    <string name="tts_disclaimer_title">使用提示</string>
+    <string name="tts_disclaimer_body_1">本应用通过 OCR 与规则匹配辅助识别广告招牌违规情形,识别结果仅供参考,实际合规判断请以现场检查为准。</string>
+    <string name="tts_disclaimer_body_2">规则库可能滞后于最新法规,OCR 可能漏字或误识,语音朗读由系统/兜底引擎合成,质量受设备引擎能力影响。</string>
+    <string name="tts_disclaimer_body_3">请将本应用作为现场辅助工具使用,不要作为最终合规判定依据。</string>
+    <string name="tts_disclaimer_ack">我了解</string>
+
+    <!-- ResultPanel 0-hit footer (§6.3) -->
+    <string name="tts_result_panel_footer_disclaimer">⚠ AI 识别仅供参考,实际以现场判断为准</string>
 </resources>

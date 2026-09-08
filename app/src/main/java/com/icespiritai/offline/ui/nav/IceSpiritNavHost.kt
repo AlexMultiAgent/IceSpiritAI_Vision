@@ -3,6 +3,7 @@ package com.icespiritai.offline.ui.nav
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -13,9 +14,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.icespiritai.offline.IceSpiritVisionViewModel
 import com.icespiritai.offline.domain.AnalysisState
+import com.icespiritai.offline.tts.TtsController
+import com.icespiritai.offline.tts.TtsState
 import com.icespiritai.offline.ui.home.HomeScreen
 import com.icespiritai.offline.ui.settings.ChangelogScreen
 import com.icespiritai.offline.ui.settings.SettingsScreen
+import com.icespiritai.offline.ui.settings.TtsEnginePickerScreen
 import com.icespiritai.offline.ui.settings.UpdateDetailScreen
 import com.icespiritai.offline.ui.viewer.ViewerScreen
 
@@ -25,6 +29,7 @@ object Routes {
     const val CHANGELOG = "changelog"
     const val UPDATE_DETAIL = "update_detail"
     const val VIEWER = "viewer"
+    const val TTS_ENGINE_PICKER = "tts_engine_picker"
 }
 
 /**
@@ -48,7 +53,12 @@ object Routes {
  * destinations.
  */
 @Composable
-fun IceSpiritNavHost(modifier: Modifier = Modifier) {
+fun IceSpiritNavHost(
+    ttsState: TtsState = TtsState.Disabled,
+    onSpeakToggle: () -> Unit = {},
+    ttsController: TtsController? = null,
+    modifier: Modifier = Modifier,
+) {
     Surface(
         modifier = modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
@@ -57,13 +67,30 @@ fun IceSpiritNavHost(modifier: Modifier = Modifier) {
         // is the Activity, not a per-route NavBackStackEntry). Shared
         // with both HomeScreen and the Viewer composable.
         val sharedVm: IceSpiritVisionViewModel = viewModel()
+        // Bridge the shared VM's AnalysisState → TtsController.latestReport.
+        // TtsController.toggle() is parameterless and reads its report from
+        // an internal slot; without this collection the top-bar 朗读 button
+        // would no-op on Idle (latestReport null) even after a Complete
+        // analysis lands. Defaults to null in unit tests so this LaunchedEffect
+        // is a no-op when no controller is provided.
+        LaunchedEffect(sharedVm, ttsController) {
+            if (ttsController != null) {
+                sharedVm.state.collect { state ->
+                    ttsController.setLatestReport(
+                        (state as? AnalysisState.Complete)?.report
+                    )
+                }
+            }
+        }
         val nav = rememberNavController()
         NavHost(navController = nav, startDestination = Routes.HOME) {
             composable(Routes.HOME) {
                 HomeScreen(
                     viewModel = sharedVm,
+                    ttsState = ttsState,
                     onOpenSettings = { nav.navigate(Routes.SETTINGS) },
                     onOpenViewer = { nav.navigate(Routes.VIEWER) },
+                    onSpeakToggle = onSpeakToggle,
                 )
             }
             composable(Routes.SETTINGS) {
@@ -71,6 +98,14 @@ fun IceSpiritNavHost(modifier: Modifier = Modifier) {
                     onBack = { nav.popBackStack() },
                     onOpenChangelog = { nav.navigate(Routes.CHANGELOG) },
                     onOpenUpdateDetail = { nav.navigate(Routes.UPDATE_DETAIL) },
+                    onOpenEnginePicker = { nav.navigate(Routes.TTS_ENGINE_PICKER) },
+                )
+            }
+            composable(Routes.TTS_ENGINE_PICKER) {
+                TtsEnginePickerScreen(
+                    onBack = { nav.popBackStack() },
+                    currentEnginePackage = null,
+                    onSelectEngine = { pkg -> /* Task 11/12 will wire */ },
                 )
             }
             composable(Routes.CHANGELOG) {

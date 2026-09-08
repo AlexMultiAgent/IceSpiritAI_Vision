@@ -6,6 +6,8 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import com.icespiritai.offline.tts.LocalTtsController
+import com.icespiritai.offline.tts.TtsController
 
 private val DarkScheme = darkColorScheme(
     primary = DarkIceChatAccent,
@@ -54,11 +56,24 @@ fun ThemeMode.toDarkTheme(): Boolean = when (this) {
 @Composable
 fun IceSpiritVisionTheme(
     themeMode: ThemeMode,
+    // Defaulted to null so existing UI tests that only need LocalSeverityColors /
+    // MaterialTheme can keep calling `IceSpiritVisionTheme(themeMode = ...)`.
+    // The Activity always passes a non-null controller in production, which is
+    // where LocalTtsController.current is consumed by the TTS UI (Task 9+).
+    ttsController: TtsController? = null,
     content: @Composable () -> Unit,
 ) {
     val darkTheme = themeMode.toDarkTheme()
     val severityColors = SeverityColors(isDark = darkTheme)
-    CompositionLocalProvider(LocalSeverityColors provides severityColors) {
+    // Build the provider list dynamically — attach the TTS provider only when
+    // an Activity-supplied controller exists, so tests / previews that omit
+    // it stay free of the engine-side init() side effects TtsController.init
+    // kicks off.
+    val providers = buildList<androidx.compose.runtime.ProvidedValue<*>> {
+        add(LocalSeverityColors provides severityColors)
+        if (ttsController != null) add(LocalTtsController provides ttsController)
+    }
+    CompositionLocalProvider(*providers.toTypedArray()) {
         MaterialTheme(
             colorScheme = if (darkTheme) DarkScheme else LightScheme,
             shapes = IceSpiritShapes,

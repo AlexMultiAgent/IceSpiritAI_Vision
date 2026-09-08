@@ -3,4 +3,6 @@
     <cache-path name="capture" path="capture/" />
     <cache-path name="evidence" path="evidence/" />
     <cache-path name="update" path="update/" />
+    <!-- TTS engine installer: icespirit-tts-engine.apk 落在 cacheDir 根目录 -->
+    <cache-path name="tts_engine_apk" path="." />
 </paths>
