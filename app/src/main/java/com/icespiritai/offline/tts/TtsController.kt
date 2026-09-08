@@ -27,6 +27,12 @@ class TtsController(
 
     val setting get() = settings.setting
 
+    // Latest pushed ViolationReport, read by [toggle] so the top-bar click
+    // handler doesn't need to thread it through. Populated by callers that
+    // own the OCR→rules pipeline (Task 16 follow-up). null until the first
+    // Complete analysis lands.
+    private var latestReport: ViolationReport? = null
+
     init {
         scope.launch {
             settings.setting.collect { s ->
@@ -42,9 +48,21 @@ class TtsController(
     fun speak(report: ViolationReport) {
         val current = _state.value
         if (current is TtsState.Disabled || current is TtsState.InitFailed) return
+        latestReport = report
         val text = ScriptBuilder.build(report)
         engine.speak(text, utteranceId = "report") { _state.value = TtsState.Idle }
         _state.value = TtsState.Speaking
+    }
+
+    /**
+     * Push the latest analyzed [ViolationReport] so [toggle] can speak it
+     * without the click handler threading it through. Called from the
+     * OCR→rules Complete pipeline (Task 16 follow-up). Clearing with
+     * `null` is allowed and lets [toggle] Idle-branch no-op instead of
+     * replaying a stale report after a reset.
+     */
+    fun setLatestReport(report: ViolationReport?) {
+        latestReport = report
     }
 
     fun stop() {
@@ -52,8 +70,39 @@ class TtsController(
         _state.value = TtsState.Idle
     }
 
-    fun toggle(report: ViolationReport) {
-        if (_state.value is TtsState.Speaking) stop() else speak(report)
+    /**
+     * Speak/stop toggle on the top-bar 朗读 button. Parameterless so the
+     * click handler doesn't need the [ViolationReport] — this method reads
+     * it from [latestReport] (set by [speak] or [setLatestReport]).
+     *
+     * State-machine contract:
+     * - [TtsState.Idle]      → speak [latestReport]. No-op when null
+     *                          (no analysis has run yet — Task 16 wires the
+     *                          push).
+     * - [TtsState.Speaking]  → stop.
+     * - [TtsState.Disabled]  → user gesture re-enables the feature
+     *                          (persist `enabled=true` to DataStore); the
+     *                          existing setting collector transitions state
+     *                          to Idle once DataStore commits. Engine is
+     *                          left untouched because `init` already
+     *                          succeeded.
+     * - [TtsState.InitFailed] → re-probe supported engines via
+     *                          [refreshEngineStatus]. If a chinese-capable
+     *                          engine exists now, mark Idle, else stay
+     *                          InitFailed. No full engine re-init — that
+     *                          would require shutdown + new TextToSpeech
+     *                          instance and risks leaking the previous one.
+     */
+    fun toggle() {
+        when (_state.value) {
+            is TtsState.Speaking -> stop()
+            is TtsState.Disabled -> scope.launch { settings.setEnabled(true) }
+            is TtsState.InitFailed -> refreshEngineStatus()
+            is TtsState.Idle -> {
+                val report = latestReport ?: return
+                speak(report)
+            }
+        }
     }
 
     suspend fun setEnabled(b: Boolean) = settings.setEnabled(b)

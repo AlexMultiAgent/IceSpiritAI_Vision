@@ -106,14 +106,18 @@ class TtsControllerTest {
 
     @Test fun `toggle from Idle starts speaking`() = runTest {
         fakeSettings.emit(TtsSetting(enabled = true))
-        controller.toggle(reportWith("hello"))
+        // toggle() is parameterless in production; the controller reads
+        // its report from `latestReport` (set via setLatestReport or speak()).
+        controller.setLatestReport(reportWith("hello"))
+        controller.toggle()
         assertEquals(TtsState.Speaking, controller.state.first())
     }
 
     @Test fun `toggle from Speaking stops`() = runTest {
         fakeSettings.emit(TtsSetting(enabled = true))
-        controller.toggle(reportWith("hello"))
-        controller.toggle(reportWith("hello"))
+        controller.setLatestReport(reportWith("hello"))
+        controller.toggle()
+        controller.toggle()
         assertEquals(TtsState.Idle, controller.state.first())
         assertEquals(1, fakeEngine.stopCallCount)
     }

@@ -53,6 +53,7 @@ object Routes {
 @Composable
 fun IceSpiritNavHost(
     ttsState: TtsState = TtsState.Disabled,
+    onSpeakToggle: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -71,7 +72,7 @@ fun IceSpiritNavHost(
                     ttsState = ttsState,
                     onOpenSettings = { nav.navigate(Routes.SETTINGS) },
                     onOpenViewer = { nav.navigate(Routes.VIEWER) },
-                    onSpeakToggle = { /* TODO Task 16 / real wiring — placeholder */ },
+                    onSpeakToggle = onSpeakToggle,
                 )
             }
             composable(Routes.SETTINGS) {

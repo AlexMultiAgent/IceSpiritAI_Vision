@@ -70,10 +70,18 @@ class IceSpiritVisionActivity : ComponentActivity() {
                 .collectAsStateWithLifecycle(
                     initialValue = false,
                 )
+            // Thread TTS controller state down to the NavHost so the home
+            // top-bar 朗读 button can flip between Idle / Speaking /
+            // InitFailed (Bug 2 fix — without this wiring the NavHost
+            // defaults to Disabled and the icon never renders).
+            val ttsState by ttsController.state.collectAsStateWithLifecycle()
 
             IceSpiritVisionTheme(themeMode = themeMode, ttsController = ttsController) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    IceSpiritNavHost()
+                    IceSpiritNavHost(
+                        ttsState = ttsState,
+                        onSpeakToggle = { ttsController.toggle() },
+                    )
                     if (!disclaimerAccepted) {
                         DisclaimerDialog(onAcknowledge = {
                             lifecycleScope.launch { settings.acceptDisclaimer() }

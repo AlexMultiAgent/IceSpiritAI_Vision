@@ -87,7 +87,9 @@ fun HomeScreen(
     /**
      * Speak / stop callback wired from `IceSpiritNavHost`. Defaulted to
      * a no-op so callers without a controller (tests, screenshots) stay
-     * unchanged. Task 16 wires the real `ttsController.toggle(report)`.
+     * unchanged. Production wires `ttsController.toggle()` (parameterless —
+     * the controller reads the latest pushed ViolationReport from its own
+     * state). Full OCR→rules→speak end-to-end is the Task 16 follow-up.
      */
     onSpeakToggle: () -> Unit = {},
 ) {
