@@ -57,6 +57,24 @@ fun IceSpiritNavHost(
     ttsState: TtsState = TtsState.Disabled,
     onSpeakToggle: () -> Unit = {},
     ttsController: TtsController? = null,
+    /**
+     * Current TTS user preference (DataStore-backed). Threaded from
+     * `IceSpiritVisionActivity` (which owns the repository) so the
+     * Settings "语音播报" Switch reflects the real persisted value
+     * instead of a hard-coded default. Bug 1 fix (v0.1.60) — previously
+     * `SettingsScreen` always rendered with `ttsEnabled = true` and
+     * `onSetTtsEnabled = {}` (the param defaults), making the Switch
+     * a decorative toggle.
+     */
+    ttsEnabled: Boolean = true,
+    onSetTtsEnabled: (Boolean) -> Unit = {},
+    /**
+     * Display label for the currently-active TTS engine — "跟随系统默认"
+     * when no engine is pinned, otherwise the picker row's [EngineInfo.label].
+     * Threaded from the Activity so the Settings "引擎" row shows real
+     * data; before the fix it was a hard-coded fallback string.
+     */
+    currentEngineLabel: String = "跟随系统默认",
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -67,6 +85,17 @@ fun IceSpiritNavHost(
         // is the Activity, not a per-route NavBackStackEntry). Shared
         // with both HomeScreen and the Viewer composable.
         val sharedVm: IceSpiritVisionViewModel = viewModel()
+        // Bug 1 fix (v0.1.60): hoist `state` and `pendingUri` collection
+        // to NavHost level so HomeScreen can read `isAnalysisComplete`
+        // (state is AnalysisState.Complete) for the top-bar 朗读 button.
+        // Previously HomeScreen received `isAnalysisComplete = false`
+        // (param default) because the NavHost call site didn't thread
+        // it, so the IconButton always rendered the greyed-out
+        // decorative fallback. The Viewer composable now reads from
+        // the same hoisted flows — no duplicate `collectAsState` call.
+        val state by sharedVm.state.collectAsState()
+        val pendingUri by sharedVm.pendingUri.collectAsState()
+        val isAnalysisComplete = state is AnalysisState.Complete
         // Bridge the shared VM's AnalysisState → TtsController.latestReport.
         // TtsController.toggle() is parameterless and reads its report from
         // an internal slot; without this collection the top-bar 朗读 button
@@ -88,6 +117,7 @@ fun IceSpiritNavHost(
                 HomeScreen(
                     viewModel = sharedVm,
                     ttsState = ttsState,
+                    isAnalysisComplete = isAnalysisComplete,
                     onOpenSettings = { nav.navigate(Routes.SETTINGS) },
                     onOpenViewer = { nav.navigate(Routes.VIEWER) },
                     onSpeakToggle = onSpeakToggle,
@@ -99,6 +129,10 @@ fun IceSpiritNavHost(
                     onOpenChangelog = { nav.navigate(Routes.CHANGELOG) },
                     onOpenUpdateDetail = { nav.navigate(Routes.UPDATE_DETAIL) },
                     onOpenEnginePicker = { nav.navigate(Routes.TTS_ENGINE_PICKER) },
+                    ttsState = ttsState,
+                    ttsEnabled = ttsEnabled,
+                    onSetTtsEnabled = onSetTtsEnabled,
+                    currentEngineLabel = currentEngineLabel,
                 )
             }
             composable(Routes.TTS_ENGINE_PICKER) {
@@ -115,8 +149,6 @@ fun IceSpiritNavHost(
                 UpdateDetailScreen(onBack = { nav.popBackStack() })
             }
             composable(Routes.VIEWER) {
-                val state by sharedVm.state.collectAsState()
-                val pendingUri by sharedVm.pendingUri.collectAsState()
                 // Prefer the report's `lineBoxes` (populated by
                 // ImageAnalyzerRepository from the OCR pass) — but
                 // fall back to the transient OcrDone snapshot if the

@@ -113,6 +113,27 @@ class TtsController(
         _state.value = if (chinese) TtsState.Idle else TtsState.InitFailed("无可用中文引擎")
     }
 
+    /**
+     * Display label for the engine the user is currently routed to, used
+     * by the Settings "引擎" row (Bug 1 fix / v0.1.60). Resolution order:
+     *  - [currentPackage] == null  → "跟随系统默认" (no engine pinned)
+     *  - lookup in [engine.supportedChineseEngines]  → matching [EngineInfo.label]
+     *  - fallback "跟随系统默认" if init hasn't run yet (engine list empty)
+     *    or the pinned package was uninstalled
+     *
+     * Bug 2 (v0.1.61) will close the reactive loop: the Settings row's
+     * `currentEngineLabel` does NOT currently re-collect when the user
+     * picks a different engine in the picker — see CLAUDE.md out-of-scope
+     * follow-up notes. This method is a *snapshot* by design.
+     */
+    fun currentEngineLabel(currentPackage: String?): String {
+        if (currentPackage == null) return "跟随系统默认"
+        return engine.supportedChineseEngines()
+            .firstOrNull { it.packageName == currentPackage }
+            ?.label
+            ?: "跟随系统默认"
+    }
+
     fun release() = engine.release()
 }
 

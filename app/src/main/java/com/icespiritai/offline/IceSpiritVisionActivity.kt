@@ -9,6 +9,7 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -16,6 +17,7 @@ import com.icespiritai.offline.BuildConfig
 import com.icespiritai.offline.settings.SettingsRepository
 import com.icespiritai.offline.tts.AndroidTtsEngine
 import com.icespiritai.offline.tts.TtsController
+import com.icespiritai.offline.tts.TtsSetting
 import com.icespiritai.offline.tts.TtsSettingRepository
 import com.icespiritai.offline.tts.TtsSettingRepositoryAdapter
 import com.icespiritai.offline.ui.common.DisclaimerDialog
@@ -75,6 +77,19 @@ class IceSpiritVisionActivity : ComponentActivity() {
             // InitFailed (Bug 2 fix — without this wiring the NavHost
             // defaults to Disabled and the icon never renders).
             val ttsState by ttsController.state.collectAsStateWithLifecycle()
+            // Bug 1 fix (v0.1.60): collect the persisted TtsSetting so the
+            // Settings "语音播报" Switch + engine label reflect real
+            // DataStore values, not the NavHost param defaults. The
+            // `ttsSetting` flow is a Flow<TtsSetting> backed by DataStore;
+            // initialValue = TtsSetting() matches the DataStore default
+            // (enabled=true, enginePackage=null) so the first frame is
+            // visually identical to a freshly installed user.
+            val ttsSetting by ttsController.setting.collectAsStateWithLifecycle(
+                initialValue = TtsSetting(),
+            )
+            val currentEngineLabel = remember(ttsSetting) {
+                ttsController.currentEngineLabel(ttsSetting.enginePackage)
+            }
 
             IceSpiritVisionTheme(themeMode = themeMode, ttsController = ttsController) {
                 Box(modifier = Modifier.fillMaxSize()) {
@@ -82,6 +97,19 @@ class IceSpiritVisionActivity : ComponentActivity() {
                         ttsState = ttsState,
                         onSpeakToggle = { ttsController.toggle() },
                         ttsController = ttsController,
+                        ttsEnabled = ttsSetting.enabled,
+                        onSetTtsEnabled = { enabled ->
+                            // ttsController.setEnabled delegates to
+                            // TtsSettingRepository.setEnabled via the
+                            // TtsSettingRepositoryAdapter; we just need
+                            // a CoroutineScope. lifecycleScope is the
+                            // Activity-scoped scope, fine for a single
+                            // DataStore edit (low-frequency UI event).
+                            lifecycleScope.launch {
+                                ttsController.setEnabled(enabled)
+                            }
+                        },
+                        currentEngineLabel = currentEngineLabel,
                     )
                     if (!disclaimerAccepted) {
                         DisclaimerDialog(onAcknowledge = {
