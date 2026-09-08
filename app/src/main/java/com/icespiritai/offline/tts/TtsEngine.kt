@@ -1,10 +1,37 @@
 package com.icespiritai.offline.tts
 
+/**
+ * Installation status for an [EngineInfo] entry — only meaningful for
+ * the local sherpa-onnx engine. System engines are always
+ * [EngineStatus.Installed].
+ *
+ * Bug 4 fix (v0.1.61): the picker used to hide the local engine until
+ * its ONNX model was downloaded, so users only ever saw the empty-state
+ * "未找到中文 TTS 引擎" + the 150 MB download button — they didn't know
+ * an on-device option existed. The local engine now always appears in
+ * the list (the picker renders it with a status badge that shows
+ * download state), so the path is "see option → tap → install → use".
+ */
+enum class EngineStatus {
+    /** Ready to use. */
+    Installed,
+
+    /** Engine is bundled but ONNX model files are not yet on disk. */
+    NeedsDownload,
+
+    /** Download in flight. */
+    Downloading,
+
+    /** Download completed but the install failed. */
+    DownloadFailed,
+}
+
 /** 设备上某个 TTS 引擎的元信息,用于 picker 列表显示。 */
 data class EngineInfo(
     val packageName: String,
     val label: String,
     val supportsChinese: Boolean,
+    val status: EngineStatus = EngineStatus.Installed,
 )
 
 /**

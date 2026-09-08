@@ -2,6 +2,7 @@ package com.icespiritai.offline.tts.sherpa
 
 import android.content.Context
 import com.icespiritai.offline.tts.EngineInfo
+import com.icespiritai.offline.tts.EngineStatus
 import com.k2fsa.sherpa.onnx.GeneratedAudio
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -27,8 +28,8 @@ import kotlin.io.path.createTempDirectory
  *
  * Covers:
  *  - speak() invokes generate via the SynthesizerProvider and onDone after playback
- *  - supportedChineseEngines() returns empty when ONNX model not installed
- *  - supportedChineseEngines() returns the local engine label when installed
+ *  - supportedChineseEngines() returns NeedsDownload status when ONNX model not installed (Bug 4 fix v0.1.61)
+ *  - supportedChineseEngines() returns Installed status when model on disk
  *  - speak() is a no-op (no generate, no playback) when model missing
  *  - init() is a no-op and reports ok immediately
  *  - stop() resets the active player reference
@@ -72,8 +73,11 @@ class SherpaTtsEngineTest {
     }
 
     @Test fun `speak initializes Synthesizer lazily and plays via PcmAudioPlayer`() = runTest(testDispatcher) {
-        // Model missing initially → supportedChineseEngines empty
-        assertTrue(engine.supportedChineseEngines().isEmpty())
+        // Model missing initially → supportedChineseEngines reports NeedsDownload (Bug 4 fix v0.1.61: local
+        // engine is ALWAYS in the picker list so the user can see it and trigger the download).
+        val preInstall = engine.supportedChineseEngines()
+        assertEquals(1, preInstall.size)
+        assertEquals(EngineStatus.NeedsDownload, preInstall[0].status)
 
         // Populate the ONNX model files (only existence matters for isModelInstalled)
         File(engine.modelDir, "model-steps-3.onnx").apply { parentFile.mkdirs(); writeBytes(ByteArray(10)) }
@@ -105,11 +109,21 @@ class SherpaTtsEngineTest {
         assertTrue("onDone must still fire even on early-return", doneCalled)
     }
 
-    @Test fun `supportedChineseEngines empty when model not installed`() {
-        assertTrue(engine.supportedChineseEngines().isEmpty())
+    @Test fun `supportedChineseEngines returns NeedsDownload status when model not installed`() {
+        // Bug 4 fix v0.1.61: local engine is always listed so the user
+        // sees the row + status chip and can tap to download. The engine
+        // itself only knows Installed vs NeedsDownload; transient states
+        // (Downloading / DownloadFailed) are layered by TtsController.
+        val list = engine.supportedChineseEngines()
+        assertEquals(1, list.size)
+        val info: EngineInfo = list[0]
+        assertEquals(com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE, info.packageName)
+        assertEquals(SherpaTtsEngine.LOCAL_LABEL, info.label)
+        assertTrue(info.supportsChinese)
+        assertEquals(EngineStatus.NeedsDownload, info.status)
     }
 
-    @Test fun `supportedChineseEngines returns local engine when model installed`() {
+    @Test fun `supportedChineseEngines returns Installed status when model installed`() {
         File(engine.modelDir, "model-steps-3.onnx").apply { parentFile.mkdirs(); writeBytes(ByteArray(10)) }
         File(engine.modelDir, "vocos-22khz-univ.onnx").apply { writeBytes(ByteArray(10)) }
 
@@ -119,6 +133,7 @@ class SherpaTtsEngineTest {
         assertEquals(com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE, info.packageName)
         assertEquals(SherpaTtsEngine.LOCAL_LABEL, info.label)
         assertTrue(info.supportsChinese)
+        assertEquals(EngineStatus.Installed, info.status)
     }
 
     @Test fun `speak plays the samples returned by Synthesizer generate`() = runTest(testDispatcher) {
@@ -158,8 +173,8 @@ class SherpaTtsEngineTest {
         var initOk = false
         engine.init { ok -> initOk = ok }
         assertTrue(initOk)
-        // Model not installed yet — local engine should NOT appear.
-        assertFalse(engine.supportedChineseEngines().any { it.packageName == com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE })
+        // Bug 4 fix v0.1.61: local engine is always listed (with NeedsDownload when model missing).
+        assertTrue(engine.supportedChineseEngines().any { it.packageName == com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE })
     }
 
     @Test fun `repeated speak reuses cached Synthesizer`() = runTest(testDispatcher) {

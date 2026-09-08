@@ -149,14 +149,13 @@
     <string name="tts_engine_picker_title">选择 TTS 引擎</string>
 
     <string name="tts_empty_title">未找到中文 TTS 引擎</string>
-    <string name="tts_empty_solution_1_title">方案 1</string>
-    <string name="tts_empty_solution_1_body">在系统「文本转语音」设置中安装或启用中文语音包</string>
-    <string name="tts_empty_open_system_settings">打开系统 TTS 设置</string>
-    <string name="tts_empty_solution_2_title">方案 2</string>
-    <string name="tts_empty_solution_2_body">下载冰灵中文 TTS 引擎(约 150 MB,首次需联网,仅一次)</string>
-    <string name="tts_empty_download">下载引擎</string>
-    <string name="tts_empty_downloading">下载冰灵 TTS 引擎… %1$d%%</string>
-    <string name="tts_empty_download_long_press_to_cancel">长按取消下载</string>
+    <string name="tts_empty_body">未检测到任何支持中文朗读的引擎,请到系统「设置 → 无障碍 → 文本转语音」启用中文语音包,或重新打开本应用。</string>
+
+    <!-- Bug 4 fix (v0.1.61): status chips shown next to the local
+         sherpa-onnx engine row. Tap the row to install / retry. -->
+    <string name="tts_status_needs_download">下载</string>
+    <string name="tts_status_downloading">下载中</string>
+    <string name="tts_status_download_failed">重试</string>
 
     <string name="tts_section_footer_disclaimer">ℹ 朗读内容仅供参考,实际合规判断请以现场检查为准。</string>
     <string name="tts_section_footer_settings_hint">语速 / 音调请在系统「文本转语音」设置中调整。</string>

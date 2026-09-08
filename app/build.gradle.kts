@@ -337,6 +337,13 @@ android {
         // Bug 3 pivot (v0.1.60): also covers sherpa-onnx c-api/cxx-api
         // libs (libsherpa-onnx-c-api.so + libsherpa-onnx-cxx-api.so).
         // Both profiles ship them once sherpa-onnx is a top-level dep.
+        //
+        // libonnxruntime.so conflict (v0.1.60): both
+        // `onnxruntime-android` (PaddleOCR OCR) and `sherpa-onnx`
+        // (Matcha/Vocos TTS) bundle the same `.so`. We pickFirst; AGP
+        // picks whichever it encounters first (no deterministic order
+        // between AAR transitive inputs). Both builds are ABI-compatible
+        // C-API 1.21.1, so OCR + TTS should load either one.
         jniLibs {
             useLegacyPackaging = true
             // AGP merges native libs from ALL deps; if two deps ship the
@@ -347,6 +354,7 @@ android {
             pickFirsts += listOf(
                 "**/libsherpa-onnx-c-api.so",
                 "**/libsherpa-onnx-cxx-api.so",
+                "**/libonnxruntime.so",
             )
         }
 

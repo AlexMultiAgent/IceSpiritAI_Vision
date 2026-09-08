@@ -12,9 +12,10 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -29,6 +30,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.icespiritai.offline.R
 import com.icespiritai.offline.tts.EngineInfo
+import com.icespiritai.offline.tts.EngineStatus
 
 /**
  * Picker sub-page(spec §7.2)。
@@ -46,20 +48,25 @@ import com.icespiritai.offline.tts.EngineInfo
  *   used elsewhere in Settings (rows are clickable, not radio-group).
  * - rows separated by `HorizontalDivider` (0.5dp, colorScheme.outline)
  *   so adjacent engines read as discrete options.
- * - empty state wrapped in a Card; primary CTA is `FilledTonalButton`
- *   (Editorial palette — solid `Button` was too heavy for an empty
- *   state hint).
+ *
+ * Bug 4 fix (v0.1.61): the local sherpa-onnx engine is ALWAYS shown
+ * in the list, with a status chip on the right of the label:
+ *   - Installed → no chip, Check icon if selected
+ *   - NeedsDownload → "下载" chip
+ *   - Downloading → "下载中" chip
+ *   - DownloadFailed → "重试" chip
+ * Tapping any row goes through [onEngineClick], which the controller
+ * resolves to either download (status != Installed) or select (status
+ * == Installed). The empty-state Card is now a defensive fallback for
+ * builds that don't bundle the local engine at all.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TtsEnginePickerScreen(
     onBack: () -> Unit,
     currentEnginePackage: String?,
-    onSelectEngine: (String?) -> Unit,
+    onEngineClick: (String?) -> Unit,
     engines: List<EngineInfo> = emptyList(),
-    onDownloadEngine: () -> Unit = {},
-    isDownloading: Boolean = false,
-    downloadProgress: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -85,9 +92,6 @@ fun TtsEnginePickerScreen(
     ) { padding ->
         if (engines.isEmpty()) {
             EmptyTtsState(
-                onDownloadEngine = onDownloadEngine,
-                isDownloading = isDownloading,
-                downloadProgress = downloadProgress,
                 modifier = Modifier
                     .padding(padding)
                     .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -104,8 +108,9 @@ fun TtsEnginePickerScreen(
                     item {
                         EngineRow(
                             label = stringResource(R.string.tts_engine_follow_system),
+                            status = EngineStatus.Installed,
                             selected = currentEnginePackage == null,
-                            onClick = { onSelectEngine(null) },
+                            onClick = { onEngineClick(null) },
                         )
                     }
                     itemsIndexed(engines) { index, engine ->
@@ -117,8 +122,10 @@ fun TtsEnginePickerScreen(
                         }
                         EngineRow(
                             label = engine.label,
-                            selected = engine.packageName == currentEnginePackage,
-                            onClick = { onSelectEngine(engine.packageName) },
+                            status = engine.status,
+                            selected = engine.status == EngineStatus.Installed &&
+                                engine.packageName == currentEnginePackage,
+                            onClick = { onEngineClick(engine.packageName) },
                         )
                         if (index != engines.lastIndex) {
                             HorizontalDivider(
@@ -134,7 +141,12 @@ fun TtsEnginePickerScreen(
 }
 
 @Composable
-private fun EngineRow(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun EngineRow(
+    label: String,
+    status: EngineStatus,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -147,63 +159,61 @@ private fun EngineRow(label: String, selected: Boolean, onClick: () -> Unit) {
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.weight(1f),
         )
-        if (selected) {
-            Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-            )
+        when (status) {
+            EngineStatus.Installed -> {
+                if (selected) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+            EngineStatus.NeedsDownload ->
+                EngineStatusChip(text = stringResource(R.string.tts_status_needs_download))
+            EngineStatus.Downloading ->
+                EngineStatusChip(text = stringResource(R.string.tts_status_downloading))
+            EngineStatus.DownloadFailed ->
+                EngineStatusChip(text = stringResource(R.string.tts_status_download_failed))
         }
     }
 }
 
 @Composable
-private fun EmptyTtsState(
-    onDownloadEngine: () -> Unit,
-    isDownloading: Boolean,
-    downloadProgress: Int,
-    modifier: Modifier = Modifier,
-) {
+private fun EngineStatusChip(text: String) {
+    AssistChip(
+        onClick = {},
+        enabled = false,
+        label = {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelSmall,
+            )
+        },
+        colors = AssistChipDefaults.assistChipColors(
+            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+            disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        ),
+    )
+}
+
+@Composable
+private fun EmptyTtsState(modifier: Modifier = Modifier) {
     Card(modifier = modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
                 text = stringResource(R.string.tts_empty_title),
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
-                text = stringResource(R.string.tts_empty_solution_1_title),
-                style = MaterialTheme.typography.titleSmall,
-            )
-            Text(
-                text = stringResource(R.string.tts_empty_solution_1_body),
+                text = stringResource(R.string.tts_empty_body),
                 style = MaterialTheme.typography.bodyMedium,
             )
-            Text(
-                text = stringResource(R.string.tts_empty_solution_2_title),
-                style = MaterialTheme.typography.titleSmall,
-            )
-            Text(
-                text = stringResource(R.string.tts_empty_solution_2_body),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            FilledTonalButton(
-                onClick = onDownloadEngine,
-                enabled = !isDownloading,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    if (isDownloading) {
-                        stringResource(R.string.tts_empty_downloading, downloadProgress)
-                    } else {
-                        stringResource(R.string.tts_empty_download)
-                    },
-                )
-            }
         }
     }
 }

@@ -146,33 +146,78 @@ class TtsController(
     fun downloadEngine() {
         val installer = modelInstaller ?: return
         installer.downloadModel()
-        // Observe state changes; refresh engine list on terminal states.
+        // Observe state changes; refresh engine list on every state so
+        // the picker's status badge tracks Downloading → Installed /
+        // DownloadFailed (Bug 4 fix v0.1.61).
         scope.launch {
             installer.state.collect { st ->
-                if (st is InstallState.Done || st is InstallState.Failed) {
-                    _engines.value = mergedEngines()
-                    if (st is InstallState.Done) {
-                        // Once installed, switching the user-selected
-                        // package to local is implicit — they
-                        // initiated the download. Persist so next
-                        // cold-start already points at the local
-                        // engine.
-                        settings.setEnginePackage(LOCAL_TTS_PACKAGE)
-                    }
+                _engines.value = mergedEngines()
+                if (st is InstallState.Done) {
+                    // Once installed, switching the user-selected
+                    // package to local is implicit — they
+                    // initiated the download. Persist so next
+                    // cold-start already points at the local
+                    // engine.
+                    settings.setEnginePackage(LOCAL_TTS_PACKAGE)
                 }
             }
         }
     }
 
     /**
-     * Merge the system engine list + the local engine's synthetic list.
-     * Empty if neither is available; the picker renders the empty-state
-     * CTA in that case.
+     * Bug 4 fix (v0.1.61): the local sherpa-onnx engine is ALWAYS in
+     * the list (the engine itself always emits a row now); we just
+     * overlay the live download state from [modelInstaller] on top so
+     * the picker can render a status badge. The system engine list is
+     * untouched. Returns an empty list only when both sources are
+     * unavailable (e.g. system engine not initialized AND sherpa
+     * integration disabled).
      */
     private fun mergedEngines(): List<EngineInfo> {
         val system = systemEngine.supportedChineseEngines()
         val local = sherpaEngine?.supportedChineseEngines() ?: emptyList()
-        return (system + local)
+        val withLocalStatus = local.map { info ->
+            if (info.packageName != LOCAL_TTS_PACKAGE) info
+            else info.copy(status = overlayInstallerStatus(info.status))
+        }
+        return system + withLocalStatus
+    }
+
+    /**
+     * Layer the live install state on top of the engine's own
+     * Installed/NeedsDownload disk check. Idle / QueryingRelease =
+     * pass through the engine's truth (returning-user with model on
+     * disk reads Installed; first-launch with no model reads
+     * NeedsDownload). Downloading / VerifyingSha256 = force
+     * Downloading (transient, in flight). Done = force Installed.
+     * Failed = force DownloadFailed so the user can retry.
+     */
+    private fun overlayInstallerStatus(engineTruth: EngineStatus): EngineStatus {
+        val installer = modelInstaller ?: return engineTruth
+        return when (installer.state.value) {
+            is InstallState.Idle, is InstallState.QueryingRelease,
+            is InstallState.CheckingCache, is InstallState.Installing -> engineTruth
+            is InstallState.Downloading, is InstallState.VerifyingSha256 -> EngineStatus.Downloading
+            is InstallState.Done -> EngineStatus.Installed
+            is InstallState.Failed -> EngineStatus.DownloadFailed
+        }
+    }
+
+    /**
+     * Picker row click handler. If the clicked engine is the local
+     * one and it's not yet installed, kick off the download instead of
+     * changing the selection (the user can't select a non-installed
+     * engine; selecting it would silently no-op at speak time).
+     */
+    fun engineClick(pkg: String?) {
+        if (pkg == LOCAL_TTS_PACKAGE) {
+            val local = mergedEngines().firstOrNull { it.packageName == LOCAL_TTS_PACKAGE }
+            if (local != null && local.status != EngineStatus.Installed) {
+                downloadEngine()
+                return
+            }
+        }
+        scope.launch { settings.setEnginePackage(pkg) }
     }
 
     fun currentEngineLabel(currentPackage: String?): String {

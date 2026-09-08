@@ -4,6 +4,7 @@ import android.net.StubUri
 import com.icespiritai.offline.domain.RuleHit
 import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.domain.ViolationReport
+import com.icespiritai.offline.tts.sherpa.SherpaTtsEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -34,6 +35,10 @@ import org.junit.Test
  *   - toggle from Speaking stops
  *   - (Bug 3 pivot v0.1.60) setEnginePackage to LOCAL routes speak to sherpa engine
  *   - (Bug 3 pivot v0.1.60) downloadEngine() triggers model install + refresh
+ *   - (Bug 4 fix v0.1.61) engineClick(LOCAL) on NeedsDownload → downloadEngine
+ *   - (Bug 4 fix v0.1.61) engineClick(LOCAL) on Installed → setEnginePackage
+ *   - (Bug 4 fix v0.1.61) engineClick(system pkg) → setEnginePackage
+ *   - (Bug 4 fix v0.1.61) engineClick(null) → setEnginePackage(null)
  *
  * Pure JVM: standard test dispatcher + FakeTtsSettingRepository backed by a
  * MutableStateFlow (no Robolectric / no DataStore).
@@ -202,6 +207,85 @@ class TtsControllerTest {
         assertEquals(1, fakeEngine.speakCallCount)
     }
 
+    // --- Bug 4 fix (v0.1.61): picker row click routing ---
+
+    @Test fun `engineClick on not-installed local engine triggers downloadEngine`() = runTest {
+        fakeSettings.emit(TtsSetting(enabled = true))
+        val installer = FakeTtsModelInstaller()
+        val sherpaEngine = FakeTtsEngine(
+            enginesAfterInstall = listOf(
+                EngineInfo(
+                    packageName = com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE,
+                    label = com.icespiritai.offline.tts.sherpa.SherpaTtsEngine.LOCAL_LABEL,
+                    supportsChinese = true,
+                    status = EngineStatus.NeedsDownload,
+                ),
+            ),
+        )
+        val ctrl = TtsController(
+            systemEngine = fakeEngine,
+            sherpaEngine = sherpaEngine,
+            modelInstaller = installer,
+            settings = fakeSettings,
+            scope = testScope,
+        )
+        // User taps the local engine row that shows a "下载" chip —
+        // picker just forwards the click; controller decides that this
+        // is a download trigger, not a select.
+        ctrl.engineClick(com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE)
+        advanceUntilIdle()
+        assertEquals(1, installer.downloadModelCallCount)
+        // After the install completes, the controller auto-selects the
+        // local engine (implicit-select: the user initiated the
+        // download, so next cold-start should already point at local
+        // — see TtsController.downloadEngine kdoc).
+        assertEquals(
+            com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE,
+            fakeSettings.lastEmitted().enginePackage,
+        )
+    }
+
+    @Test fun `engineClick on installed local engine sets engine package to LOCAL`() = runTest {
+        fakeSettings.emit(TtsSetting(enabled = true))
+        val installer = FakeTtsModelInstaller()
+        val sherpaEngine = FakeTtsEngine(
+            enginesAfterInstall = listOf(
+                EngineInfo(
+                    packageName = com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE,
+                    label = com.icespiritai.offline.tts.sherpa.SherpaTtsEngine.LOCAL_LABEL,
+                    supportsChinese = true,
+                    status = EngineStatus.Installed,
+                ),
+            ),
+        )
+        val ctrl = TtsController(
+            systemEngine = fakeEngine,
+            sherpaEngine = sherpaEngine,
+            modelInstaller = installer,
+            settings = fakeSettings,
+            scope = testScope,
+        )
+        ctrl.engineClick(com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE)
+        advanceUntilIdle()
+        // Installed → just select (no installer call).
+        assertEquals(0, installer.downloadModelCallCount)
+        assertEquals(com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE, fakeSettings.lastEmitted().enginePackage)
+    }
+
+    @Test fun `engineClick on system engine package sets engine package to that pkg`() = runTest {
+        fakeSettings.emit(TtsSetting(enabled = true))
+        controller.engineClick("com.google.android.tts")
+        advanceUntilIdle()
+        assertEquals("com.google.android.tts", fakeSettings.lastEmitted().enginePackage)
+    }
+
+    @Test fun `engineClick on null sets engine package to null (follow system)`() = runTest {
+        fakeSettings.emit(TtsSetting(enabled = true, enginePackage = "com.google.android.tts"))
+        controller.engineClick(null)
+        advanceUntilIdle()
+        assertEquals(null, fakeSettings.lastEmitted().enginePackage)
+    }
+
     private suspend fun ctrl_pickLocalPackage() {
         controller.setEnginePackage(com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE)
     }
@@ -303,4 +387,8 @@ class FakeTtsSettingRepository : TtsSettingRepositoryLike {
     suspend fun emit(s: TtsSetting) {
         flow.value = s
     }
+
+    /** Snapshot of the most-recently-written TtsSetting. Useful for
+     *  asserting the controller routed a click to the settings repo. */
+    fun lastEmitted(): TtsSetting = flow.value
 }

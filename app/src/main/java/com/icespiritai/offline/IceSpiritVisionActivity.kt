@@ -140,14 +140,13 @@ class IceSpiritVisionActivity : ComponentActivity() {
                         // selection and persists via setEnginePackage.
                         currentEnginePackage = ttsSetting.enginePackage,
                         engines = engines,
-                        onSelectEngine = { pkg ->
-                            lifecycleScope.launch { ttsController.setEnginePackage(pkg) }
-                        },
-                        // Bug 3 pivot (v0.1.60): route the picker's empty-
-                        // state "下载" CTA to the ONNX installer. No
-                        // permissions or UI flags to thread — the
-                        // controller owns the download state machine.
-                        onDownloadEngine = { ttsController.downloadEngine() },
+                        // Bug 4 fix (v0.1.61): route every row tap through
+                        // engineClick, which decides download-vs-select
+                        // based on the row's installation status. The
+                        // picker no longer has a separate "下载" CTA —
+                        // tapping the local-engine row when not yet
+                        // installed kicks off the ONNX download.
+                        onEngineClick = { pkg -> ttsController.engineClick(pkg) },
                     )
                     if (!disclaimerAccepted) {
                         DisclaimerDialog(onAcknowledge = {

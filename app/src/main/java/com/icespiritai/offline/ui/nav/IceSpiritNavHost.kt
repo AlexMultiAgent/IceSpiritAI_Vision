@@ -95,18 +95,13 @@ fun IceSpiritNavHost(
     /**
      * Invoked when the user taps a row in the engine picker. Receives
      * the package name to pin (null = "follow system default"). The
-     * Activity wraps this with `ttsController.setEnginePackage(pkg)`
-     * so the choice persists to DataStore.
+     * Activity wraps this with `ttsController.engineClick(pkg)` which
+     * decides download vs select based on the row's installation
+     * status (Bug 4 fix v0.1.61 — the local sherpa-onnx engine is
+     * always in the list; tapping a not-yet-installed row triggers
+     * the ONNX download instead of pinning a non-functional engine).
      */
-    onSelectEngine: (String?) -> Unit = {},
-    /**
-     * Invoked when the user taps the empty-state "下载" button in the
-     * picker. Threaded from the Activity → [TtsController.downloadEngine]
-     * which kicks off the sherpa-onnx model download. Bug 3 pivot
-     * (v0.1.60): the OLD APK-install flow is reverted at e319d39 — the
-     * download target is now the ONNX bundle, not a separate TTS APK.
-     */
-    onDownloadEngine: () -> Unit = {},
+    onEngineClick: (String?) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -172,8 +167,7 @@ fun IceSpiritNavHost(
                     onBack = { nav.popBackStack() },
                     currentEnginePackage = currentEnginePackage,
                     engines = engines,
-                    onSelectEngine = onSelectEngine,
-                    onDownloadEngine = onDownloadEngine,
+                    onEngineClick = onEngineClick,
                 )
             }
             composable(Routes.CHANGELOG) {

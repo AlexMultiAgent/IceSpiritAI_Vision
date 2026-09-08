@@ -2,7 +2,6 @@ package com.icespiritai.offline.ui.home
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Stop
@@ -41,10 +39,17 @@ import com.icespiritai.offline.tts.TtsState
  *
  * v0.1.X+4: 增加 TTS 朗读按钮(spec §6.1)。视觉矩阵:
  *   - Disabled → 不渲染
- *   - Idle/非 Complete → 灰禁,无 accent border
+ *   - Idle/非 Complete → 灰禁
  *   - InitFailed → 灰禁 + "朗读功能不可用" a11y
- *   - Complete + Idle → VolumeUp + accent 1px border + "朗读识别结果;AI 识别仅供参考" a11y
- *   - Complete + Speaking → Stop + accent 1px border + "停止朗读" a11y
+ *   - Complete + Idle → VolumeUp + "朗读识别结果;AI 识别仅供参考" a11y
+ *   - Complete + Speaking → Stop + "停止朗读" a11y
+ *
+ * Bug 5 fix (v0.1.61): removed the 1dp primary `CircleShape` border
+ * around the icon — the user feedback was "可播放按钮和暂停按钮外围的
+ * 圆圈不需要". Now the IconButton renders flat against the surface,
+ * matching the Settings gear beside it. Active/inactive state is
+ * conveyed by tint only (primary when enabled, onSurface@38% when
+ * disabled).
  *
  * Crossfade 用 220ms(Phase 3 §6.3 motion token)。
  *
@@ -115,26 +120,26 @@ private fun TtsIconButton(
 ) {
     if (ttsState is TtsState.Disabled) return  // 不渲染
 
-    val (icon, a11y, enabled, accentBorder) = when {
-        ttsState is TtsState.InitFailed -> Quadruple(
+    val (icon, a11y, enabled) = when {
+        ttsState is TtsState.InitFailed -> Triple(
             Icons.AutoMirrored.Filled.VolumeUp,
             stringResource(R.string.tts_button_init_failed_desc),
-            false, false,
+            false,
         )
-        ttsState is TtsState.Speaking -> Quadruple(
+        ttsState is TtsState.Speaking -> Triple(
             Icons.Default.Stop,
             stringResource(R.string.tts_button_stop_desc),
-            true, true,
+            true,
         )
-        isAnalysisComplete -> Quadruple(
+        isAnalysisComplete -> Triple(
             Icons.AutoMirrored.Filled.VolumeUp,
             stringResource(R.string.tts_button_desc),
-            true, true,
+            true,
         )
-        else -> Quadruple(
+        else -> Triple(
             Icons.AutoMirrored.Filled.VolumeUp,
             stringResource(R.string.tts_button_disabled_desc),
-            false, false,
+            false,
         )
     }
 
@@ -143,13 +148,6 @@ private fun TtsIconButton(
         enabled = enabled,
         modifier = Modifier
             .size(40.dp)
-            .then(
-                if (accentBorder) Modifier.border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.primary,
-                    shape = CircleShape,
-                ) else Modifier
-            )
             .semantics { contentDescription = a11y },
     ) {
         Crossfade(
@@ -167,4 +165,4 @@ private fun TtsIconButton(
     }
 }
 
-private data class Quadruple<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
+private data class Triple<A, B, C>(val a: A, val b: B, val c: C)

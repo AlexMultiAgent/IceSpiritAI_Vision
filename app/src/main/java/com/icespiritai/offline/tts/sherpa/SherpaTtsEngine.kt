@@ -3,6 +3,7 @@ package com.icespiritai.offline.tts.sherpa
 import android.content.Context
 import android.util.Log
 import com.icespiritai.offline.tts.EngineInfo
+import com.icespiritai.offline.tts.EngineStatus
 import com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE
 import com.icespiritai.offline.tts.TtsEngine
 import com.k2fsa.sherpa.onnx.GeneratedAudio
@@ -128,19 +129,23 @@ open class SherpaTtsEngine(
 
     override fun isSpeaking(): Boolean = activePlayer != null
 
-    override fun supportedChineseEngines(): List<EngineInfo> {
-        return if (isModelInstalled()) {
-            listOf(
-                EngineInfo(
-                    packageName = LOCAL_TTS_PACKAGE,
-                    label = LOCAL_LABEL,
-                    supportsChinese = true,
-                ),
-            )
-        } else {
-            emptyList()
-        }
-    }
+    /**
+     * Bug 4 fix (v0.1.61): the local engine is ALWAYS present in the
+     * picker list so the user can see and select it; the [EngineStatus]
+     * field tells the UI whether the ONNX model is on disk. The
+     * `Downloading` / `DownloadFailed` statuses are layered on top by
+     * [TtsController.mergedEngines] via the installer's state flow —
+     * the engine itself only knows Installed vs NeedsDownload.
+     */
+    override fun supportedChineseEngines(): List<EngineInfo> = listOf(
+        EngineInfo(
+            packageName = LOCAL_TTS_PACKAGE,
+            label = LOCAL_LABEL,
+            supportsChinese = true,
+            status = if (isModelInstalled()) EngineStatus.Installed
+            else EngineStatus.NeedsDownload,
+        ),
+    )
 
     override fun setEngine(pkg: String?) {
         // Synthetic engine — no real switching (always routes to this
