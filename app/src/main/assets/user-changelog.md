@@ -1,5 +1,32 @@
 # 用户更新日志
 
+## v0.1.61 · 2026-09-09
+
+### 修复
+- **TTS 引擎选择器不显示「冰灵 TTS 引擎(本地)」选项** — 真机发现 v0.1.60 picker 在系统引擎列表底部看不到本地引擎行,用户无法触发首次下载:
+  - **Bug 4 修复**:`SherpaTtsEngine.supportedChineseEngines()` 始终返回 1 条带 `EngineStatus` 的本地引擎条目;`TtsController.mergedEngines()` 在其上叠加 installer 瞬时状态(`Downloading` / `DownloadFailed`),picker 行尾展示状态 chip(`下载` / `下载中` / `重试`)。新增 `TtsController.engineClick(pkg)` 统一入口:本地未安装 → `downloadEngine()`;本地已装 / 系统引擎 → `setEnginePackage(pkg)`。`TtsEnginePickerScreen` 把 `onSelectEngine` + `onDownloadEngine` 两个回调合并成单个 `onEngineClick`
+- **朗读 / 暂停按钮外围圆圈多余** — 真机发现 v0.1.60 HomeTopBar 朗读按钮 1dp primary `CircleShape` 描边视觉多余:
+  - **Bug 5 修复**:去除按钮外圈 border,改用 tint 单维度表达 enabled(enabled=primary / disabled=onSurface@38%),与右侧设置齿轮视觉对齐
+
+### 变更
+- **UI**:`TtsEnginePickerScreen` 空态文案精简(无下载 CTA,本地引擎行始终渲染);`HomeTopBar.TtsIconButton` 改 `Triple` data class(去除 `accentBorder` 字段),无 `CircleShape` import
+- **资源**:新增 3 个 string(`tts_status_needs_download` / `tts_status_downloading` / `tts_status_download_failed`),删除 5 个旧 string(`tts_empty_solution_1_*` + `tts_empty_download` + `tts_empty_downloading` + `tts_empty_download_long_press_to_cancel`)
+
+### 测试
+- **+5 case / -1 文件**:`TtsEmptyStateDownloadButtonTest` 删除(空态 CTA 已消失);`TtsEnginePickerScreenTest` 新增 5 case 覆盖 NeedsDownload / Downloading chip + 安装后 tap 触发 onEngineClick;`SherpaTtsEngineTest` 改写 2 case 适配新契约(始终返回 LOCAL + status 字段);`TtsControllerTest` 新增 4 case 覆盖 `engineClick` 路由(未安装→下载 / 已装→选 / 系统→选 / null→选 null)
+- `testDebugUnitTest` 806 / 0 fail / 2 skipped
+
+### 构建 / 数据
+- `versionCode` 60 → 61
+- `versionName` 0.1.60 → 0.1.61
+- `ad_signage_rules.json` / `food_label_rules.json` 不变(无规则库改动)
+- ONNX OCR 模型不变(PP-OCRv6_small);ONNX TTS 模型不变(sherpa-onnx-matcha-zh-baker)
+- APK 体积不变(只 UI/UX 改动)
+
+### 已知遗留 / 后续
+- **PcmAudioPlayer 真机烟测未做**:Robolectric 不能播 PCM,需 `connectedDebugAndroidTest` 在华为 nova 6 上 1 张 fixture 跑 speak + 进度回调 + onDone 链路(本发版号 v0.1.61 仍未做,留 v0.1.62)
+- **首次启动下载 UX**:目前无后台通知(走 picker 内 status chip 反映进度),若下载中用户离开 picker 进度流会断(留 v0.1.62 加 ForegroundService 通知)
+
 ## v0.1.60 · 2026-09-08
 
 ### 修复
