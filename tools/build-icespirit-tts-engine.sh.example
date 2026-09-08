@@ -1,0 +1,3 @@
+# 把 build-icespirit-tts-engine.sh 拷成 .example(去掉可执行位),给首次使用者
+# 模板。本仓库不直接 cp,而是创建 .example 后保留原 .sh(后续 PR 替换实现时
+# .sh 是 changelog anchor,.example 始终是当前 .sh 的快照)。
