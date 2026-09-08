@@ -1,6 +1,8 @@
 package com.icespiritai.offline.ui.settings
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,8 +14,6 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -181,20 +181,33 @@ private fun EngineRow(
 
 @Composable
 private fun EngineStatusChip(text: String) {
-    AssistChip(
-        onClick = {},
-        enabled = false,
-        label = {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.labelSmall,
+    // Bug 6 fix (v0.1.62): was `AssistChip(enabled = false)`, but
+    // Material 3's AssistChip wraps the label in a Surface with its own
+    // Modifier.clickable — even when `enabled = false`, the clickable
+    // modifier still consumes pointer events (Compose behavior: disabled
+    // clickable skips the click action but does NOT propagate input up
+    // the tree). As a result, taps inside the chip rectangle never
+    // reached the row's selectable.onClick, and the user-visible row
+    // tap on the download chip silently no-op'd ("点下载没有反应").
+    //
+    // The fix: a Box with the same color/typography as the disabled
+    // AssistChip, but NO clickable modifier — pointer events pass
+    // straight through to the parent Row.selectable.onClick, so the
+    // whole row (label + status pill) is one clickable unit.
+    Box(
+        modifier = Modifier
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = MaterialTheme.shapes.small,
             )
-        },
-        colors = AssistChipDefaults.assistChipColors(
-            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-            disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        ),
-    )
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 @Composable

@@ -147,6 +147,41 @@ class TtsEnginePickerScreenTest {
         assertEquals(com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE, captured)
     }
 
+    @Test fun `tapping the status chip area on NeedsDownload row triggers onEngineClick`() {
+        // Bug 6 fix (v0.1.62): the status chip MUST NOT swallow pointer
+        // events. When it was an AssistChip(enabled=false), Material 3's
+        // internal Modifier.clickable consumed the gesture and the row's
+        // selectable.onClick never fired. The fix replaces the chip with
+        // a non-clickable Box so taps inside the chip rectangle bubble
+        // up to the row. Pin that contract here — assert that tapping
+        // the chip *text* ("下载") triggers the same onEngineClick.
+        var captured: String? = "initial"
+        composeRule.setContent {
+            MaterialTheme(colorScheme = darkColorScheme()) {
+                TtsEnginePickerScreen(
+                    onBack = {},
+                    currentEnginePackage = null,
+                    onEngineClick = { captured = it },
+                    engines = listOf(
+                        EngineInfo(
+                            packageName = com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE,
+                            label = "冰灵 TTS 引擎(本地)",
+                            supportsChinese = true,
+                            status = EngineStatus.NeedsDownload,
+                        ),
+                    ),
+                )
+            }
+        }
+        // Tap the chip text directly — this used to no-op silently.
+        composeRule.onNodeWithText("下载").performClick()
+        assertEquals(
+            "tapping the '下载' chip text must bubble to row's onClick → onEngineClick",
+            com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE,
+            captured,
+        )
+    }
+
     @Test fun `tapping 'follow system default' row invokes onEngineClick with null`() {
         var captured: String? = "initial"
         composeRule.setContent {
