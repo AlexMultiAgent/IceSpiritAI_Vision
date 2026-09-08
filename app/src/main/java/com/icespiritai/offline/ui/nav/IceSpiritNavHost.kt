@@ -3,6 +3,7 @@ package com.icespiritai.offline.ui.nav
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -13,6 +14,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.icespiritai.offline.IceSpiritVisionViewModel
 import com.icespiritai.offline.domain.AnalysisState
+import com.icespiritai.offline.tts.TtsController
 import com.icespiritai.offline.tts.TtsState
 import com.icespiritai.offline.ui.home.HomeScreen
 import com.icespiritai.offline.ui.settings.ChangelogScreen
@@ -54,6 +56,7 @@ object Routes {
 fun IceSpiritNavHost(
     ttsState: TtsState = TtsState.Disabled,
     onSpeakToggle: () -> Unit = {},
+    ttsController: TtsController? = null,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -64,6 +67,21 @@ fun IceSpiritNavHost(
         // is the Activity, not a per-route NavBackStackEntry). Shared
         // with both HomeScreen and the Viewer composable.
         val sharedVm: IceSpiritVisionViewModel = viewModel()
+        // Bridge the shared VM's AnalysisState → TtsController.latestReport.
+        // TtsController.toggle() is parameterless and reads its report from
+        // an internal slot; without this collection the top-bar 朗读 button
+        // would no-op on Idle (latestReport null) even after a Complete
+        // analysis lands. Defaults to null in unit tests so this LaunchedEffect
+        // is a no-op when no controller is provided.
+        LaunchedEffect(sharedVm, ttsController) {
+            if (ttsController != null) {
+                sharedVm.state.collect { state ->
+                    ttsController.setLatestReport(
+                        (state as? AnalysisState.Complete)?.report
+                    )
+                }
+            }
+        }
         val nav = rememberNavController()
         NavHost(navController = nav, startDestination = Routes.HOME) {
             composable(Routes.HOME) {

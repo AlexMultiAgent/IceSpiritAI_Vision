@@ -81,6 +81,7 @@ class IceSpiritVisionActivity : ComponentActivity() {
                     IceSpiritNavHost(
                         ttsState = ttsState,
                         onSpeakToggle = { ttsController.toggle() },
+                        ttsController = ttsController,
                     )
                     if (!disclaimerAccepted) {
                         DisclaimerDialog(onAcknowledge = {
