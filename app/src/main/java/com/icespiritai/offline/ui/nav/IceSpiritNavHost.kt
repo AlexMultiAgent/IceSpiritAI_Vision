@@ -13,6 +13,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.icespiritai.offline.IceSpiritVisionViewModel
 import com.icespiritai.offline.domain.AnalysisState
+import com.icespiritai.offline.tts.TtsState
 import com.icespiritai.offline.ui.home.HomeScreen
 import com.icespiritai.offline.ui.settings.ChangelogScreen
 import com.icespiritai.offline.ui.settings.SettingsScreen
@@ -50,7 +51,10 @@ object Routes {
  * destinations.
  */
 @Composable
-fun IceSpiritNavHost(modifier: Modifier = Modifier) {
+fun IceSpiritNavHost(
+    ttsState: TtsState = TtsState.Disabled,
+    modifier: Modifier = Modifier,
+) {
     Surface(
         modifier = modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
@@ -64,8 +68,10 @@ fun IceSpiritNavHost(modifier: Modifier = Modifier) {
             composable(Routes.HOME) {
                 HomeScreen(
                     viewModel = sharedVm,
+                    ttsState = ttsState,
                     onOpenSettings = { nav.navigate(Routes.SETTINGS) },
                     onOpenViewer = { nav.navigate(Routes.VIEWER) },
+                    onSpeakToggle = { /* TODO Task 16 / real wiring — placeholder */ },
                 )
             }
             composable(Routes.SETTINGS) {

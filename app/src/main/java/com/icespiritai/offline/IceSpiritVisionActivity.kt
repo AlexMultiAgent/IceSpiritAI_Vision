@@ -6,7 +6,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icespiritai.offline.BuildConfig
@@ -15,6 +18,7 @@ import com.icespiritai.offline.tts.AndroidTtsEngine
 import com.icespiritai.offline.tts.TtsController
 import com.icespiritai.offline.tts.TtsSettingRepository
 import com.icespiritai.offline.tts.TtsSettingRepositoryAdapter
+import com.icespiritai.offline.ui.common.DisclaimerDialog
 import com.icespiritai.offline.ui.nav.IceSpiritNavHost
 import com.icespiritai.offline.ui.theme.IceSpiritVisionTheme
 import com.icespiritai.offline.ui.theme.ThemeMode
@@ -23,6 +27,7 @@ import com.icespiritai.offline.updater.UpdateRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -60,8 +65,21 @@ class IceSpiritVisionActivity : ComponentActivity() {
                 // before the first read lands.
                 initialValue = ThemeMode.SYSTEM,
             )
+            val disclaimerAccepted by settings.disclaimerAcceptedAt
+                .map { it != null }
+                .collectAsStateWithLifecycle(
+                    initialValue = false,
+                )
+
             IceSpiritVisionTheme(themeMode = themeMode, ttsController = ttsController) {
-                IceSpiritNavHost()
+                Box(modifier = Modifier.fillMaxSize()) {
+                    IceSpiritNavHost()
+                    if (!disclaimerAccepted) {
+                        DisclaimerDialog(onAcknowledge = {
+                            lifecycleScope.launch { settings.acceptDisclaimer() }
+                        })
+                    }
+                }
             }
         }
 
