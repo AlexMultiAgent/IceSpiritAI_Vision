@@ -59,6 +59,8 @@ class TtsEngineInstaller(private val context: Context) {
             metaFile.delete()
             return launchInstall().also { state_.value = it }
         } catch (e: IOException) {
+            partialFile.delete()
+            metaFile.delete()
             state_.value = InstallState.Failed("下载失败:${e.message}")
             return state_.value
         } finally {
