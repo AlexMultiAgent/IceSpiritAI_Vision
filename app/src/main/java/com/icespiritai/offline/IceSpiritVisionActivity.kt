@@ -90,6 +90,10 @@ class IceSpiritVisionActivity : ComponentActivity() {
             val currentEngineLabel = remember(ttsSetting) {
                 ttsController.currentEngineLabel(ttsSetting.enginePackage)
             }
+            // Bug 2 fix (v0.1.61): collect the engine list so the picker
+            // actually shows devices' installed chinese-capable engines
+            // instead of always rendering the EmptyTtsState branch.
+            val engines by ttsController.engines.collectAsStateWithLifecycle()
 
             IceSpiritVisionTheme(themeMode = themeMode, ttsController = ttsController) {
                 Box(modifier = Modifier.fillMaxSize()) {
@@ -110,6 +114,15 @@ class IceSpiritVisionActivity : ComponentActivity() {
                             }
                         },
                         currentEngineLabel = currentEngineLabel,
+                        // Bug 2 fix (v0.1.61): thread the persisted package
+                        // name and the live engine list to the picker so
+                        // tapping a row actually flips the highlighted
+                        // selection and persists via setEnginePackage.
+                        currentEnginePackage = ttsSetting.enginePackage,
+                        engines = engines,
+                        onSelectEngine = { pkg ->
+                            lifecycleScope.launch { ttsController.setEnginePackage(pkg) }
+                        },
                     )
                     if (!disclaimerAccepted) {
                         DisclaimerDialog(onAcknowledge = {

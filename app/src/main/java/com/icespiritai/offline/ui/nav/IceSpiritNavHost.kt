@@ -14,6 +14,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.icespiritai.offline.IceSpiritVisionViewModel
 import com.icespiritai.offline.domain.AnalysisState
+import com.icespiritai.offline.tts.EngineInfo
 import com.icespiritai.offline.tts.TtsController
 import com.icespiritai.offline.tts.TtsState
 import com.icespiritai.offline.ui.home.HomeScreen
@@ -75,6 +76,29 @@ fun IceSpiritNavHost(
      * data; before the fix it was a hard-coded fallback string.
      */
     currentEngineLabel: String = "跟随系统默认",
+    /**
+     * Package name of the engine the user has pinned (null = "follow
+     * system default"). Threaded from [TtsSetting.enginePackage] so the
+     * picker can highlight the currently-selected row.
+     *
+     * Bug 2 fix (v0.1.61): without this, the NavHost call site passed a
+     * hard-coded `null` and every row rendered unselected.
+     */
+    currentEnginePackage: String? = null,
+    /**
+     * Snapshot of chinese-capable engines currently installed. Threaded
+     * from [TtsController.engines] so the picker list reflects reality
+     * (was previously a hard-coded empty list — picker always rendered
+     * EmptyTtsState).
+     */
+    engines: List<EngineInfo> = emptyList(),
+    /**
+     * Invoked when the user taps a row in the engine picker. Receives
+     * the package name to pin (null = "follow system default"). The
+     * Activity wraps this with `ttsController.setEnginePackage(pkg)`
+     * so the choice persists to DataStore.
+     */
+    onSelectEngine: (String?) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -138,8 +162,9 @@ fun IceSpiritNavHost(
             composable(Routes.TTS_ENGINE_PICKER) {
                 TtsEnginePickerScreen(
                     onBack = { nav.popBackStack() },
-                    currentEnginePackage = null,
-                    onSelectEngine = { pkg -> /* Task 11/12 will wire */ },
+                    currentEnginePackage = currentEnginePackage,
+                    engines = engines,
+                    onSelectEngine = onSelectEngine,
                 )
             }
             composable(Routes.CHANGELOG) {

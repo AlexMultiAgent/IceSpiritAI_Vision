@@ -25,6 +25,23 @@ class TtsController(
     private val _state = MutableStateFlow<TtsState>(TtsState.Idle)
     val state: StateFlow<TtsState> = _state.asStateFlow()
 
+    /**
+     * List of chinese-capable TTS engines currently discoverable on the
+     * device. Populated after [engine.init] completes (so the probe has
+     * access to the package manager) and re-populated by
+     * [refreshEngineStatus] (which fires when the user toggles the TTS
+     * feature back on from [TtsState.InitFailed] — engine installs may
+     * have happened in the meantime).
+     *
+     * Bug 2 fix (v0.1.61): previously the picker UI had no way to receive
+     * the engine list — [TtsEnginePickerScreen] always rendered the
+     * EmptyTtsState branch because the NavHost threaded a hard-coded
+     * `engines = emptyList()` to it. Surfacing the list as a [StateFlow]
+     * lets the Activity collect it once and pass the snapshot down.
+     */
+    private val _engines = MutableStateFlow<List<EngineInfo>>(emptyList())
+    val engines: StateFlow<List<EngineInfo>> = _engines.asStateFlow()
+
     val setting get() = settings.setting
 
     // Latest pushed ViolationReport, read by [toggle] so the top-bar click
@@ -42,6 +59,9 @@ class TtsController(
         }
         engine.init { ok ->
             _state.value = if (ok) TtsState.Idle else TtsState.InitFailed("引擎初始化失败")
+            // Probe after init so getEngines() reflects the package manager
+            // state visible to the running engine.
+            if (ok) _engines.value = engine.supportedChineseEngines()
         }
     }
 
@@ -109,7 +129,9 @@ class TtsController(
     suspend fun setEnginePackage(pkg: String?) = settings.setEnginePackage(pkg)
 
     fun refreshEngineStatus() {
-        val chinese = engine.supportedChineseEngines().any { it.supportsChinese }
+        val list = engine.supportedChineseEngines()
+        _engines.value = list
+        val chinese = list.any { it.supportsChinese }
         _state.value = if (chinese) TtsState.Idle else TtsState.InitFailed("无可用中文引擎")
     }
 
