@@ -1,5 +1,47 @@
 # 用户更新日志
 
+## v0.1.60 · 2026-09-08
+
+### 修复
+- **TTS 设置界面无变化 + 引擎选项空 + 兜底下载无反应** — 真机发现 v0.1.59 TTS 朗读功能 3 个真机问题:
+  - **Bug 1 修复**:`IceSpiritNavHost` 默认 `isAnalysisComplete = false` / `ttsState = Disabled` / `currentEngineLabel = "跟随系统默认"`,HomeTopBar 朗读按钮 永远 Disabled,设置 TTS 项永远不显真实引擎。**修法**:把 `ttsState` / `ttsEnabled` / `onSetTtsEnabled` / `currentEngineLabel` collect 提升到 NavHost 层,`isAnalysisComplete` 走 `state is Complete` 推导,SettingsScreen 拿到 `ttsController.setting.collectAsStateWithLifecycle()` 真实值。commit `d8a8d4b`。
+  - **Bug 2 修复 + 视觉重做**:`TtsController` 未暴露 `engines: StateFlow<List<EngineInfo>>`,NavHost 调用点 `engines = emptyList()` 默认,picker 永远 EmptyTtsState;`TtsEnginePickerScreen` 视觉与 Phase 3 Editorial 不搭(title `headlineMedium` 30sp 比父路由 26sp 还大、行用 Material `RadioButton`、empty state 裸 `Column` + 实心 `Button`)。**修法**:`TtsController` 加 `engines: StateFlow`,init 后 + `refreshEngineStatus` 时各 populate 一次;NavHost 加 `currentEnginePackage` / `engines` / `onSelectEngine` 3 参数,Activity 收集后 thread 进去;picker title `headlineSmall` 26sp / list 套 `Card` / 行用 `Icon(Icons.Default.Check, tint=primary)` 替代 RadioButton / 行间 `HorizontalDivider(0.5dp, outline)` / empty state `Card` + `FilledTonalButton`,对齐 `SettingsScreen.kt:77` 字号 + `SettingsScreen.kt:100` section 模式 + `HitCard.kt:112` tonal button palette。commit `35d0e77`。
+  - **Bug 3 修复(pivot)**:`TtsEngineInstaller` `fetchReleaseInfo()` 走 `gitea.example.invalid` 占位 + 全零 SHA,真机永远 0 步进;`BuildConfig.TTS_ENGINE_JSON_URL` 缺失。原 spec 计划独立 `icespirit-tts-engine` APK,但 `giteaadmin/tts-engine` 仓 404 不可用,需建仓 + build 独立 gradle subproject + 上传 ~150MB APK,3-5h 兴师。**Pivot**:参考 `IceSpiritAI_Translate` 仓设计 — `giteaadmin/Model` release `sherpa-onnx-matcha-zh-baker` 已有现成 ONNX(`model-steps-3.onnx` 75.6MB + `vocos-22khz-univ.onnx` 53.9MB),translate 1:1 用这套,vision 同样策略:
+    - 主 APK 集成 `com.k2fsa.sherpa-onnx:v1.13.5`(JitPack,`exclude "sherpa-onnx-jvm"`)+ `packaging.jniLibs.pickFirsts` 排除 c-api/cxx-api。**APK +42.5MB**(native lib 26.5MB + 文本资源 ~16MB),ONNX 130MB 不入 APK
+    - 新 `SherpaTtsEngine`(`OfflineTtsMatchaModelConfig` 懒初始化,`synthesize` 返 PCM)+ `PcmAudioPlayer`(`AudioTrack` 22050Hz/16-bit/mono,`MODE_STATIC` ≤50000 samples else `MODE_STREAM`)+ `TtsModelInstaller`(`HttpURLConnection` + `Range: bytes=N-` 续传 + `.meta` sidecar `sha256` 校验,失败时 partial + meta 删除 + `InstallState.Failed(reason)`),首次启动从 `giteaadmin/Model` release `sherpa-onnx-matcha-zh-baker` 拉 2 个 ONNX 到 `filesDir/offline-models/tts/zh/`
+    - `TtsController` 多引擎路由:`currentEngine` 按 `selectedEnginePackage` 选 `SherpaTtsEngine`(本地)或 `AndroidTtsEngine`(系统);`supportedChineseEngines()` merge 系统 + 「冰灵 TTS 引擎(本地)」(模型装好后出现);`downloadEngine()` 触发 `TtsModelInstaller.downloadModel()` + 刷新 engines list
+    - 21 个文本资源(tokens.txt / lexicon.txt / phone/date/number.fst / espeak-ng-data/* / dict/*)从 `IceSpiritAI_Translate/app/src/main/assets/models/tts/zh/` 复制
+    - `BuildConfig.TTS_MODEL_JSON_URL` → `giteaadmin/Model` release `sherpa-onnx-matcha-zh-baker` 的 `*-latest.json` 资产(2026-09-08 由 vision 上传,uuid `f108aa74-f6c7-4ae9-aaab-4a3e3eb66089`,含真 SHA-256)。`TtsModelInstaller.FallbackDescriptors` 同步填真 URL + SHA(保险,JSON 抓不到时不破)
+    - 弃用路径:commit `f039bd3`(`gitea.example.invalid` 兜底)已 `e319d39` revert;原 spec "独立 APK 路径" 改 memory `project-tts-engine-apk-pivot.md` 标记 **PIVOTED 2026-09-08**
+    - commit `92422cb` + 后续 `FallbackDescriptors` 填真 SHA 在 release-marker commit 内
+
+### 变更
+- **依赖**:新增 `com.github.k2-fsa:sherpa-onnx:v1.13.5` + JitPack 仓库(Aliyun/Tencent 镜像无 sherpa 制品)
+- **AndroidManifest**:无新增(FileProvider authority `${applicationId}.fileprovider` 走 v0.1.59 既存的 `update/` cache-path,无 TTS 专用)
+- **导航**:`TtsEnginePickerScreen` 空态时 FilledTonalButton 「下载冰灵 TTS 引擎」→ `onDownloadEngine` 路由 → `TtsController.downloadEngine` 触发下载(进度流透传)
+- **资源**:`app/src/main/assets/models/tts/zh/` 21 个文本资源从 translate 复制(tokens/lexicon .txt + 3 .fst + espeak-ng-data/* + dict/*);`prepare-ocr-rules.gradle.kts` `copyOcrModelsAssets` 加 `tts/**/*.txt/.fst/espeak-ng-data/dict` 规则
+
+### 新增
+- **TTS 兜底引擎「冰灵 TTS 引擎(本地)」**:picker 在模型已下载后,中文 TTS 系统引擎列表底部追加,`com.icespiritai.vision.sherpa-onnx` synthetic package,纯本地零网络合成中文
+- **Gitea `giteaadmin/Model` release `sherpa-onnx-matcha-zh-baker` 资产 `sherpa-onnx-matcha-zh-baker-latest.json`**(2026-09-08 vision 上传,uuid `f108aa74-f6c7-4ae9-aaab-4a3e3eb66089`):6 字段 `versionCode / versionName / modelUrl / vocoderUrl / modelSize / vocoderSize / modelSha256 / vocoderSha256`,ONNX 实际 sha256 通过 `sha256sum` 验证过
+
+### 测试
+- **+23 case**(全部 PASS):`SherpaTtsEngineTest` 8(speak 懒初始化 / onDone / 无模型 no-op / 双态 engines / samples 透传 / stop / init no-op / cached Synthesizer reuse)、`PcmAudioPlayerTest` 3(construct / stop 幂等 / empty no-op)、`TtsModelInstallerTest` 8(isModelInstalled 双态 / write ONNX / sha256 mismatch / meta 往返 / readMeta null / verifySha256 双态)、`TtsControllerTest` +4(LOCAL 路由 / null 路由 / downloadEngine 刷新 / 无 sherpa 兜底)
+- `testDebugUnitTest` 801 / 1 fail(`ChangelogScreenTest` 仍期待 v0.1.57,本 release-marker commit bump 到 v0.1.60)/ 2 skipped
+- **PcmAudioPlayerTest 缩减**:Robolectric `AudioTrack` shadow 不会真播音频(write 返 0),从 5 砍到 3 API-surface case;真机验证留 `connectedDebugAndroidTest`
+
+### 构建 / 数据
+- `versionCode` 59 → 60
+- `versionName` 0.1.59 → 0.1.60
+- `ad_signage_rules.json` / `food_label_rules.json` 不变(无规则库改动)
+- ONNX OCR 模型不变(PP-OCRv6_small)
+- **APK 体积 +~42.5MB**(sherpa-onnx native lib 26.5MB + 文本资源 ~16MB);ONNX TTS 模型 130MB 走首次启动下载(`giteaadmin/Model` release `sherpa-onnx-matcha-zh-baker` → `filesDir/offline-models/tts/zh/`)
+
+### 已知遗留 / 后续
+- **PcmAudioPlayer 真机烟测未做**:Robolectric 不能播 PCM,需 `connectedDebugAndroidTest` 在华为 nova 6 上 1 张 fixture 跑 speak + 进度回调 + onDone 链路(留 v0.1.61)
+- **首次启动下载 UX**:目前无后台通知(走 `InstallState.Downloading(progress)` 反映到 picker 按钮文字),若下载中用户离开 picker 进度流会断(留 v0.1.61 加 ForegroundService 通知)
+- **giteaadmin/Model 仓 `sherpa-onnx-matcha-zh-baker` release 关联 `sherpa-onnx-matcha-zh-baker-latest.json` 后,vision app 端走 `BuildConfig.TTS_MODEL_JSON_URL` fetch 即可**,Gitea API 不变
+
 ## v0.1.59 · 2026-09-08
 
 ### 新增

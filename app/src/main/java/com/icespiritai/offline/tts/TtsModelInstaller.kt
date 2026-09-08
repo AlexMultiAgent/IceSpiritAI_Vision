@@ -209,27 +209,24 @@ open class TtsModelInstaller(
         /**
          * Hardcoded fallback descriptors — used when the JSON descriptor
          * fetch fails (Gitea 404, network blip). URLs are the
-         * `giteaadmin/Model` release attachment UUIDs; sizes are
-         * documented in the release page.
-         *
-         * SHA-256: see `FetchDescriptor.sha256` in the release JSON —
-         * pre-baked here so the installer can still verify even when the
-         * descriptor fetch itself is broken. (TODO: re-verify with
-         * `sha256sum` against the actual Gitea attachment before
-         * shipping v0.1.60 release.)
+         * `giteaadmin/Model` release download endpoints; SHA-256 verified
+         * 2026-09-08 via `sha256sum` against the actual Gitea attachment
+         * bytes (75,624,611 / 53,884,024 bytes). Mirror of the
+         * `sherpa-onnx-matcha-zh-baker-latest.json` release asset
+         * uploaded at the same time.
          */
         val FallbackDescriptors: List<FileDescriptor> = listOf(
             FileDescriptor(
                 fileName = ACOUSTIC_MODEL_FILE,
-                url = "https://gitea.example.invalid/sherpa-onnx-matcha-zh-baker/model-steps-3.onnx",
+                url = "http://125.211.45.14:3000/giteaadmin/Model/releases/download/sherpa-onnx-matcha-zh-baker/model-steps-3.onnx",
                 sizeBytes = 75_624_611L,
-                sha256 = "0000000000000000000000000000000000000000000000000000000000000000",
+                sha256 = "0e1a49219d253f7f8c2d3b3b0594505ddac9cb3c5042fb573ecfaddd341c4395",
             ),
             FileDescriptor(
                 fileName = VOCODER_FILE,
-                url = "https://gitea.example.invalid/sherpa-onnx-matcha-zh-baker/vocos-22khz-univ.onnx",
+                url = "http://125.211.45.14:3000/giteaadmin/Model/releases/download/sherpa-onnx-matcha-zh-baker/vocos-22khz-univ.onnx",
                 sizeBytes = 53_884_024L,
-                sha256 = "0000000000000000000000000000000000000000000000000000000000000000",
+                sha256 = "0574a135aa1db2de6e181050db2ec528496cacd4a4701fc5d7faf9f9804c0081",
             ),
         )
 
