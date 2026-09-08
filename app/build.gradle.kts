@@ -87,6 +87,16 @@ android {
         buildConfigField("String", "UPDATE_JSON_URL",
             "\"http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/vision-latest.json\"")
 
+        // TTS 兜底引擎(独立 APK,不内嵌模型)的 release JSON。schema 与
+        // vision-latest.json 同形(apkUrl / apkSize / apkSha256 /
+        // versionCode),但托管在独立仓库 giteaadmin/tts-engine —— 引擎
+        // APK ~150 MB,与 vision 主包发版节奏解耦。
+        // Bug 3 fix (v0.1.60): 此前 TtsEngineInstaller.fetchReleaseInfo()
+        // 是 stub(返回 gitea.example 占位 URL + 全零 SHA),真机点「下载
+        // 引擎」0 步进。
+        buildConfigField("String", "TTS_ENGINE_JSON_URL",
+            "\"http://125.211.45.14:3000/giteaadmin/tts-engine/releases/download/latest/tts-engine-latest.json\"")
+
         buildConfigField("String", "UPDATE_EXPECTED_CERT_SHA256",
             "\"$releaseCertSha256\"")
     }

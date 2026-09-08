@@ -21,6 +21,17 @@ class TtsController(
     private val engine: TtsEngine,
     private val settings: TtsSettingRepositoryLike,
     private val scope: CoroutineScope,
+    /**
+     * Fallback engine-APK installer. Optional so unit tests (and any
+     * future headless caller) can construct the controller without an
+     * Android [android.content.Context]. When null, [downloadEngine] is a
+     * no-op.
+     *
+     * Bug 3 fix (v0.1.60): [TtsEngineInstaller] was never instantiated
+     * anywhere under `app/src/main/`, so the picker's 「下载引擎」 button
+     * had nothing to call even after Bug 2 made the empty state reachable.
+     */
+    private val installer: TtsEngineInstaller? = null,
 ) {
     private val _state = MutableStateFlow<TtsState>(TtsState.Idle)
     val state: StateFlow<TtsState> = _state.asStateFlow()
@@ -122,6 +133,35 @@ class TtsController(
                 val report = latestReport ?: return
                 speak(report)
             }
+        }
+    }
+
+    /**
+     * Fallback engine download progress, surfaced so the picker can render
+     * 「下载冰灵 TTS 引擎… N%」 instead of a dead button. Constant
+     * [InstallState.Idle] when no [installer] was injected.
+     */
+    val installState: StateFlow<InstallState> =
+        installer?.state ?: MutableStateFlow<InstallState>(InstallState.Idle).asStateFlow()
+
+    /**
+     * Kick off engine APK download + system install. Routed from the
+     * picker's empty-state 「下载引擎」 button (NavHost `onDownloadEngine`).
+     * No-op when no [installer] was injected.
+     *
+     * [TtsEngineInstaller.install] is mutex-guarded, so a double tap while a
+     * download is in flight returns the current state rather than starting a
+     * second stream; the button is additionally disabled while
+     * [installState] is [InstallState.Downloading].
+     */
+    fun downloadEngine() {
+        val installer = installer ?: return
+        scope.launch {
+            // Failures land in `installer.state` as InstallState.Failed
+            // (rendered by the picker). Catch defensively so an unexpected
+            // throw can't cancel `scope` — it is the Activity-lifetime
+            // SupervisorJob scope shared with the settings collector.
+            runCatching { installer.install() }
         }
     }
 

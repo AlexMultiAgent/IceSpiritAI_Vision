@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
+import com.icespiritai.offline.BuildConfig
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -38,11 +40,11 @@ class TtsEngineInstaller(private val context: Context) {
     private val partialFile: File get() = File(context.cacheDir, "$APK_NAME.partial")
     private val metaFile: File get() = File(context.cacheDir, "$APK_NAME.meta")
 
-    suspend fun install(releaseTag: String = DEFAULT_RELEASE_TAG): InstallState {
+    suspend fun install(jsonUrl: String = BuildConfig.TTS_ENGINE_JSON_URL): InstallState {
         if (!mutex.tryLock()) return state_.value  // double-tap no-op
         try {
             state_.value = InstallState.QueryingRelease
-            val info = fetchReleaseInfo(releaseTag)
+            val info = fetchReleaseInfo(jsonUrl)
             state_.value = InstallState.CheckingCache
             if (apkFile.exists() && computeSha256(apkFile) == info.sha256) {
                 return launchInstall().also { state_.value = it }
@@ -74,23 +76,44 @@ class TtsEngineInstaller(private val context: Context) {
     }
 
     /**
-     * Query Gitea release metadata for the given tag. Out-of-band here so
-     * unit tests can drive [install] flow without an actual Gitea call; the
-     * production wiring (Task 12) routes through `UpdateRepository.fetchApkInfo`
-     * but keeps this fallback for the spec's single-tag primary path.
+     * Fetch the engine release descriptor over HTTP.
+     *
+     * Bug 3 fix (v0.1.60): this used to be a stub returning
+     * `https://gitea.example/<tag>/<apk>` plus an all-zeros sha256, so the
+     * real-device 「下载引擎」 button produced zero progress — the download
+     * pointed at a host that does not exist and the sha256 check could never
+     * pass. Now it does a real GET on [jsonUrl] (default
+     * `BuildConfig.TTS_ENGINE_JSON_URL`) and parses the vision-latest-shaped
+     * document via [parseLatestJson].
+     *
+     * Deliberately `HttpURLConnection` (no OkHttp / Retrofit): the download
+     * path below already uses it for single-stream Range resume, and the
+     * shell profile must stay dependency-light.
+     *
+     * Throws [IOException] on transport failure or non-2xx so [install]'s
+     * existing catch translates it into `InstallState.Failed`.
      */
-    private fun fetchReleaseInfo(releaseTag: String): TtsEngineReleaseInfo {
-        // For now this is a stub returning the canonical release tag/url/sha
-        // referenced by the spec §14. The production fetch path is wired in
-        // Task 12 alongside FileProvider registration; this method exists so
-        // [install]'s flow is exercised end-to-end without mocking.
-        return TtsEngineReleaseInfo(
-            tag = releaseTag,
-            apkUrl = "https://gitea.example/$releaseTag/$APK_NAME",
-            sizeBytes = -1L,
-            sha256 = "0000000000000000000000000000000000000000000000000000000000000000",
-        )
-    }
+    private suspend fun fetchReleaseInfo(jsonUrl: String): TtsEngineReleaseInfo =
+        withContext(Dispatchers.IO) {
+            val conn = (URL(jsonUrl).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 15_000
+                readTimeout = 15_000
+                instanceFollowRedirects = true
+            }
+            try {
+                val code = conn.responseCode
+                if (code !in 200..299) throw IOException("HTTP $code from $jsonUrl")
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                try {
+                    parseLatestJson(body)
+                } catch (e: JSONException) {
+                    throw IOException("release JSON 解析失败:${e.message}", e)
+                }
+            } finally {
+                conn.disconnect()
+            }
+        }
 
     private suspend fun downloadWithResume(info: TtsEngineReleaseInfo) = withContext(Dispatchers.IO) {
         val existing = readMeta(metaFile)
@@ -148,6 +171,32 @@ class TtsEngineInstaller(private val context: Context) {
             val obj = JSONObject(file.readText())
             Meta(obj.getLong("downloadedBytes"), obj.getLong("totalBytes"), obj.getString("sha256"))
         } catch (e: Exception) { null }
+
+        /**
+         * Parse a `tts-engine-latest.json` document — same schema as
+         * `vision-latest.json` (see `AppVersionInfo`), i.e. the flat
+         * `apkUrl` / `apkSize` / `apkSha256` / `versionCode` shape produced
+         * by `generateVisionLatestJson`.
+         *
+         * `apkSize` is optional and defaults to `-1`: when the release JSON
+         * points at a Gitea `/attachments/<uuid>` URL the size is not always
+         * mirrored, and [downloadWithResume] falls back to the response's
+         * `Content-Range` header in that case.
+         *
+         * Distinct from [parseReleaseJson], which parses the Gitea
+         * `/api/v1/.../releases` API shape (`tag_name` + `assets[]`). Both
+         * are kept: the API shape is still the fallback for a tag-based
+         * query, the flat shape is what production actually fetches.
+         */
+        fun parseLatestJson(json: String): TtsEngineReleaseInfo {
+            val obj = JSONObject(json)
+            return TtsEngineReleaseInfo(
+                tag = obj.optString("versionCode", DEFAULT_RELEASE_TAG),
+                apkUrl = obj.getString("apkUrl"),
+                sizeBytes = obj.optLong("apkSize", -1L),
+                sha256 = obj.getString("apkSha256"),
+            )
+        }
 
         fun parseReleaseJson(json: String): TtsEngineReleaseInfo {
             val obj = JSONObject(json)

@@ -47,6 +47,39 @@ class TtsEngineInstallerTest {
         assertEquals("abc123", info.sha256)
     }
 
+    @Test fun `parseLatestJson extracts apkUrl size sha256 from vision-latest schema`() {
+        // Bug 3 fix (v0.1.60): the engine release JSON mirrors
+        // vision-latest.json (apkUrl / apkSize / apkSha256 / versionCode),
+        // NOT the Gitea `/releases` API shape parsed by parseReleaseJson.
+        // fetchReleaseInfo() does a real HTTP GET on this document; the
+        // parse step is factored out here so it is unit-testable.
+        val json = """
+            {
+              "versionCode": 3,
+              "versionName": "1.0.0",
+              "apkUrl": "http://125.211.45.14:3000/attachments/abc-uuid",
+              "apkSize": 157286400,
+              "apkSha256": "deadbeef",
+              "signerCertSha256": "4a21f4"
+            }
+        """.trimIndent()
+        val info = TtsEngineInstaller.parseLatestJson(json)
+        assertEquals("http://125.211.45.14:3000/attachments/abc-uuid", info.apkUrl)
+        assertEquals(157286400L, info.sizeBytes)
+        assertEquals("deadbeef", info.sha256)
+        assertEquals("3", info.tag)
+    }
+
+    @Test fun `parseLatestJson tolerates missing apkSize`() {
+        // Gitea attachment URLs sometimes omit apkSize; downloadWithResume
+        // falls back to the Content-Range header, so -1 must not throw.
+        val info = TtsEngineInstaller.parseLatestJson(
+            """{"versionCode":1,"apkUrl":"http://x/y.apk","apkSha256":"h"}"""
+        )
+        assertEquals(-1L, info.sizeBytes)
+        assertEquals("h", info.sha256)
+    }
+
     @Test fun `sha256 mismatch transition to Failed and deletes partial`() = runTest {
         partialFile.writeBytes(ByteArray(100) { 0x42 })
         metaFile.writeText("""{"downloadedBytes":100,"totalBytes":100,"sha256":"expected"}""")
