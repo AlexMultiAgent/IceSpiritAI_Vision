@@ -1,5 +1,25 @@
 # 用户更新日志
 
+## v0.1.62 · 2026-09-09
+
+### 修复
+- **TTS picker 点「下载」chip 区域无反应** — 真机发现 v0.1.61 picker 行右侧「下载」chip 自身消费 pointer event(`AssistChip(enabled = false)` 即便 disabled 仍 consume input,不冒泡到 parent row 的 selectable.onClick),点 chip 区域 engineClick 未触发,downloadEngine 没跑:
+  - **Bug 6 修复**:`EngineStatusChip` 改用 `Box + 背景色 + 文本` 视觉(无 clickable modifier),chip 区域 pointer event 穿透到 parent Row.selectable。整行(label + 状态 pill)统一一个 clickable unit
+
+### 变更
+- **UI**:`TtsEnginePickerScreen` 去掉 `AssistChip` + `AssistChipDefaults` import,改用 `Box + background(shape = MaterialTheme.shapes.small)`,视觉与原 disabled chip 完全一致(`surfaceVariant` 底 + `onSurfaceVariant` 文)
+
+### 测试
+- **+1 case**:`TtsEnginePickerScreenTest` 新增 `tapping the status chip area on NeedsDownload row triggers onEngineClick`,用 `composeRule.onNodeWithText("下载").performClick()` 直接点 chip 文本 pin 透传契约,防止后续 revert 复发
+- `testDebugUnitTest` 807 / 0 fail / 2 skipped
+
+### 构建 / 数据
+- `versionCode` 61 → 62
+- `versionName` 0.1.61 → 0.1.62
+- `ad_signage_rules.json` / `food_label_rules.json` 不变(无规则库改动)
+- ONNX OCR 模型不变(PP-OCRv6_small);ONNX TTS 模型不变(sherpa-onnx-matcha-zh-baker)
+- APK 体积不变(只 UI fix)
+
 ## v0.1.61 · 2026-09-09
 
 ### 修复
