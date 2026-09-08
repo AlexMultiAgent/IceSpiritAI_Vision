@@ -21,7 +21,9 @@ class HomeScreenTtsE2ETest {
         composeRule.waitForIdle()
         // 首次启动会叠 DisclaimerDialog(spec §6.4),HomeTopBar 的朗读按钮在 dialog
         // 之下不可见 — 必须先把"我了解"点了,HomeTopBar 才能拿到事件。
-        composeRule.onNodeWithText("我了解").performClick()
+        // runCatching 让 dismiss 对后续 smoke run 幂等(disclaimer 已 accepted 时
+        // dialog 不出现,onNodeWithText 会抛 AssertionError,这里吞掉)。
+        runCatching { composeRule.onNodeWithText("我了解").performClick() }
         composeRule.waitForIdle()
         // 现在 HomeTopBar 的朗读按钮(contentDescription 含 "朗读")可见
         val initial = composeRule.onNodeWithContentDescription(
