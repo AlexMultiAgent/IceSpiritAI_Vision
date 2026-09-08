@@ -16,6 +16,7 @@ import com.icespiritai.offline.domain.AnalysisState
 import com.icespiritai.offline.ui.home.HomeScreen
 import com.icespiritai.offline.ui.settings.ChangelogScreen
 import com.icespiritai.offline.ui.settings.SettingsScreen
+import com.icespiritai.offline.ui.settings.TtsEnginePickerScreen
 import com.icespiritai.offline.ui.settings.UpdateDetailScreen
 import com.icespiritai.offline.ui.viewer.ViewerScreen
 
@@ -25,6 +26,7 @@ object Routes {
     const val CHANGELOG = "changelog"
     const val UPDATE_DETAIL = "update_detail"
     const val VIEWER = "viewer"
+    const val TTS_ENGINE_PICKER = "tts_engine_picker"
 }
 
 /**
@@ -71,6 +73,14 @@ fun IceSpiritNavHost(modifier: Modifier = Modifier) {
                     onBack = { nav.popBackStack() },
                     onOpenChangelog = { nav.navigate(Routes.CHANGELOG) },
                     onOpenUpdateDetail = { nav.navigate(Routes.UPDATE_DETAIL) },
+                    onOpenEnginePicker = { nav.navigate(Routes.TTS_ENGINE_PICKER) },
+                )
+            }
+            composable(Routes.TTS_ENGINE_PICKER) {
+                TtsEnginePickerScreen(
+                    onBack = { nav.popBackStack() },
+                    currentEnginePackage = null,
+                    onSelectEngine = { pkg -> /* Task 11/12 will wire */ },
                 )
             }
             composable(Routes.CHANGELOG) {

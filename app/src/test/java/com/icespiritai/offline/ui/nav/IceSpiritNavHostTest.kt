@@ -13,7 +13,8 @@ import org.robolectric.annotation.Config
 /**
  * Pin-level tests for [IceSpiritNavHost] routing surface.
  *
- * The NavHost composes 4 destinations: HOME / SETTINGS / CHANGELOG / VIEWER.
+ * The NavHost composes 6 destinations: HOME / SETTINGS / CHANGELOG /
+ * UPDATE_DETAIL / VIEWER / TTS_ENGINE_PICKER.
  * Because the production wiring is `viewModel()` at the Activity-scoped
  * ViewModelStoreOwner, and the start destination `HomeScreen` reads heavy
  * deps (BitmapLoader + OCR engine via `IceSpiritVisionViewModel`), a
@@ -22,7 +23,7 @@ import org.robolectric.annotation.Config
  * fakes for `shell`.
  *
  * What we pin here:
- *  - the four route constants are stable strings (anything that
+ *  - the route constants are stable strings (anything that
  *    hard-codes "home" / "settings" / etc. is depending on these)
  *  - route constants are distinct (HOME ≠ VIEWER ≠ ...)
  *  - the start destination is HOME
@@ -38,21 +39,31 @@ class IceSpiritNavHostTest {
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun `Routes defines the four expected destinations`() {
+    fun `Routes defines the six expected destinations`() {
         assertEquals("home", Routes.HOME)
         assertEquals("settings", Routes.SETTINGS)
         assertEquals("changelog", Routes.CHANGELOG)
+        assertEquals("update_detail", Routes.UPDATE_DETAIL)
         assertEquals("viewer", Routes.VIEWER)
+        assertEquals("tts_engine_picker", Routes.TTS_ENGINE_PICKER)
     }
 
     @Test
     fun `all Routes constants are distinct`() {
         // Pin against accidental merging or shadowing where someone
         // refactors and accidentally makes Routes.VIEWER == Routes.HOME.
-        val all = setOf(Routes.HOME, Routes.SETTINGS, Routes.CHANGELOG, Routes.VIEWER)
-        assertEquals(4, all.size)
+        val all = setOf(
+            Routes.HOME,
+            Routes.SETTINGS,
+            Routes.CHANGELOG,
+            Routes.UPDATE_DETAIL,
+            Routes.VIEWER,
+            Routes.TTS_ENGINE_PICKER,
+        )
+        assertEquals(6, all.size)
         assertNotEquals(Routes.HOME, Routes.VIEWER)
         assertNotEquals(Routes.SETTINGS, Routes.CHANGELOG)
+        assertNotEquals(Routes.SETTINGS, Routes.TTS_ENGINE_PICKER)
     }
 
     @Test
