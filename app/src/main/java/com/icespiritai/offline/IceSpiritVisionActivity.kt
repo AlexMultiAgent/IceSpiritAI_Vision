@@ -16,9 +16,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icespiritai.offline.BuildConfig
 import com.icespiritai.offline.settings.SettingsRepository
 import com.icespiritai.offline.tts.AndroidTtsEngine
-import com.icespiritai.offline.tts.InstallState
 import com.icespiritai.offline.tts.TtsController
-import com.icespiritai.offline.tts.TtsEngineInstaller
 import com.icespiritai.offline.tts.TtsSetting
 import com.icespiritai.offline.tts.TtsSettingRepository
 import com.icespiritai.offline.tts.TtsSettingRepositoryAdapter
@@ -55,16 +53,10 @@ class IceSpiritVisionActivity : ComponentActivity() {
         // CLAUDE.md §4 backend stays intact — TTS is a new component, surfaced
         // to the UI through the LocalTtsController CompositionLocal.
         val ttsRepo = TtsSettingRepository(applicationContext)
-        // Bug 3 fix (v0.1.60): TtsEngineInstaller had no instantiation site
-        // in app/src/main — the picker's 「下载引擎」 button had nothing to
-        // call. applicationContext (not `this`) because the installer keeps
-        // a long-lived reference for cacheDir + FileProvider + startActivity.
-        val ttsInstaller = TtsEngineInstaller(applicationContext)
         ttsController = TtsController(
             engine = AndroidTtsEngine(applicationContext),
             settings = TtsSettingRepositoryAdapter(ttsRepo),
             scope = appScope,
-            installer = ttsInstaller,
         )
 
         setContent {
@@ -102,20 +94,6 @@ class IceSpiritVisionActivity : ComponentActivity() {
             // actually shows devices' installed chinese-capable engines
             // instead of always rendering the EmptyTtsState branch.
             val engines by ttsController.engines.collectAsStateWithLifecycle()
-            // Bug 3 fix (v0.1.60): engine-APK install progress, so the
-            // picker's 「下载引擎」 button turns into a live percentage
-            // instead of looking inert for the ~150 MB download.
-            val installState by ttsController.installState.collectAsStateWithLifecycle()
-            val isDownloadingEngine = installState is InstallState.QueryingRelease ||
-                installState is InstallState.CheckingCache ||
-                installState is InstallState.Downloading ||
-                installState is InstallState.VerifyingSha256
-            val engineDownloadProgress = (installState as? InstallState.Downloading)
-                ?.let { d ->
-                    if (d.bytesTotal > 0) {
-                        (d.bytesDownloaded * 100 / d.bytesTotal).toInt().coerceIn(0, 100)
-                    } else 0
-                } ?: 0
 
             IceSpiritVisionTheme(themeMode = themeMode, ttsController = ttsController) {
                 Box(modifier = Modifier.fillMaxSize()) {
@@ -145,11 +123,6 @@ class IceSpiritVisionActivity : ComponentActivity() {
                         onSelectEngine = { pkg ->
                             lifecycleScope.launch { ttsController.setEnginePackage(pkg) }
                         },
-                        // Bug 3 fix (v0.1.60): route the picker's empty-state
-                        // 下载 button to the (now instantiated) installer.
-                        onDownloadEngine = { ttsController.downloadEngine() },
-                        isDownloadingEngine = isDownloadingEngine,
-                        engineDownloadProgress = engineDownloadProgress,
                     )
                     if (!disclaimerAccepted) {
                         DisclaimerDialog(onAcknowledge = {

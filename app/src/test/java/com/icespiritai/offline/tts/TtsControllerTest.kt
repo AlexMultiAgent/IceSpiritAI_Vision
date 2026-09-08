@@ -122,35 +122,6 @@ class TtsControllerTest {
         assertEquals(1, fakeEngine.stopCallCount)
     }
 
-    @Test fun `downloadEngine is no-op when installer is null`() = runTest {
-        // Bug 3 fix (v0.1.60): `downloadEngine` is the entry point the
-        // picker's 「下载引擎」 button routes to. When no installer was
-        // injected (unit tests / shell profile) it must return without
-        // touching the network or throwing — the picker button is still
-        // clickable in that configuration.
-        fakeSettings.emit(TtsSetting(enabled = true))
-        val nullInstallerController = TtsController(
-            engine = fakeEngine,
-            settings = fakeSettings,
-            scope = testScope,
-            installer = null,
-        )
-        nullInstallerController.downloadEngine()
-        advanceUntilIdle()
-        // State untouched: no Downloading / Failed leakage into the TTS
-        // state machine (install progress lives on TtsEngineInstaller.state).
-        assertEquals(TtsState.Idle, nullInstallerController.state.first())
-    }
-
-    @Test fun `downloadEngine default constructor has null installer`() = runTest {
-        // The 4th param is optional so every existing call site (and the
-        // 8 state-machine tests above) keeps compiling unchanged.
-        fakeSettings.emit(TtsSetting(enabled = true))
-        controller.downloadEngine()
-        advanceUntilIdle()
-        assertEquals(TtsState.Idle, controller.state.first())
-    }
-
     // --- helpers ---
 
     private fun reportWith(text: String): ViolationReport = ViolationReport(

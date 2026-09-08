@@ -99,22 +99,6 @@ fun IceSpiritNavHost(
      * so the choice persists to DataStore.
      */
     onSelectEngine: (String?) -> Unit = {},
-    /**
-     * Invoked when the user taps 「下载引擎」 in the picker's empty state.
-     * The Activity wraps this with `ttsController.downloadEngine()`.
-     *
-     * Bug 3 fix (v0.1.60): the picker already had an `onDownloadEngine`
-     * parameter, but the NavHost call site never passed one, so the button
-     * fell back to the `{}` default — tapping it did nothing.
-     */
-    onDownloadEngine: () -> Unit = {},
-    /**
-     * Engine-APK download in flight → the picker disables the button and
-     * renders 「下载冰灵 TTS 引擎… N%」. Threaded from
-     * [TtsController.installState].
-     */
-    isDownloadingEngine: Boolean = false,
-    engineDownloadProgress: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -181,9 +165,6 @@ fun IceSpiritNavHost(
                     currentEnginePackage = currentEnginePackage,
                     engines = engines,
                     onSelectEngine = onSelectEngine,
-                    onDownloadEngine = onDownloadEngine,
-                    isDownloading = isDownloadingEngine,
-                    downloadProgress = engineDownloadProgress,
                 )
             }
             composable(Routes.CHANGELOG) {

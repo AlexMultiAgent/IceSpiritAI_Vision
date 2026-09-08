@@ -84,48 +84,6 @@ class TtsEnginePickerScreenTest {
         assertNull(captured)
     }
 
-    @Test fun `empty state download button invokes onDownloadEngine`() {
-        // Bug 3 fix (v0.1.60): the NavHost now threads a real callback that
-        // routes to TtsController.downloadEngine(). Pin the screen-side end
-        // of that wire so a future refactor can't drop it back to `{}`.
-        var downloaded = false
-        composeRule.setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
-                TtsEnginePickerScreen(
-                    onBack = {},
-                    currentEnginePackage = null,
-                    onSelectEngine = {},
-                    engines = emptyList(),
-                    onDownloadEngine = { downloaded = true },
-                )
-            }
-        }
-        composeRule.onNodeWithText("下载引擎", useUnmergedTree = true).performClick()
-        assertEquals(true, downloaded)
-    }
-
-    @Test fun `download button does not fire while a download is in flight`() {
-        // `enabled = !isDownloading` on the FilledTonalButton — double taps
-        // during an in-flight download must not re-enter the installer
-        // (TtsEngineInstaller.install() also mutex-guards, defense in depth).
-        var clicks = 0
-        composeRule.setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
-                TtsEnginePickerScreen(
-                    onBack = {},
-                    currentEnginePackage = null,
-                    onSelectEngine = {},
-                    engines = emptyList(),
-                    onDownloadEngine = { clicks++ },
-                    isDownloading = true,
-                    downloadProgress = 12,
-                )
-            }
-        }
-        composeRule.onNodeWithText("下载冰灵 TTS 引擎… 12%", useUnmergedTree = true).performClick()
-        assertEquals(0, clicks)
-    }
-
     @Test fun `title uses headlineSmall design token (26sp)`() {
         composeRule.setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
