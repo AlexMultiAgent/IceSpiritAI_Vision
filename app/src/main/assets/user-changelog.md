@@ -1,5 +1,35 @@
 # 用户更新日志
 
+## v0.1.59 · 2026-09-08
+
+### 新增
+- **TTS playback — 朗读识别结果中文命中**(spec §6 端到端落地,plan 17 tasks):
+  - **状态机 + 持久化**:`TtsSetting` DataStore Preferences 持久化 enabled + engine package + disclaimer accept;`TtsController` 4 状态 sealed class(`Idle` / `Speaking` / `Disabled` / `InitFailed`)经 `AndroidTtsEngine` 包装走 `android.speech.tts.TextToSpeech` API,`setLanguage(zh-CN) >= LANG_AVAILABLE` per-engine probe 缓存到 `primaryEnginePackage` 避免字符串 substring 误判(Honor voiceengine 实测)
+  - **脚本拼接**:`ScriptBuilder` 按 severity 排序拼接 `ViolationReport` → 朗读脚本(violation 在前,info 在后,priority-ordered)
+  - **UI 表面**:HomeTopBar 朗读按钮 4 态视觉矩阵(`Idle` speaker / `Speaking` stop / `InitFailed` warning / `Disabled` hidden)+ a11y `contentDescription` per 态;ResultPanel 0 命中卡片 visible footer(「未发现违规用语」+ 「AI 识别仅供参考」);Settings 「语音播报」section + `TtsEnginePickerScreen` 路由
+  - **首次启动免责**:`DisclaimerDialog` `AlertDialog`(`dismissOnBackPress=false`),启动期 `disclaimerAcceptedAt == null` 触发,「我了解」tap 后 `acceptDisclaimer()` 写入 DataStore 一次性 ack
+  - **兜底引擎下载**:`TtsEngineInstaller` 状态机(`Idle` / `Downloading(progress)` / `Installing` / `Done` / `Failed(reason)`)+ `HttpURLConnection` `Range: bytes=<start>-` 续传 + sidecar `.meta` JSON `sha256` 校验 + `IOException` cleanup(partial + meta 删除 + `Failed(reason)`)+ `FileProvider` cache-path `ACTION_VIEW` + `ACTION_INSTALL_PACKAGE`
+  - **Activity 接线**:`IceSpiritVisionActivity` 注入 `TtsController` + `ttsController.state.collectAsStateWithLifecycle()` thread 到 `IceSpiritNavHost` → `HomeScreen` → `HomeTopBar`;`LaunchedEffect` bridge collect `sharedVm.state` → `ttsController.setLatestReport((Complete)?.report)`
+- **真机 e2e(华为 nova 6 SDK 35)**:`AndroidTtsEngineInitTest` / `SpeakTest` / `TtsEngineInstallerResumeTest` / `HomeScreenTtsE2ETest` / `TtsEngineInstallerE2ETest` 5/5 PASS(commit `2876a8e` + 修复 `45078a5` + `7c4715e` + smoke doc `7b32c1c` + plan doc `585bc42`)
+- **Visual audit fixtures**:`app/src/androidTest/assets/visual-audit/tts/{before,after}/` 各 3 张真机截图,`speaking.png` sha256 `a795a666...235e` 验证 HomeTopBar 按钮渲染
+
+### 变更
+- **依赖**:无新增(走 `android.speech.tts` SDK + `androidx.datastore:datastore-preferences`)
+- **资源**:`strings.xml` 新增 TTS + disclaimer 全量 keys(约 12 条)
+- **导航**:`IceSpiritNavHost` 加 `Routes.TTS_ENGINE_PICKER` route
+
+### 修复
+- `AndroidTtsEngine.supportedChineseEngines()` 字符串 substring 探测 → per-engine init 缓存 `primaryEnginePackage` + `primarySupportsChinese`,`Honor voiceengine` 实测命中(原 substring 列表漏)
+- `IceSpiritNavHost.HomeScreen(...)` 调用点补 `ttsState` + `onSpeakToggle` 参数(原默认值 `TtsState.Disabled` 让按钮不渲染)
+- `TtsEngineInstaller` `IOException` handler 增 partial + meta sidecar 文件清理(plan 未列,实现期发现)
+
+### 构建 / 数据
+- `versionCode` 58 → 59
+- `versionName` 0.1.58 → 0.1.59
+- `ad_signage_rules.json` / `food_label_rules.json` 不变(无规则库改动)
+- ONNX 模型不变(PP-OCRv6_small)
+- APK 体积 +~50KB(TTS 模块 + 测试代码)
+
 ## v0.1.58 · 2026-09-04
 
 - **「ad」域规则库法规新鲜度审计 + 3 P0 修复**(per v0.1.57 follow-up workflow Phase 2 synthesis 报告):synthesis 标识出 3 条 ad_signage 规则 `regulation` 字段引用了已废止法规或错号条款,违反 CLAUDE.md §"知识库时效性整理(2026-08-27)" 的"规则 JSON 条目 regulation 必须能指回 知识库/&lt;域&gt;/&lt;现行法规&gt;.md,不得指已废止法规"约束。本次修复 3 条 P0 法规新鲜度问题:
