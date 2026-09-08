@@ -965,6 +965,11 @@ dependencies {
     // because Compose reads it only in debug variants.
     testImplementation(platform(libs.compose.bom))
     testImplementation(libs.compose.ui.test.junit4)
+    // Real org.json impl for TtsEngineInstallerTest (parseReleaseJson /
+    // readMeta / writeMeta). Without this, `isReturnDefaultValues = true`
+    // would have org.json.JSONObject return null instead of throwing,
+    // masking the JSON parse in plain JVM tests.
+    testImplementation("org.json:json:20240303")
 
     // Instrumentation tests (for SDK smoke test + Compose UI test)
     androidTestImplementation(platform(libs.compose.bom))
