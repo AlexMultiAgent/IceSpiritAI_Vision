@@ -17,9 +17,11 @@ import com.icespiritai.offline.BuildConfig
 import com.icespiritai.offline.settings.SettingsRepository
 import com.icespiritai.offline.tts.AndroidTtsEngine
 import com.icespiritai.offline.tts.TtsController
+import com.icespiritai.offline.tts.TtsModelInstaller
 import com.icespiritai.offline.tts.TtsSetting
 import com.icespiritai.offline.tts.TtsSettingRepository
 import com.icespiritai.offline.tts.TtsSettingRepositoryAdapter
+import com.icespiritai.offline.tts.sherpa.SherpaTtsEngine
 import com.icespiritai.offline.ui.common.DisclaimerDialog
 import com.icespiritai.offline.ui.nav.IceSpiritNavHost
 import com.icespiritai.offline.ui.theme.IceSpiritVisionTheme
@@ -52,9 +54,27 @@ class IceSpiritVisionActivity : ComponentActivity() {
         // TTS controller: process-singleton (Activity field), AppGraph untouched.
         // CLAUDE.md §4 backend stays intact — TTS is a new component, surfaced
         // to the UI through the LocalTtsController CompositionLocal.
+        //
+        // Bug 3 pivot (v0.1.60): controller now takes a system engine +
+        // optional sherpa-onnx engine + optional installer. The installer
+        // and engine are wired unconditionally (always available), but
+        // `sherpaEngine.supportedChineseEngines()` returns empty until
+        // the ONNX bundle is downloaded — until then the picker renders
+        // the empty-state CTA. downloadEngine() runs the download.
         val ttsRepo = TtsSettingRepository(applicationContext)
+        val ttsModelInstaller = TtsModelInstaller(
+            filesDir = applicationContext.filesDir,
+            scope = appScope,
+            jsonUrl = BuildConfig.TTS_MODEL_JSON_URL,
+        )
+        val sherpaTtsEngine = SherpaTtsEngine(
+            context = applicationContext,
+            modelDir = ttsModelInstaller.modelDir,
+        )
         ttsController = TtsController(
-            engine = AndroidTtsEngine(applicationContext),
+            systemEngine = AndroidTtsEngine(applicationContext),
+            sherpaEngine = sherpaTtsEngine,
+            modelInstaller = ttsModelInstaller,
             settings = TtsSettingRepositoryAdapter(ttsRepo),
             scope = appScope,
         )
@@ -123,6 +143,11 @@ class IceSpiritVisionActivity : ComponentActivity() {
                         onSelectEngine = { pkg ->
                             lifecycleScope.launch { ttsController.setEnginePackage(pkg) }
                         },
+                        // Bug 3 pivot (v0.1.60): route the picker's empty-
+                        // state "下载" CTA to the ONNX installer. No
+                        // permissions or UI flags to thread — the
+                        // controller owns the download state machine.
+                        onDownloadEngine = { ttsController.downloadEngine() },
                     )
                     if (!disclaimerAccepted) {
                         DisclaimerDialog(onAcknowledge = {

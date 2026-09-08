@@ -89,6 +89,15 @@ android {
 
         buildConfigField("String", "UPDATE_EXPECTED_CERT_SHA256",
             "\"$releaseCertSha256\"")
+
+        // Bug 3 pivot (v0.1.60): TTS fallback downloads its ONNX models
+        // (Matcha acoustic + Vocos vocoder) from `giteaadmin/Model` release
+        // `sherpa-onnx-matcha-zh-baker`. The release is also mirrored as
+        // `*-latest.json` (uploaded as a release asset) so the installer
+        // can fetch a fresh descriptor without re-publishing the entire
+        // ONNX bundle. See TtsModelInstaller for fetch + sha256 verify.
+        buildConfigField("String", "TTS_MODEL_JSON_URL",
+            "\"http://125.211.45.14:3000/giteaadmin/Model/releases/download/latest/sherpa-onnx-matcha-zh-baker-latest.json\"")
     }
 
     signingConfigs {
@@ -324,8 +333,21 @@ android {
         // Trade-off: APK install size grows (libs are uncompressed). Acceptable
         // for ice_ocr_rules profile where native libs are required. shell profile
         // has no native libs so this setting is a no-op for shell.
+        //
+        // Bug 3 pivot (v0.1.60): also covers sherpa-onnx c-api/cxx-api
+        // libs (libsherpa-onnx-c-api.so + libsherpa-onnx-cxx-api.so).
+        // Both profiles ship them once sherpa-onnx is a top-level dep.
         jniLibs {
             useLegacyPackaging = true
+            // AGP merges native libs from ALL deps; if two deps ship the
+            // same .so name, the build errors with "more than one file".
+            // sherpa-onnx AAR exposes both c-api + cxx-api; we pickFirst
+            // (same approach as translate) so any future bump that swaps
+            // one for the other does not break the build.
+            pickFirsts += listOf(
+                "**/libsherpa-onnx-c-api.so",
+                "**/libsherpa-onnx-cxx-api.so",
+            )
         }
 
         resources {
@@ -941,6 +963,39 @@ dependencies {
         implementation(files("libs/ppocr-sdk.aar"))
         implementation(libs.onnxruntime.android)
         implementation(libs.opencv.android)
+    }
+
+    // Bug 3 pivot (v0.1.60): sherpa-onnx TTS engine + Matcha acoustic /
+    // Vocos vocoder ONNX models. Bundled into the APK on every profile so
+    // the user does not need to switch profiles for the local Chinese
+    // TTS engine. The two ONNX files (~130 MB combined) are downloaded
+    // on first use via TtsModelInstaller — see BuildConfig.TTS_MODEL_JSON_URL.
+    //
+    // `sherpa-onnx-jvm` exclusion mirrors translate's exact pattern: the
+    // main `sherpa-onnx` AAR pulls in `sherpa-onnx-jvm` as a transitive
+    // dep, but the JVM module is for desktop JNI — Android needs the
+    // Android-specific bindings shipped in the main AAR. Keeping the
+    // exclude prevents the JVM jar from overwriting classes with the
+    // desktop ABI on the classpath.
+    //
+    // `sherpa-onnx-native-lib-*` exclusion: the sherpa-onnx release
+    // publishes Gradle Module Metadata variants for every host
+    // platform (linux-x64, osx-aarch64, win-x64, ...). On Android
+    // builds the AAR variant is selected, but AGP 9.x's classpath
+    // resolver still tries to resolve the win-x64 jar when running
+    // on Windows hosts. JitPack has the jars but Tencent/Aliyun
+    // mirrors don't; AGP stops at the first mirror that has the POM
+    // (Tencent) and 404s on the JAR. Excluding the desktop variants
+    // keeps the resolution on the AAR path which is bundled and
+    // ships its own Android-arm64 .so already.
+    implementation(libs.sherpa.onnx) {
+        exclude(group = "com.github.k2-fsa.sherpa-onnx", module = "sherpa-onnx-jvm")
+        exclude(group = "com.github.k2-fsa.sherpa-onnx", module = "sherpa-onnx-native-lib-linux-x64")
+        exclude(group = "com.github.k2-fsa.sherpa-onnx", module = "sherpa-onnx-native-lib-linux-aarch64")
+        exclude(group = "com.github.k2-fsa.sherpa-onnx", module = "sherpa-onnx-native-lib-osx-x64")
+        exclude(group = "com.github.k2-fsa.sherpa-onnx", module = "sherpa-onnx-native-lib-osx-aarch64")
+        exclude(group = "com.github.k2-fsa.sherpa-onnx", module = "sherpa-onnx-native-lib-win-x64")
+        exclude(group = "com.github.k2-fsa.sherpa-onnx", module = "sherpa-onnx-native-lib-win-arm64")
     }
 
     // ServiceLoader registration for the per-profile `OcrEngineFactory`.

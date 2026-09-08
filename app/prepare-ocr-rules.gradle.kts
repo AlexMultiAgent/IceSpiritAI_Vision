@@ -109,10 +109,17 @@ val prepareOcrRulesAssets = tasks.register("prepareOcrRulesAssets") {
 // dir is empty (or contains only .gitkeep) unless
 // `tools/download-ppocr-models.sh` has been run; Copy with empty `from` is a
 // harmless no-op so first-build with ice_ocr_rules still succeeds.
+//
+// Bug 3 pivot (v0.1.60): sherpa-onnx TTS text resources (tokens.txt,
+// lexicon.txt, *.fst, espeak-ng-data/, dict/) are bundled into the APK on
+// every profile — they're tiny (~16 MB total) and required by
+// sherpa-onnx OfflineTts at first generate() call. The two ONNX model
+// files (model-steps-3.onnx, vocos-22khz-univ.onnx) are deliberately
+// excluded — they're downloaded at runtime by TtsModelInstaller.
 
 val copyOcrModelsAssets = tasks.register<Copy>("copyOcrModelsAssets") {
     group = "build"
-    description = "Copy ONNX model assets into build/generated/assets/models/ when modelProfile == ice_ocr_rules; clean otherwise"
+    description = "Copy ONNX model assets into build/generated/assets/models/ when modelProfile == ice_ocr_rules; clean otherwise. Also copies sherpa-onnx TTS text resources on every profile."
 
     val activeProfile = modelProfileValue
     val modelSrcDir = file("src/main/assets/models")
@@ -142,6 +149,15 @@ val copyOcrModelsAssets = tasks.register<Copy>("copyOcrModelsAssets") {
             include("**/*.onnx")
             include("**/*.yml")
         }
+        // Bug 3 pivot (v0.1.60): sherpa-onnx TTS text resources ship on
+        // every profile — they are small (~16 MB) and required for
+        // OfflineTts to load. Exclude the ONNX model files explicitly
+        // (those are downloaded at runtime by TtsModelInstaller, not
+        // bundled into the APK).
+        include("tts/**/*.txt")
+        include("tts/**/*.fst")
+        include("tts/**/espeak-ng-data/**/*")
+        include("tts/**/dict/**/*")
         // Drop the .gitkeep placeholder so it doesn't leak into the APK.
         exclude("**/.gitkeep")
     }

@@ -29,6 +29,7 @@ work = "2.10.1"
 navigation = "2.8.0"
 materialIconsExtended = "1.7.0"
 telephoto = "0.13.0"  # verify latest compatible version with Compose BOM 2026.08.00
+jitpackSherpa = "v1.13.5"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -116,6 +117,12 @@ androidx-navigation-compose = { module = "androidx.navigation:navigation-compose
 
 # Icons
 compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended", version.ref = "materialIconsExtended" }
+
+# sherpa-onnx (TTS engine) — pinned at v1.13.5 to match translate's
+# pinned version (translate uses the same assets, so we share the
+# Matcha + Vocos ONNX bundle from giteaadmin/Model release
+# sherpa-onnx-matcha-zh-baker). See CLAUDE.md §Bug 3 pivot.
+sherpa-onnx = { group = "com.github.k2-fsa", name = "sherpa-onnx", version.ref = "jitpackSherpa" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

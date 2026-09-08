@@ -23,7 +23,7 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * 8 cases covering TtsController state machine (Task 3 / spec §5.2):
+ * State machine coverage for [TtsController] (Task 3 / spec §5.2):
  *   - initial state = Idle when setting enabled
  *   - setEnabled(false) → Disabled
  *   - speak + onDone → Idle
@@ -32,6 +32,8 @@ import org.junit.Test
  *   - engine init failure → InitFailed
  *   - toggle from Idle starts speaking
  *   - toggle from Speaking stops
+ *   - (Bug 3 pivot v0.1.60) setEnginePackage to LOCAL routes speak to sherpa engine
+ *   - (Bug 3 pivot v0.1.60) downloadEngine() triggers model install + refresh
  *
  * Pure JVM: standard test dispatcher + FakeTtsSettingRepository backed by a
  * MutableStateFlow (no Robolectric / no DataStore).
@@ -50,7 +52,9 @@ class TtsControllerTest {
         fakeEngine = FakeTtsEngine()
         fakeSettings = FakeTtsSettingRepository()
         controller = TtsController(
-            engine = fakeEngine,
+            systemEngine = fakeEngine,
+            sherpaEngine = null,
+            modelInstaller = null,
             settings = fakeSettings,
             scope = testScope,
         )
@@ -122,6 +126,86 @@ class TtsControllerTest {
         assertEquals(1, fakeEngine.stopCallCount)
     }
 
+    // --- Bug 3 pivot: multi-engine routing + installer wiring ---
+
+    @Test fun `setEnginePackage to LOCAL_PACKAGE routes speak to sherpa engine`() = runTest {
+        fakeSettings.emit(TtsSetting(enabled = true))
+        val sherpaEngine = FakeTtsEngine()
+        val ctrl = TtsController(
+            systemEngine = fakeEngine,
+            sherpaEngine = sherpaEngine,
+            modelInstaller = null,
+            settings = fakeSettings,
+            scope = testScope,
+        )
+        // Simulate user picking the local engine in the picker.
+        ctrl.setEnginePackage(com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE)
+        advanceUntilIdle()
+        ctrl.speak(reportWith("你好"))
+        assertEquals(TtsState.Speaking, ctrl.state.first())
+        assertEquals(1, sherpaEngine.speakCallCount)
+        assertEquals(0, fakeEngine.speakCallCount)  // system engine NOT called
+        sherpaEngine.completeLastUtterance()
+    }
+
+    @Test fun `setEnginePackage to null routes speak back to system engine`() = runTest {
+        fakeSettings.emit(TtsSetting(enabled = true))
+        val sherpaEngine = FakeTtsEngine()
+        val ctrl = TtsController(
+            systemEngine = fakeEngine,
+            sherpaEngine = sherpaEngine,
+            modelInstaller = null,
+            settings = fakeSettings,
+            scope = testScope,
+        )
+        ctrl.setEnginePackage(com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE)
+        advanceUntilIdle()
+        // Toggle back to system default.
+        ctrl.setEnginePackage(null)
+        advanceUntilIdle()
+        ctrl.speak(reportWith("hi"))
+        assertEquals(1, fakeEngine.speakCallCount)
+        assertEquals(0, sherpaEngine.speakCallCount)
+    }
+
+    @Test fun `downloadEngine calls modelInstaller and refreshes engines list`() = runTest {
+        fakeSettings.emit(TtsSetting(enabled = true))
+        val installer = FakeTtsModelInstaller()
+        val sherpaEngine = FakeTtsEngine(
+            enginesAfterInstall = listOf(
+                EngineInfo(
+                    packageName = com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE,
+                    label = com.icespiritai.offline.tts.sherpa.SherpaTtsEngine.LOCAL_LABEL,
+                    supportsChinese = true,
+                ),
+            ),
+        )
+        val ctrl = TtsController(
+            systemEngine = fakeEngine,
+            sherpaEngine = sherpaEngine,
+            modelInstaller = installer,
+            settings = fakeSettings,
+            scope = testScope,
+        )
+        ctrl.downloadEngine()
+        advanceUntilIdle()
+        assertEquals(1, installer.downloadModelCallCount)
+        // After Done, engines list should include the local engine.
+        assertTrue(ctrl.engines.value.any { it.packageName == com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE })
+    }
+
+    @Test fun `speak with no sherpaEngine falls back to system engine`() = runTest {
+        fakeSettings.emit(TtsSetting(enabled = true))
+        // controller from setUp() has sherpaEngine = null
+        ctrl_pickLocalPackage()
+        controller.speak(reportWith("hi"))
+        assertEquals(1, fakeEngine.speakCallCount)
+    }
+
+    private suspend fun ctrl_pickLocalPackage() {
+        controller.setEnginePackage(com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE)
+    }
+
     // --- helpers ---
 
     private fun reportWith(text: String): ViolationReport = ViolationReport(
@@ -140,13 +224,18 @@ class TtsControllerTest {
     )
 }
 
-class FakeTtsEngine : TtsEngine {
+class FakeTtsEngine(
+    private val enginesAfterInstall: List<EngineInfo> = emptyList(),
+) : TtsEngine {
     var speakCallCount = 0
     var stopCallCount = 0
+    var initCallCount = 0
+    var lastSpokenText: String? = null
     private var pendingOnDone: ((String) -> Unit)? = null
     private var failInitNext = false
 
     override fun init(onDone: (Boolean) -> Unit) {
+        initCallCount++
         if (failInitNext) {
             failInitNext = false
             onDone(false)
@@ -157,6 +246,7 @@ class FakeTtsEngine : TtsEngine {
 
     override fun speak(text: String, utteranceId: String, onDone: (String) -> Unit) {
         speakCallCount++
+        lastSpokenText = text
         pendingOnDone = onDone
     }
 
@@ -172,7 +262,7 @@ class FakeTtsEngine : TtsEngine {
 
     override fun isSpeaking(): Boolean = pendingOnDone != null
 
-    override fun supportedChineseEngines(): List<EngineInfo> = emptyList()
+    override fun supportedChineseEngines(): List<EngineInfo> = enginesAfterInstall
 
     override fun setEngine(pkg: String?) {}
 
@@ -180,6 +270,22 @@ class FakeTtsEngine : TtsEngine {
 
     fun failInit() {
         failInitNext = true
+    }
+}
+
+/**
+ * Lightweight stand-in for [TtsModelInstaller] in controller tests.
+ * Implements [TtsInstallerLike] (the controller's surface) directly —
+ * the installer's real download machinery isn't exercised here.
+ */
+class FakeTtsModelInstaller : TtsInstallerLike {
+    private val state_ = kotlinx.coroutines.flow.MutableStateFlow<InstallState>(InstallState.Idle)
+    override val state: kotlinx.coroutines.flow.StateFlow<InstallState> = state_
+    var downloadModelCallCount = 0
+
+    override fun downloadModel() {
+        downloadModelCallCount++
+        state_.value = InstallState.Done
     }
 }
 

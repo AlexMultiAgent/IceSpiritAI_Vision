@@ -11,6 +11,10 @@ pluginManagement {
         maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
         maven { url = uri("https://mirrors.tencent.com/nexus/repository/maven-public/") }
         maven { url = uri("https://repo.huaweicloud.com/repository/maven/") }
+        // JitPack hosts sherpa-onnx (`com.github.k2-fsa:sherpa-onnx`,
+        // translate's pinned v1.13.5). Not in any of the CN mirrors above;
+        // declared last so the mirrors hit first. Bug 3 pivot (v0.1.60).
+        maven { url = uri("https://jitpack.io") }
         google()
         mavenCentral()
         gradlePluginPortal()
@@ -24,6 +28,8 @@ dependencyResolutionManagement {
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         maven { url = uri("https://mirrors.tencent.com/nexus/repository/maven-public/") }
         maven { url = uri("https://repo.huaweicloud.com/repository/maven/") }
+        // JitPack hosts sherpa-onnx (Bug 3 pivot — see pluginManagement).
+        maven { url = uri("https://jitpack.io") }
         google()
         mavenCentral()
     }

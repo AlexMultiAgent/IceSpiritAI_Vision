@@ -99,6 +99,14 @@ fun IceSpiritNavHost(
      * so the choice persists to DataStore.
      */
     onSelectEngine: (String?) -> Unit = {},
+    /**
+     * Invoked when the user taps the empty-state "下载" button in the
+     * picker. Threaded from the Activity → [TtsController.downloadEngine]
+     * which kicks off the sherpa-onnx model download. Bug 3 pivot
+     * (v0.1.60): the OLD APK-install flow is reverted at e319d39 — the
+     * download target is now the ONNX bundle, not a separate TTS APK.
+     */
+    onDownloadEngine: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -165,6 +173,7 @@ fun IceSpiritNavHost(
                     currentEnginePackage = currentEnginePackage,
                     engines = engines,
                     onSelectEngine = onSelectEngine,
+                    onDownloadEngine = onDownloadEngine,
                 )
             }
             composable(Routes.CHANGELOG) {
