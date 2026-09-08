@@ -151,3 +151,69 @@ ba35fa6 feat(tts): ScriptBuilder — ViolationReport → 朗读脚本拼接
 - 4 步流水线 + Triple-SHA 对齐
 
 — 由 `icevision-release` skill 触发时负责。
+## 10. 修复后重跑 (HEAD = 7c4715e)
+
+**触发原因**: ae8b603 命中 2 FAIL — `AndroidTtsEngineInitTest` (`com.hihonor.voiceengine` 不在 substring list) + `HomeScreenTtsE2ETest` (按钮 Disabled 不渲染)。两次修复落地后重跑。
+
+**修复锚点**:
+- `AndroidTtsEngine.kt` 现在缓存 init 阶段 `setLanguage(zh-CN) >= LANG_AVAILABLE` 探测结果到 `primaryEnginePackage` + `primarySupportsChinese`,`supportedChineseEngines()` 走缓存。
+- `IceSpiritVisionActivity.kt` 现在 `val ttsState by ttsController.state.collectAsStateWithLifecycle()` 并把 `ttsState` + `onSpeakToggle = { ttsController.toggle() }` 传入 `IceSpiritNavHost`。
+- `IceSpiritNavHost.kt` 加新 `LaunchedEffect` collect `sharedVm.state` 调用 `ttsController?.setLatestReport((state as? AnalysisState.Complete)?.report)`。
+
+### Build & install
+
+| 步骤 | 结果 | 备注 |
+|---|---|---|
+| `./gradlew.bat :app:assembleDebug -PmodelProfile=ice_ocr_rules` | SUCCESS in 1m 27s | JDK 17 export 后;ONNX 模型 + AAR 都在 |
+| `adb install -r app-debug.apk` | Success (73 MB) | 首次 install 之后 pm list 显示 com.icespiritai.vision 短暂消失,re-pull 时已重装 |
+| APK SHA-256 (未计算,APK-first 顺序未到这步) | n/a | release 流水线需要 |
+
+### Tests (5,全部 serial,logcat capture 在前)
+
+| Test | 结果 | logcat marker | Notes |
+|---|---|---|---|
+| `AndroidTtsEngineInitTest` | **PASS** (0.385s) | `[INIT_OK] engines=[com.hihonor.voiceengine]` | Bug 1 修复 — `primaryEnginePackage` 缓存命中 substring 列表 |
+| `AndroidTtsEngineSpeakTest` | **PASS** (2.045s) | `[SPEAK_DONE] cold_to_done_ms=1893` | 引擎 speak 路径 OK |
+| `TtsEngineInstallerResumeTest` | **PASS** (0.521s) | `[RESUME_RESULT] Failed(reason=下载失败:Unable to resolve host "gitea.example": No address associated with hostname)` | 域名不可达是预期 — sandbox 网络策略屏蔽 gitea.example,resume 路径本身正常返回 Failed(reason) |
+| `HomeScreenTtsE2ETest` | **PASS** (2.679s) | `[TOGGLE_CLICKED]` (Deviation 6 关键证据) | **Activity 现在 threads `ttsState` 到 NavHost → HomeScreen → HomeTopBar**,按钮 rendered 并可被 semantics-tree `performClick` 命中。`ttsButtonToggleChangesIcon` 测试通过 |
+| `TtsEngineInstallerE2ETest` | **PASS** (0.037s) | `[INSTALL_RESULT] Failed(reason=下载失败:Unable to resolve host "gitea.example": No address associated with hostname) cold_ms=21` | 预期失败(同上,域名不可达),21 ms cold 表示状态机响应即时 |
+
+**TestRunner 实测**(来自 logcat dump):
+```
+TestRunner: run finished: 1 tests, 0 failed, 0 ignored  (× 5)
+```
+全部 5 个 `run finished` 行都报 `0 failed, 0 ignored`。
+
+### Visual — speaking.png
+
+- 路径:`app/src/androidTest/assets/visual-audit/tts/after/speaking.png`
+- 1,019,783 bytes;SHA-256 `a795a66667f4ce045e98a6b3caf38623ca9e92fb1621252c202cba86050f235e`
+
+**策略**:Disclaimer 关闭 → `选图` 进入 PhotoPicker → 点开 `2026-09-08 06:38:16` tile(实为 audit71 fixture 100 哈药牌钙铁锌口服液 — 已知 2 违规 / 3 警告)→ 等 Complete state(2 违规 + 3 警告 命中 + 「连续两年 全国销量第一」框选 + ResultPanel) → screencap Idle+Disabled 状态。
+
+**⚠️ 重要限制 — 不是「Stop icon 替换」画面**:speaking.png 实际捕获的是 **Idle state + a11y = "朗读,当前无可朗读结果"(clickable=false)** 的画面,而不是理论上的「朗读 → crossfade 220ms → Stop icon」画面。
+
+**根因**:
+- `HomeScreen.kt` 第 86 行 `isAnalysisComplete: Boolean = false` 默认值,**未被 `IceSpiritNavHost.HomeScreen(...)` 调用点 override**。
+- KDoc 注明此 wiring 是 "Task 16 follow-up",本 PR(7c4715e)只修了 ttsState threading,**isAnalysisComplete threading 不在 scope**。
+- 结果:`TtsIconButton` 走 `else` 分支(`isAnalysisComplete=false` 且非 Speaking/InitFailed),`enabled=false`,adb input tap 不触发(icon-button `enabled=false` 时 onClick lambda 不 invoke)。
+- 对比验证:`adb shell input tap 840 186` 前后两张 screenshot MD5 完全相同(`310e13a7f19196930b431ff0b8867d83`),confirm 视觉无变化 + 无 TtsController state transition。
+
+**视觉验证(主要目标)**:HomeTopBar 右侧**现在渲染了 speaker icon**(`Deviation 6` 修复证据)— ae8b603 整张 `has_hits_true.png` 中 speaker icon 不存在(只有 settings gear),7c4715e 的 `speaking.png` 现在可见 speaker icon 在 24px accent border 内,虽 Disabled 灰禁但已不再「不渲染」。
+
+**真 Stop-icon 截图路径**(留给 Task 16 PR):需要先在 `IceSpiritNavHost.HomeScreen(...)` 调用点加 `isAnalysisComplete = state is AnalysisState.Complete`(state 已 collectAsState 在 HomeScreen 第 96 行)— 然后重新 build 真机、点 朗读,speaking.png 才能 capture Stop icon。
+
+### Smoke doc
+
+- 本 section 10 已 append(本节)。
+- 文件:`docs/smoke/2026-09-08-vision-tts-v0.1.X+4-e2e.md` 原 152 行 → 追加后 ~210+ 行。
+
+### Blockers
+
+- **没有真机烟测 blocker** — 5 tests 全 PASS,`[TOGGLE_CLICKED]` 命中,Install/Resume 因 sandbox 域名阻断返回 `Failed(reason=...)` 是预期路径(测试断言 reason 而非 success)。
+- speaking.png 仅为"按钮已渲染"证据,不是 Stop-icon 截图 — 留作 Task 16 PR 重新截图。
+
+### Verdict
+
+- **All 5 expected PASS**:yes
+- **Ready to commit section 10 update**:yes(单独 chore(docs) commit,作者 AlexMultiAgent,无 Co-Authored-By trailer)
