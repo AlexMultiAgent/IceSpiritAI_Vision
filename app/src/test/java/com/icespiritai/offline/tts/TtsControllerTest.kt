@@ -199,6 +199,84 @@ class TtsControllerTest {
         assertTrue(ctrl.engines.value.any { it.packageName == com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE })
     }
 
+    @Test fun `downloadEngine repeated calls do not accumulate collectors (Bug 3)`() = runTest {
+        // Bug 3 regression: pre-fix, each downloadEngine() call launched a
+        // new `installer.state.collect { ... }` without cancelling the
+        // prior one. The first collector stayed subscribed forever, so
+        // every subsequent installer.state emission woke it. To make
+        // this observable we must emit *non-conflating* states (StateFlow
+        // silently drops value-equal re-emissions, so two back-to-back
+        // `Done` would never expose a stale subscriber). We manually
+        // emit distinct intermediate states (Downloading → VerifyingSha256
+        // → Done) after two downloadEngine() calls and count how many
+        // times the collect lambda fires (via the side-effect
+        // `setEnginePackage(LOCAL_TTS_PACKAGE)` on Done).
+        //
+        // Pre-fix: 2 active collectors → each Done emission fires
+        //   setEnginePackage 2 times (count grows by 2).
+        // Post-fix: 1 active collector (old one cancelled on the second
+        //   downloadEngine() entry) → each Done emission fires once.
+        //
+        // Bind the controller to an UnconfinedTestDispatcher (not the
+        // class-level StandardTestDispatcher, whose coroutines don't
+        // advance under this runTest's advanceUntilIdle()). The bug
+        // repro also avoids runTest's child-cancellation check by
+        // cancelling the controller's scope explicitly at the end so
+        // the perpetual `installer.state.collect` loops don't keep the
+        // test waiting on cleanup.
+        fakeSettings.emit(TtsSetting(enabled = true))
+        val installer = FakeTtsModelInstaller(autoEmitDone = false)
+        val sherpaEngine = FakeTtsEngine(
+            enginesAfterInstall = listOf(
+                EngineInfo(
+                    packageName = com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE,
+                    label = com.icespiritai.offline.tts.sherpa.SherpaTtsEngine.LOCAL_LABEL,
+                    supportsChinese = true,
+                ),
+            ),
+        )
+        val ctrlScope = kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.test.UnconfinedTestDispatcher(testScheduler)
+        )
+        try {
+            val ctrl = TtsController(
+                systemEngine = fakeEngine,
+                sherpaEngine = sherpaEngine,
+                modelInstaller = installer,
+                settings = fakeSettings,
+                scope = ctrlScope,
+            )
+
+            // First downloadEngine launches collector A. No Done yet, so
+            // setEnginePackage call count remains 0.
+            ctrl.downloadEngine()
+            installer.emitState(InstallState.Downloading(0, 100))
+            installer.emitState(InstallState.VerifyingSha256)
+            installer.emitState(InstallState.Done)
+            advanceUntilIdle()
+            assertEquals(
+                "First collector should fire setEnginePackage exactly once on first Done",
+                1,
+                fakeSettings.setEnginePackageCallCount,
+            )
+
+            // Second downloadEngine: pre-fix would launch collector B
+            // WITHOUT cancelling A. Post-fix cancels A before launching B.
+            ctrl.downloadEngine()
+            installer.emitState(InstallState.Downloading(0, 100))
+            installer.emitState(InstallState.VerifyingSha256)
+            installer.emitState(InstallState.Done)
+            advanceUntilIdle()
+            assertEquals(
+                "Second Done must not be consumed by the stale (pre-fix) collector",
+                2,
+                fakeSettings.setEnginePackageCallCount,
+            )
+        } finally {
+            ctrlScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+        }
+    }
+
     @Test fun `speak with no sherpaEngine falls back to system engine`() = runTest {
         fakeSettings.emit(TtsSetting(enabled = true))
         // controller from setUp() has sherpaEngine = null
@@ -361,26 +439,61 @@ class FakeTtsEngine(
  * Lightweight stand-in for [TtsModelInstaller] in controller tests.
  * Implements [TtsInstallerLike] (the controller's surface) directly —
  * the installer's real download machinery isn't exercised here.
+ *
+ * @param autoEmitDone When true (default), `downloadModel()` flips the
+ *   state to `InstallState.Done` immediately. This matches the legacy
+ *   expectation of older tests. When false, the test must drive state
+ *   transitions via [emitState] manually — required for the Bug 3
+ *   regression test, which needs to emit intermediate (non-conflating)
+ *   states so that a stale collector is observably still subscribed.
  */
-class FakeTtsModelInstaller : TtsInstallerLike {
+class FakeTtsModelInstaller(
+    private val autoEmitDone: Boolean = true,
+) : TtsInstallerLike {
     private val state_ = kotlinx.coroutines.flow.MutableStateFlow<InstallState>(InstallState.Idle)
     override val state: kotlinx.coroutines.flow.StateFlow<InstallState> = state_
     var downloadModelCallCount = 0
 
     override fun downloadModel() {
         downloadModelCallCount++
-        state_.value = InstallState.Done
+        if (autoEmitDone) {
+            state_.value = InstallState.Done
+        }
+    }
+
+    /**
+     * Push a specific state into the installer's flow. Visible to tests
+     * that need to simulate multi-step state progressions
+     * (Idle → Downloading → VerifyingSha256 → Done) without conflating
+     * duplicates. Each call with a non-equal value triggers every active
+     * collector — used by the Bug 3 regression test to assert a stale
+     * collector has been cancelled by `downloadEngine()`.
+     */
+    fun emitState(s: InstallState) {
+        state_.value = s
     }
 }
 
 class FakeTtsSettingRepository : TtsSettingRepositoryLike {
     private val flow = MutableStateFlow(TtsSetting())
     override val setting: Flow<TtsSetting> = flow
+    /**
+     * Counter incremented on every [setEnginePackage] call. Used by
+     * Bug 3 regression test (downloadEngine collector accumulation) to
+     * verify a Done emission is consumed by exactly one collector.
+     * Pre-fix: two downloadEngine() calls → 3 setEnginePackage calls
+     * (old collector + new collector each receive Done).
+     * Post-fix: 2 setEnginePackage calls (old collector cancelled on
+     * terminal Done + on subsequent downloadEngine()).
+     */
+    var setEnginePackageCallCount = 0
+
     override suspend fun setEnabled(b: Boolean) {
         flow.value = flow.value.copy(enabled = b)
     }
 
     override suspend fun setEnginePackage(pkg: String?) {
+        setEnginePackageCallCount++
         flow.value = flow.value.copy(enginePackage = pkg)
     }
 

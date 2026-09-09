@@ -2687,6 +2687,101 @@ class AdSignageRuleMatcherTest {
         assertEquals("增强免疫力", hits[0].matchedText)
     }
 
+    // --- Phase 3 gate AND-composition (Bug 2 fix 2026-09-10)。
+    // Pre-fix 用 Kotlin `when` 排他分支,一条规则同时声明 sourceMarkers
+    // + categoryAnchors / categoryAnchors + categoryAnchorsAbsent 时,只有
+    // 第一个非空 gate 会被检查,后续 gate 被静默跳过。修复后三个 gate 改为
+    // 独立 boolean term AND 组合,每条规则的所有 gate 都会被 evaluate。
+    // 当前 production 规则集有 3 条同时声明 categoryAnchors +
+    // categoryAnchorsAbsent 的规则(pesticide_art7_suggestive /
+    // pesticide_art8_pseudoscience / re_art18_hukou_education),SM + CA 组合
+    // 当前为 0 规则,但仍 pin 防未来规则作者引入 SM + CA 时静默失效。
+
+    @Test fun scan_gate_bothAnchorsPass() {
+        // 模式 1:categoryAnchors + categoryAnchorsAbsent 同时声明,文本含
+        // 正向 anchor 但不含 absent-anchor → 命中(两个 gate 都 pass)
+        val r = AdSignageRule(
+            id = "test-pesticide-anchor-both",
+            category = "pesticide",
+            regulation = "广告法 §27",
+            keywords = listOf("高产"),
+            severity = Severity.Warning,
+            categoryAnchors = listOf("农药"),
+            categoryAnchorsAbsent = listOf("国药准字"),
+        )
+        // 文本含 "农药"(正向 anchor) + 不含 "国药准字"(absent-anchor 不命中)
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("本品农药 高产 增产")
+        assertEquals(
+            "categoryAnchors + categoryAnchorsAbsent 同时 pass 必须命中",
+            1, hits.size,
+        )
+        assertEquals("高产", hits[0].matchedText)
+    }
+
+    @Test fun scan_gate_absentAnchorSuppresses() {
+        // 模式 2:同上规则,但文本同时含 absent-anchor → 必须被压制(0 hit)
+        // pre-fix `when` 短路会跳过 absent-anchor 检查,导致误命中
+        val r = AdSignageRule(
+            id = "test-pesticide-anchor-both",
+            category = "pesticide",
+            regulation = "广告法 §27",
+            keywords = listOf("高产"),
+            severity = Severity.Warning,
+            categoryAnchors = listOf("农药"),
+            categoryAnchorsAbsent = listOf("国药准字"),
+        )
+        // 文本含 "农药"(正向 anchor) + "国药准字"(absent-anchor 命中) → 应被压制
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("国药准字 农药 高产 增产")
+        assertEquals(
+            "categoryAnchorsAbsent 命中必须压制 hit,即使正向 anchor 也 pass",
+            0, hits.size,
+        )
+    }
+
+    @Test fun scan_gate_positiveAnchorRequiredEvenWithoutAbsent() {
+        // 反向验证:只有 categoryAnchors 没 categoryAnchorsAbsent → 必须保留
+        // 老行为(防止 AND 组合改坏了 single-gate 规则)
+        val r = AdSignageRule(
+            id = "test-pesticide-anchor-only-positive",
+            category = "pesticide",
+            regulation = "广告法 §27",
+            keywords = listOf("高产"),
+            severity = Severity.Warning,
+            categoryAnchors = listOf("农药"),
+        )
+        val hits = AdLabelPositiveAnchorOnly(r).scan("农药 高产 增产")
+        assertEquals(1, hits.size)
+    }
+
+    // 私有 helper 拆出来,避免上面两个测试重复构造 matcher
+    private fun AdLabelPositiveAnchorOnly(rule: AdSignageRule): AdSignageRuleMatcher {
+        // AdSignageRuleMatcher 在 jvm test 里可直接构造(无 native 依赖)
+        return AdSignageRuleMatcher(listOf(rule))
+    }
+
+    @Test fun scan_gate_sourceMarkerSuppressesRegardlessOfAnchor() {
+        // SM + CA 组合的 AND 行为:sourceMarkers 命中必须压制 hit,即使
+        // categoryAnchors 也同时 pass(防 `when` 短路回归)
+        val r = AdSignageRule(
+            id = "test-with-data",
+            category = "absolute",
+            regulation = "广告法 §28",
+            keywords = listOf("第一"),
+            severity = Severity.Warning,
+            sourceMarkers = listOf("数据来源"),
+            categoryAnchors = listOf("工业"),
+        )
+        // 文本同时含 sourceMarker ("数据来源") 和 categoryAnchor ("工业")
+        val hits = AdSignageRuleMatcher(listOf(r)).scan("数据来源 工业 第一 销量")
+        assertEquals(
+            "sourceMarkers 命中必须压制 hit,即使 categoryAnchors 也 pass",
+            0, hits.size,
+        )
+        // 反向:只含 anchor 不含 source marker → 命中
+        val hits2 = AdSignageRuleMatcher(listOf(r)).scan("工业 第一 销量")
+        assertEquals(1, hits2.size)
+    }
+
     @Test fun scan_signageOriginClaim_firesOnFaYuanDi() {
         // v12:新增「ad_signage_signage_origin_claim」规则覆盖「发源地」「之源」等
         // 未经核实的产地/起源宣称 — 广告法 §28 虚假广告。

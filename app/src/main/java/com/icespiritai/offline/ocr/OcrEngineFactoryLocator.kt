@@ -1,6 +1,7 @@
 package com.icespiritai.offline.ocr
 
 import android.content.Context
+import androidx.annotation.VisibleForTesting
 import com.icespiritai.offline.BuildConfig
 import java.util.ServiceLoader
 
@@ -38,10 +39,21 @@ object OcrEngineFactoryLocator {
     /**
      * Acceptable factory FQN substrings per profile. ice_vision falls back to
      * Fake until its real factory is implemented (per audit P2-3).
+     *
+     * Bug 8 fix (2026-09-10): the previous single-marker form
+     * (`listOf("Paddle")`) was fragile under class renames — if anyone
+     * ever refactors `PaddleOcrEngineFactory` to `OnnxPaddleOcrEngineFactory`
+     * or `PpOcrEngineFactory`, the substring check would silently fail and
+     * `create()` would `error("does not match model profile …")` at first
+     * launch. The marker set now covers reasonable Paddle / ONNX /
+     * short-form `Pp` renames, so the profile guard survives typical
+     * refactors. Marked `@VisibleForTesting` so the contract is pinned at
+     * the unit-test layer (see `OcrEngineFactoryLocatorTest`).
      */
-    private fun markersFor(profile: String): List<String> = when (profile) {
+    @VisibleForTesting
+    internal fun markersFor(profile: String): List<String> = when (profile) {
         "shell" -> listOf("Fake")
-        "ice_ocr_rules" -> listOf("Paddle")
+        "ice_ocr_rules" -> listOf("Paddle", "Pp", "Onnx")
         "ice_vision" -> listOf("Fake", "Vision")
         else -> listOf(profile)
     }

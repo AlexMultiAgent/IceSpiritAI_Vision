@@ -18,3 +18,22 @@
 -keepclasseswithmembers class com.icespiritai.offline.updater.AppVersionInfo {
     kotlinx.serialization.KSerializer serializer(...);
 }
+
+# Keep kotlinx.serialization metadata for the @Serializable rule classes loaded
+# from `assets/rules/*.json` at runtime. Without these rules R8 strips the
+# auto-generated `$serializer` companions and `serializer()` lookup methods,
+# and the first AdSignageRuleLoader / FoodLabelRuleLoader.decode() call throws
+# `SerializationException: Serializer for class '...' is not found`. Pattern
+# below mirrors the official kotlinx.serialization R8 keep rules (see
+# https://github.com/Kotlin/kotlinx.serialization#android -- "R8/ProGuard
+# configuration" section).
+-keepattributes *Annotation*, InnerClasses
+-keepclassmembers @kotlinx.serialization.Serializable class com.icespiritai.offline.rules.** {
+    *** Companion;
+    static <1>$Companion Companion;
+}
+-keepclasseswithmembers class com.icespiritai.offline.rules.**$Companion {
+    kotlinx.serialization.KSerializer serializer(...);
+}
+-if @kotlinx.serialization.Serializable class com.icespiritai.offline.rules.**
+-keep class <1>$$serializer { *; }

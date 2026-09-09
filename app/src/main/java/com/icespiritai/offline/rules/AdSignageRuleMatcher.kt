@@ -356,14 +356,31 @@ class AdSignageRuleMatcher(rules: List<AdSignageRule>) : RuleMatcher {
         // in the scanned text. Inverse polarity to the positive anchor gate:
         // positive anchor presence is required; absent-anchor presence is
         // forbidden.
+        //
+        // Gate composition is AND across all three (Bug 2 fix 2026-09-10): a rule
+        // with BOTH categoryAnchors AND categoryAnchorsAbsent populated must
+        // pass both the positive-anchor presence test AND the absent-anchor
+        // suppression test. Pre-fix this used a Kotlin `when` whose first
+        // matching arm short-circuited the rest, so a rule declaring both
+        // gates would only be evaluated against categoryAnchors and the
+        // categoryAnchorsAbsent suppression was silently skipped. The fix
+        // rewrites the gate as three independent boolean terms AND-ed
+        // together; each gate's empty list evaluates to its no-op branch
+        // (`true` for required-presence, `true` for forbidden-presence) so
+        // single-gate rules keep their old byte-equivalent behavior. The
+        // 3 production rules currently declaring both gates are
+        // ad_signage_pesticide_art7_suggestive, ad_signage_pesticide_art8_pseudoscience,
+        // ad_signage_re_art18_hukou_education — pin this regression so a
+        // future refactor doesn't reintroduce the `when` short-circuit.
         return hits.filter { hit ->
             val rule = ruleById[hit.ruleId] ?: return@filter true
-            when {
-                rule.sourceMarkers.isNotEmpty() -> rule.id !in sourceMarkerHitRules
-                rule.categoryAnchors.isNotEmpty() -> rule.id in anchorHitRules
-                rule.categoryAnchorsAbsent.isNotEmpty() -> rule.id !in anchorAbsentHitRules
-                else -> true
-            }
+            val suppressBySourceMarker =
+                rule.sourceMarkers.isEmpty() || rule.id !in sourceMarkerHitRules
+            val requireAnchor =
+                rule.categoryAnchors.isEmpty() || rule.id in anchorHitRules
+            val suppressByAbsentAnchor =
+                rule.categoryAnchorsAbsent.isEmpty() || rule.id !in anchorAbsentHitRules
+            suppressBySourceMarker && requireAnchor && suppressByAbsentAnchor
         }
     }
 

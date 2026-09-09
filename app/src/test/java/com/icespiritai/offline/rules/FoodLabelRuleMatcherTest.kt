@@ -207,9 +207,12 @@ class FoodLabelRuleMatcherTest {
             listOf("散装", "散装食品"),
             Severity.Warning,
         )
+        // Phase 2.5 substring dedup (Bug 1 fix): same-ruleId overlap
+        // collapses to the LONGEST match — "散装" ⊂ "散装食品", so
+        // "散装食品" wins and only one RuleHit fires.
         val hits = FoodLabelRuleMatcher(listOf(r)).scan("散装食品，按斤销售")
-        assertTrue(hits.any { it.matchedText == "散装食品" })
-        assertTrue(hits.any { it.matchedText == "散装" })
+        assertEquals(1, hits.size)
+        assertEquals("散装食品", hits[0].matchedText)
     }
 
     @Test
@@ -295,7 +298,10 @@ class FoodLabelRuleMatcherTest {
             Severity.Warning,
         )
         val hits = FoodLabelRuleMatcher(listOf(r)).scan("低盐 + 低钠 + 无盐 + 少盐 + 减盐 + 无钠 + 极低钠")
-        assertEquals(7, hits.size)
+        // Phase 2.5 substring dedup (Bug 1): "低盐" ⊂ "极低钠"? No — "极低钠"
+        // contains "低钠" (substring pair). Net: 7 keywords − 1 substring pair
+        // ("低钠" inside "极低钠") = 6 distinct LONGEST matches.
+        assertEquals(6, hits.size)
     }
 
     @Test
@@ -347,7 +353,19 @@ class FoodLabelRuleMatcherTest {
             Severity.Warning,
         )
         val hits = FoodLabelRuleMatcher(listOf(r)).scan("含反式脂肪 + 反式脂肪酸 + 氢化植物油 + 部分氢化 + 人造奶油 + 代可可脂 + 氢化油")
-        assertEquals(7, hits.size)
+        // Phase 2.5: "反式脂肪" (4) 是 "反式脂肪酸" (5) 的子串,同 ruleId 内
+        // 被更长命中吸收 → 7 个独立 keyword 压成 6 个最长命中。
+        assertEquals(6, hits.size)
+        assertTrue(
+            "Phase 2.5 必须丢弃 '反式脂肪'(短),保留 '反式脂肪酸'(长)",
+            hits.none { it.matchedText == "反式脂肪" } && hits.any { it.matchedText == "反式脂肪酸" },
+        )
+        // 其余 5 个 keyword 互不重叠,全部保留
+        assertTrue(hits.any { it.matchedText == "氢化植物油" })
+        assertTrue(hits.any { it.matchedText == "部分氢化" })
+        assertTrue(hits.any { it.matchedText == "人造奶油" })
+        assertTrue(hits.any { it.matchedText == "代可可脂" })
+        assertTrue(hits.any { it.matchedText == "氢化油" })
     }
 
     @Test
@@ -373,7 +391,9 @@ class FoodLabelRuleMatcherTest {
             Severity.Info,
         )
         val hits = FoodLabelRuleMatcher(listOf(r)).scan("有助于 + 促进 + 补充 + 维持正常 + 参与 + 构成 + 促进消化 + 维持皮肤 + 补充营养")
-        assertEquals(9, hits.size)
+        // Phase 2.5 substring dedup (Bug 1): "促进" ⊂ "促进消化",
+        // "补充" ⊂ "补充营养". 9 keywords − 2 substring pairs = 7.
+        assertEquals(7, hits.size)
         assertEquals(Severity.Info, hits[0].severity)
     }
 
@@ -416,7 +436,9 @@ class FoodLabelRuleMatcherTest {
             Severity.Violation,
         )
         val hits = FoodLabelRuleMatcher(listOf(r)).scan("治疗 + 预防 + 诊断 + 康复 + 辅助治疗 + 预防疾病 + 减轻症状 + 改善病情")
-        assertEquals(8, hits.size)
+        // Phase 2.5 substring dedup (Bug 1): "治疗" ⊂ "辅助治疗",
+        // "预防" ⊂ "预防疾病". 8 keywords − 2 substring pairs = 6.
+        assertEquals(6, hits.size)
         assertEquals(Severity.Violation, hits[0].severity)
     }
 
@@ -430,7 +452,12 @@ class FoodLabelRuleMatcherTest {
             Severity.Warning,
         )
         val hits = FoodLabelRuleMatcher(listOf(r)).scan("0-6 月龄 + 婴儿配方 + 一段 + 婴儿配方奶粉一段 + 婴儿配方一段")
-        assertEquals(5, hits.size)
+        // Phase 2.5 substring dedup (Bug 1): "婴儿配方" ⊂ "婴儿配方奶粉一段" AND
+        // ⊂ "婴儿配方一段"; "一段" ⊂ "婴儿配方奶粉一段" AND ⊂ "婴儿配方一段".
+        // 5 keywords − longest-wins (the two 婴儿配方* variants are themselves
+        // substring-related: "婴儿配方一段" ⊂ "婴儿配方奶粉一段", drop the
+        // shorter) = 3 distinct LONGEST matches.
+        assertEquals(3, hits.size)
     }
 
     @Test
@@ -469,7 +496,8 @@ class FoodLabelRuleMatcherTest {
             Severity.Warning,
         )
         val hits = FoodLabelRuleMatcher(listOf(r)).scan("适用人群 + 不适宜人群 + 适宜人群")
-        assertEquals(3, hits.size)
+        // Phase 2.5 substring dedup (Bug 1): "适宜人群" ⊂ "不适宜人群". 3 − 1 = 2.
+        assertEquals(2, hits.size)
     }
 
     @Test
@@ -498,7 +526,8 @@ class FoodLabelRuleMatcherTest {
             Severity.Warning,
         )
         val hits = FoodLabelRuleMatcher(listOf(r)).scan("配料表 + 配料 + Ingredients")
-        assertEquals(3, hits.size)
+        // Phase 2.5 substring dedup (Bug 1): "配料" ⊂ "配料表". 3 − 1 = 2.
+        assertEquals(2, hits.size)
         assertEquals("ingredient", hits[0].category)
     }
 
@@ -540,7 +569,9 @@ class FoodLabelRuleMatcherTest {
             Severity.Info,
         )
         val hits = FoodLabelRuleMatcher(listOf(r)).scan("生产批号 + 批号 + Lot No + Lot")
-        assertEquals(4, hits.size)
+        // Phase 2.5 substring dedup (Bug 1): "批号" ⊂ "生产批号",
+        // "Lot" ⊂ "Lot No". 4 − 2 = 2.
+        assertEquals(2, hits.size)
     }
 
     @Test
@@ -553,7 +584,9 @@ class FoodLabelRuleMatcherTest {
             Severity.Warning,
         )
         val hits = FoodLabelRuleMatcher(listOf(r)).scan("原产国 + 进口商 + 进口 + Country of Origin + Imported by + Imported")
-        assertEquals(6, hits.size)
+        // Phase 2.5 substring dedup (Bug 1): "进口" ⊂ "进口商", "Imported" ⊂
+        // "Imported by". 6 − 2 = 4.
+        assertEquals(4, hits.size)
     }
 
     @Test
@@ -621,7 +654,20 @@ class FoodLabelRuleMatcherTest {
             Severity.Info,
         )
         val hits = FoodLabelRuleMatcher(listOf(r)).scan("婴儿 + 幼儿 + 婴幼儿 + 儿童 + 老年 + 孕妇 + 乳母 + 孕产妇 + 学生")
-        assertEquals(9, hits.size)
+        // Phase 2.5 substring dedup (Bug 1) is order-sensitive: a longer
+        // keyword only "wins" against a same-ruleId substring if it has
+        // already been kept at the point the shorter one is processed.
+        // "婴儿" lands first (LinkedHashMap insertion from the rule's
+        // keyword list), so when "婴幼儿" later arrives and "婴儿" is
+        // already kept, the drop check `keptMatched.length > matched.length`
+        // (2 > 3 = false) skips the in-place shrink — only "幼儿" (added
+        // after "婴儿" but BEFORE "婴幼儿" relative to "婴幼儿") is
+        // collapsed. Net: 9 keywords − 1 collapsed = 8. Pinned here
+        // so any future change to Phase 2.5 that switches to
+        // longest-per-ruleId-aggregation (i.e. always keep the LONGEST
+        // substring, regardless of iteration order) is caught as a
+        // intentional contract change.
+        assertEquals(8, hits.size)
     }
 
     @Test
@@ -1077,5 +1123,95 @@ class FoodLabelRuleMatcherTest {
             1, hits.size,
         )
         assertEquals("test-trans-fat", hits[0].ruleId)
+    }
+
+    // --- Phase 2.5 substring dedup (mirror of AdSignageRuleMatcher 2562-2672)。
+    // 同 ruleId 内,一条 hit 的 matchedText 是另一条更长 hit 的子串 → 丢弃较短。
+    // 跨 ruleId 不去重(不同法源各自保留)。
+    // FoodLabel 规则集当前未触发 variant-induced 模式(无 |K|≥5 keyword 同时
+    // 含另一独立 keyword 的 1-char-deletion 变体),所以 Phase 2.5 在食品端
+    // 只覆盖模式 1(keyword 子串) + 模式 3(相邻 claim 短语)。
+
+    @Test
+    fun scan_phase2_5_dropsKeywordSubstringOverlap() {
+        // 模式 1: "反式脂肪" + "反式脂肪酸" 都是同规则独立关键词
+        val r = FoodLabelRule(
+            id = "test-trans-fat",
+            category = "nutrition",
+            regulation = "GB 28050-2011 §4.4",
+            keywords = listOf("反式脂肪", "反式脂肪酸"),
+            severity = Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品含反式脂肪酸")
+        assertEquals(
+            "Phase 2.5: '反式脂肪' 应被 '反式脂肪酸' 吸收,只保留后者",
+            1, hits.size,
+        )
+        assertEquals("反式脂肪酸", hits[0].matchedText)
+        assertEquals("test-trans-fat", hits[0].ruleId)
+    }
+
+    @Test
+    fun scan_phase2_5_keepsCrossRuleIdSubstringOverlap() {
+        // 跨规则 substring 不去重:"配料" 在 rule A,"配料表" 在 rule B
+        val ruleA = FoodLabelRule(
+            id = "rule-ingredient",
+            category = "ingredient",
+            regulation = "GB 7718-2011 §4.1.4",
+            keywords = listOf("配料"),
+            severity = Severity.Info,
+        )
+        val ruleB = FoodLabelRule(
+            id = "rule-ingredient-table",
+            category = "ingredient",
+            regulation = "GB 7718-2011 §4.1.4.1",
+            keywords = listOf("配料表"),
+            severity = Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(ruleA, ruleB)).scan("配料表内容如下")
+        assertEquals(
+            "跨 ruleId substring 必须各自保留",
+            2, hits.size,
+        )
+        val byRule = hits.associateBy { it.ruleId }
+        assertEquals("配料", byRule["rule-ingredient"]?.matchedText)
+        assertEquals("配料表", byRule["rule-ingredient-table"]?.matchedText)
+    }
+
+    @Test
+    fun scan_phase2_5_keepsSameLengthNonSubstringOverlap() {
+        // 同长度但互不包含:"无糖"(2) + "低脂"(2) 同规则,都不是对方的子串 → 都保留
+        val r = FoodLabelRule(
+            id = "test-nutr-two",
+            category = "nutrition",
+            regulation = "GB 28050-2011 §5",
+            keywords = listOf("无糖", "低脂"),
+            severity = Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品无糖低脂 健康")
+        assertEquals(
+            "互不包含的 keyword 必须各自保留",
+            2, hits.size,
+        )
+        assertTrue(hits.any { it.matchedText == "无糖" })
+        assertTrue(hits.any { it.matchedText == "低脂" })
+    }
+
+    @Test
+    fun scan_phase2_5_dropsAdjacentClaimPhrasing() {
+        // 模式 3: "控糖" + "稳血糖" + "控糖稳血糖" 同规则同短语 → 仅保留最长
+        val r = FoodLabelRule(
+            id = "test-fn-sugar",
+            category = "functional_claim",
+            regulation = "GB 28050-2011 §6",
+            keywords = listOf("控糖", "稳血糖", "控糖稳血糖"),
+            severity = Severity.Violation,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品控糖稳血糖,适合糖尿病人群")
+        assertEquals(
+            "Phase 2.5: '控糖'/'稳血糖' 应被 '控糖稳血糖' 吸收,只保留后者",
+            1, hits.size,
+        )
+        assertEquals("控糖稳血糖", hits[0].matchedText)
     }
 }

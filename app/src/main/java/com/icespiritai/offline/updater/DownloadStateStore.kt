@@ -3,12 +3,15 @@ package com.icespiritai.offline.updater
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.io.IOException
 
 @Serializable
 data class DownloadRecord(
@@ -26,6 +29,12 @@ data class DownloadRecord(
     enum class DownloadStage { Downloading, VerifyingSignature, ReadyToInstall }
 }
 
+/**
+ * Wrapper around [DataStore] for resumable APK downloads. Each `store.data`
+ * reader must wrap with `.catch { ... emit(emptyPreferences()) }` —
+ * see [SettingsRepository] KDoc; same root cause (corrupt preferences file
+ * would crash the next read on cold start).
+ */
 class DownloadStateStore(private val store: DataStore<Preferences>) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -37,7 +46,10 @@ class DownloadStateStore(private val store: DataStore<Preferences>) {
     }
 
     suspend fun get(downloadId: String): DownloadRecord? {
-        val raw = store.data.map { it[key(downloadId)] }.first() ?: return null
+        val raw = store.data
+            .catch { e -> if (e is IOException) emit(emptyPreferences()) else throw e }
+            .map { it[key(downloadId)] }
+            .first() ?: return null
         return runCatching { json.decodeFromString<DownloadRecord>(raw) }.getOrNull()
     }
 
@@ -46,7 +58,9 @@ class DownloadStateStore(private val store: DataStore<Preferences>) {
     }
 
     suspend fun all(): List<DownloadRecord> {
-        val prefs = store.data.first()
+        val prefs = store.data
+            .catch { e -> if (e is IOException) emit(emptyPreferences()) else throw e }
+            .first()
         return prefs.asMap().entries.mapNotNull { (_, v) ->
             val s = v as? String ?: return@mapNotNull null
             runCatching { json.decodeFromString<DownloadRecord>(s) }.getOrNull()

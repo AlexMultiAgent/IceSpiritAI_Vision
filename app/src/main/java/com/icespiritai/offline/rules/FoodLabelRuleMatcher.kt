@@ -133,10 +133,40 @@ class FoodLabelRuleMatcher(rules: List<FoodLabelRule>) : RuleMatcher {
             }
         }
 
+        // Phase 2.5: same-ruleId substring dedup, keeping the LONGEST
+        // matchedText. Mirrors AdSignageRuleMatcher so 两条独立 keyword
+        // 如 "反式脂肪" (4) + "反式脂肪酸" (5) 同 ruleId 共存时,OCR 文本
+        // 「含反式脂肪酸」只会产出 1 条 RuleHit (matchedText = "反式脂肪酸"),
+        // 而非两条冗余命中。AdSignageRuleMatcher KDoc 第 256-309 行有完整
+        // rationale:模式 1 keyword 子串 / 模式 2 variant-induced false
+        // positive / 模式 3 相邻 claim 短语。FoodLabel 没有 absence 规则,
+        // 所以这条仅做 substring dedup,不下沉到 dedup-once-per-rule。
+        //
+        // 跨 ruleId 不去重 — 不同法源各自保留。
+        val substringDeduped = LinkedHashMap<Pair<String, String>, String>()
+        for ((key, matched) in longestByKey) {
+            val (ruleId, _) = key
+            val isSubstringOfKept = substringDeduped.entries.any { (keptKey, keptMatched) ->
+                keptKey.first == ruleId &&
+                    keptMatched.length > matched.length &&
+                    matched in keptMatched
+            }
+            if (isSubstringOfKept) continue
+            val containedKeptKeys = substringDeduped.entries
+                .filter { (keptKey, keptMatched) ->
+                    keptKey.first == ruleId &&
+                        matched.length > keptMatched.length &&
+                        keptMatched in matched
+                }
+                .map { it.key }
+            containedKeptKeys.forEach { substringDeduped.remove(it) }
+            substringDeduped[key] = matched
+        }
+
         // Phase 3: emit (no absence-rule dedup — FoodLabelRule has no
         // sourceMarkers field, see class KDoc).
         val hits = mutableListOf<RuleHit>()
-        for ((key, matched) in longestByKey) {
+        for ((key, matched) in substringDeduped) {
             val (ruleId, _) = key
             val rule = ruleById[ruleId] ?: continue
             hits.add(

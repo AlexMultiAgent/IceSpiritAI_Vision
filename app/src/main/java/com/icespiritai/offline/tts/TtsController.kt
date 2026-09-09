@@ -2,9 +2,11 @@ package com.icespiritai.offline.tts
 
 import com.icespiritai.offline.domain.ViolationReport
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.transformWhile
 import kotlinx.coroutines.launch
 
 /**
@@ -59,6 +61,24 @@ class TtsController(
     val setting get() = settings.setting
 
     private var latestReport: ViolationReport? = null
+
+    /**
+     * Active `installer.state.collect { ... }` coroutine spawned by
+     * [downloadEngine]. Held so a subsequent [downloadEngine] call can
+     * cancel the previous collector before launching a new one —
+     * otherwise repeat user taps on the picker "下载" CTA (or
+     * [engineClick] calling downloadEngine on every tap of the local
+     * engine row while the prior download is still in flight) accumulate
+     * one collector per tap, each subscribing to the same installer.state
+     * flow forever. The appScope is a SupervisorJob singleton so the
+     * collectors never cancel themselves, and each emitter call (state
+     * transitions Idle → Downloading → VerifyingSha256 → Done) wakes all
+     * of them — wasted work and growing per-state coupling.
+     *
+     * Cleared once the download reaches a terminal state (Done / Failed)
+     * so the collector doesn't idle forever watching a settled flow.
+     */
+    private var downloadCollectorJob: Job? = null
 
     /**
      * Latest [TtsSetting] snapshot. Updated by the [init] block's
@@ -142,25 +162,52 @@ class TtsController(
      * picker empty-state's [TtsEnginePickerScreen.onDownloadEngine]
      * CTA. After the install completes (success or fail), the engines
      * StateFlow refreshes so the picker re-renders.
+     *
+     * Bug fix (2026-09-10): if the user (or [engineClick]) calls this
+     * again before the prior download finishes, cancel the previous
+     * `installer.state.collect` coroutine before launching a new one.
+     * Otherwise each tap spawns an additional permanent subscriber that
+     * wakes on every installer state emission. Also self-cancel on
+     * terminal states (Done / Failed) so the collector doesn't idle
+     * forever after the install settles.
      */
     fun downloadEngine() {
         val installer = modelInstaller ?: return
         installer.downloadModel()
+        // Bug fix (2026-09-10): cancel any prior collector before
+        // launching a new one — see [downloadCollectorJob] KDoc.
+        downloadCollectorJob?.cancel()
         // Observe state changes; refresh engine list on every state so
         // the picker's status badge tracks Downloading → Installed /
-        // DownloadFailed (Bug 4 fix v0.1.61).
-        scope.launch {
-            installer.state.collect { st ->
-                _engines.value = mergedEngines()
-                if (st is InstallState.Done) {
-                    // Once installed, switching the user-selected
-                    // package to local is implicit — they
-                    // initiated the download. Persist so next
-                    // cold-start already points at the local
-                    // engine.
-                    settings.setEnginePackage(LOCAL_TTS_PACKAGE)
+        // DownloadFailed (Bug 4 fix v0.1.61). The `takeWhile` bound
+        // terminates the collect block naturally once the installer
+        // reaches a terminal state (Done / Failed) — the collector
+        // exits without needing an internal self-cancel (which would
+        // race with the field assignment under UnconfinedTestDispatcher
+        // and similar scheduling patterns).
+        downloadCollectorJob = scope.launch {
+            installer.state
+                .transformWhile { st ->
+                    emit(st)
+                    // Continue past terminal states so the lambda below
+                    // still observes the Done / Failed value; only stop
+                    // collecting AFTER the terminal value has been
+                    // delivered. Avoids needing a self-cancel inside the
+                    // collect lambda that would race with the field
+                    // assignment under UnconfinedTestDispatcher.
+                    st !is InstallState.Done && st !is InstallState.Failed
                 }
-            }
+                .collect { st ->
+                    _engines.value = mergedEngines()
+                    if (st is InstallState.Done) {
+                        // Once installed, switching the user-selected
+                        // package to local is implicit — they
+                        // initiated the download. Persist so next
+                        // cold-start already points at the local
+                        // engine.
+                        settings.setEnginePackage(LOCAL_TTS_PACKAGE)
+                    }
+                }
         }
     }
 
