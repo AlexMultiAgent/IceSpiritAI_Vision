@@ -4437,4 +4437,184 @@ class AdSignageRuleMatcherTest {
         )
         assertTrue("至少 1 hit, 实际 0", hits.isNotEmpty())
     }
+
+    // --- v0.1.64 新增 14 条规则命中测试(广告招牌 tab 数据质量 + 覆盖扩展) ---
+
+    @Test fun v0164_art38_endorsement_unused_matches_star_endorsement() {
+        val rule = AdSignageRule(
+            id = "ad_signage_art38_endorsement_unused",
+            category = "signage",
+            regulation = "《广告法》第三十八条第一款 + 第六十二条",
+            keywords = listOf("明星同款", "联名款"),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("本店为某明星同款护肤系列,联名款独家发售")
+        assertEquals(2, hits.size)
+        assertTrue(hits.all { it.ruleId == "ad_signage_art38_endorsement_unused" })
+    }
+
+    @Test fun v0164_art38_minor_under10_matches_child_endorsement() {
+        val rule = AdSignageRule(
+            id = "ad_signage_art38_endorsement_minor_under10",
+            category = "minor",
+            regulation = "《广告法》第三十八条第二款 + 第五十七条",
+            keywords = listOf("萌娃代言", "小学生代言"),
+            categoryAnchors = listOf("童装", "玩具", "奶粉"),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("萌娃代言童装新品上市,小学生代言玩具")
+        assertEquals(2, hits.size)
+        assertTrue(hits.all { it.ruleId == "ad_signage_art38_endorsement_minor_under10" })
+    }
+
+    @Test fun v0164_art14_newsform_general_matches_reporter_signage() {
+        val rule = AdSignageRule(
+            id = "ad_signage_art14_newsform_general",
+            category = "signage",
+            regulation = "《广告法》第十四条 + 第五十九条第三款",
+            keywords = listOf("本台讯", "记者探店", "权威访谈"),
+            severity = Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("本台讯记者探店独家报道,权威访谈揭秘")
+        assertEquals(3, hits.size)
+    }
+
+    @Test fun v0164_art19_health_softad_offline_matches_health_clinic_signage() {
+        val rule = AdSignageRule(
+            id = "ad_signage_art19_health_softad_offline",
+            category = "signage",
+            regulation = "《广告法》第十九条 + 第五十七条 + 第五十八条",
+            keywords = listOf("老中医", "养生堂", "祖传中医"),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("老中医坐诊,养生堂秘方,祖传中医世家")
+        assertEquals(3, hits.size)
+    }
+
+    @Test fun v0164_art43_consent_required_matches_unconsented_send() {
+        val rule = AdSignageRule(
+            id = "ad_signage_art43_consent_required",
+            category = "signage",
+            regulation = "《广告法》第四十三条 + 第六十三条第一款",
+            keywords = listOf("扫码加我", "短信群发", "强制关注公众号"),
+            severity = Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("扫码加我领礼品,短信群发促销,强制关注公众号")
+        assertEquals(3, hits.size)
+    }
+
+    @Test fun v0164_art22_tobacco_brand_collateral_matches_giftbox() {
+        val rule = AdSignageRule(
+            id = "ad_signage_art22_tobacco_brand_collateral",
+            category = "restricted",
+            regulation = "《广告法》第二十二条第二款 + 第五十七条",
+            keywords = listOf("中华礼盒", "黄鹤楼联名", "利群礼盒"),
+            categoryAnchors = listOf("烟酒", "礼盒", "商务"),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("中华礼盒商务接待,黄鹤楼联名款,利群礼盒")
+        assertEquals(3, hits.size)
+    }
+
+    @Test fun v0164_re_art13_decoration_commitment_matches_luxury_decoration() {
+        val rule = AdSignageRule(
+            id = "ad_signage_re_art13_decoration_commitment",
+            category = "realestate",
+            regulation = "《房地产广告发布规定》第十三条 + 第二十一条 + 《广告法》第二十六条 + 第五十八条",
+            keywords = listOf("豪华装修", "拎包入住", "五星级装修"),
+            categoryAnchors = listOf("房地产", "楼盘", "小区"),
+            severity = Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("豪华装修拎包入住,五星级装修小区")
+        assertEquals(3, hits.size)
+    }
+
+    @Test fun v0164_re_art17_loan_disclosure_matches_zero_down_payment() {
+        val rule = AdSignageRule(
+            id = "ad_signage_re_art17_loan_disclosure",
+            category = "realestate",
+            regulation = "《房地产广告发布规定》第十七条 + 第二十一条 + 《广告法》第五十八条",
+            keywords = listOf("零首付", "首付贷", "0 月供"),
+            categoryAnchors = listOf("房地产", "楼盘", "购房"),
+            severity = Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("零首付购房,首付贷楼盘,0 月供")
+        assertEquals(3, hits.size)
+    }
+
+    @Test fun v0164_med_art3_review_cert_missing_matches_no_cert() {
+        val rule = AdSignageRule(
+            id = "ad_signage_med_art3_review_cert_missing",
+            category = "medical",
+            regulation = "《医疗广告管理办法》第三条 + 第十一条 + 第十七条",
+            keywords = listOf("审查证明缺失", "未取得审查"),
+            categoryAnchors = listOf("医院", "诊所", "中医"),
+            severity = Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("中医院广告审查证明缺失,未取得审查")
+        assertEquals(2, hits.size)
+    }
+
+    @Test fun v0164_art10_minor_disability_harmful_content_matches_disability_insult() {
+        val rule = AdSignageRule(
+            id = "ad_signage_art10_minor_disability_harmful_content",
+            category = "minor",
+            regulation = "《广告法》第十条 + 第五十七条",
+            keywords = listOf("脑瘫", "智障", "自闭症"),
+            categoryAnchors = listOf("残联", "康复", "医院"),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("脑瘫患者专用,智障也能学会,自闭症福音 - 残联公益")
+        assertEquals(3, hits.size)
+    }
+
+    @Test fun v0164_art9_discrimination_regional_matches_regional_bias() {
+        val rule = AdSignageRule(
+            id = "ad_signage_art9_discrimination_regional",
+            category = "absolute",
+            regulation = "《广告法》第九条第(七)项、第(九)项 + 第五十七条",
+            keywords = listOf("地域黑", "河南人骗子", "新疆切糕"),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("地域黑专题,河南人骗子警告,新疆切糕")
+        assertEquals(3, hits.size)
+    }
+
+    @Test fun v0164_art8_gift_disclosure_matches_unmarked_gift() {
+        val rule = AdSignageRule(
+            id = "ad_signage_art8_gift_disclosure",
+            category = "signage",
+            regulation = "《广告法》第八条第二款 + 第五十九条第一款第(一)项",
+            keywords = listOf("买一赠一", "赠送大礼包", "到店即送"),
+            severity = Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("买一赠一,赠送大礼包,到店即送")
+        assertEquals(3, hits.size)
+    }
+
+    @Test fun v0164_re_art15_rendering_disclosure_matches_unmarked_rendering() {
+        val rule = AdSignageRule(
+            id = "ad_signage_re_art15_rendering_disclosure",
+            category = "realestate",
+            regulation = "《房地产广告发布规定》第十五条 + 第二十一条 + 《广告法》第五十八条",
+            keywords = listOf("效果图", "鸟瞰图", "CG 渲染"),
+            categoryAnchors = listOf("房地产", "楼盘", "售楼"),
+            severity = Severity.Info,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("效果图鸟瞰图,CG 渲染楼盘")
+        assertEquals(3, hits.size)
+    }
+
+    @Test fun v0164_art22_recruitment_gender_broad_matches_recruitment_bias() {
+        val rule = AdSignageRule(
+            id = "ad_signage_art22_recruitment_gender_broad",
+            category = "signage",
+            regulation = "《广告法》第九条第(九)项 + 第五十七条",
+            keywords = listOf("男性优先", "形象气质佳", "限女生"),
+            categoryAnchors = listOf("招聘", "招工", "岗位"),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("男性优先招聘,形象气质佳岗位,限女生急招")
+        assertEquals(3, hits.size)
+    }
 }

@@ -68,7 +68,7 @@ class AssetRuleLoaderTest {
             "src/main/assets/rules/ad_signage_rules.json"
         ).readText(Charsets.UTF_8)
         val set = json.decodeFromString(AdSignageRuleSet.serializer(), src)
-        assertEquals(19, set.version)
+        assertEquals(20, set.version)
         assertTrue(
             "shipped ad_signage_rules.json must carry at least one rule (10 golden + 70+ incremental rules)",
             set.rules.size >= 1,
