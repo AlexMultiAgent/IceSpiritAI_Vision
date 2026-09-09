@@ -73,6 +73,28 @@ open class SherpaTtsEngine(
     @Volatile
     private var activePlayer: PcmAudioPlayer? = null
 
+    /**
+     * The Job of the currently-running [speak] coroutine, when there is
+     * one. Held so a subsequent [speak] can cancel it (Opt-7 interrupt
+     * semantics). Cleared by the in-flight coroutine's `finally` on
+     * normal completion; cleared inline by the next speak() on
+     * interrupt. Volatile because speak() can be called from any thread
+     * the controller's appScope dispatches to.
+     */
+    @Volatile
+    private var activeSpeakJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Captures the in-flight speak()'s onDone callback so the interrupt
+     * path can fire it synchronously when a second speak() arrives
+     * mid-playback. Mirrors Android's QUEUE_FLUSH semantics from the
+     * controller's perspective — the state machine sees a fast
+     * Speaking → Idle → Speaking transition, not a stuck Speaking until
+     * the first coroutine's playSamples() drains.
+     */
+    @Volatile
+    private var pendingInterruptOnDone: ((String) -> Unit)? = null
+
     // Internal IO scope — separate from the controller's appScope so a
     // controller cancel does not interrupt a mid-sentence playback.
     // Tests inject a TestScope (or `runTest`'s scope) so the launched
@@ -96,7 +118,53 @@ open class SherpaTtsEngine(
             onDone(utteranceId)
             return
         }
-        internalScope.launch {
+        // Opt-7 (v0.1.68): unify interrupt semantics with AndroidTtsEngine.
+        //
+        // Pre-fix, lifecycleMutex.withLock serialized speak() calls — the
+        // second speak() queued behind the first and played after it
+        // finished. Vision's TTS is one-shot report narration; if the user
+        // re-runs analysis (or taps the play FAB twice) while a previous
+        // reading is mid-playback, they expect the old reading to cut off
+        // and the new one to start. Android's TextToSpeech engine does
+        // this natively (QUEUE_FLUSH). We mirror it by:
+        //   1. Stopping the active player if any. The in-flight coroutine's
+        //      `finally { if (activePlayer === player) activePlayer = null }`
+        //      would still null it out, but stop() runs synchronously so
+        //      the new coroutine's `activePlayer = player` assignment in
+        //      the lock body sees the cleared state.
+        //   2. Firing the in-flight utterance's onDone synchronously here
+        //      so the controller's state machine (Speaking → Idle) can
+        //      transition immediately, rather than waiting for the
+        //      in-flight coroutine to drain through withLock.
+        //   3. Cancelling the in-flight coroutine's Job if we still hold
+        //      a reference — the coroutine is on internalScope so we can
+        //      cancel without affecting the controller's appScope.
+        val inFlight = activeSpeakJob
+        if (inFlight != null && !inFlight.isCompleted) {
+            // Fire the in-flight's onDone synchronously BEFORE we overwrite
+            // pendingInterruptOnDone below — this is the callback captured
+            // by the previous speak()'s launch block. The closure variable
+            // `onDone` is captured per-call, so the previous launch's
+            // `finally { onDone(utteranceId) }` will also fire when the
+            // cancelled coroutine exits — but invoking the captured
+            // callback here lets the controller's state machine react
+            // immediately rather than waiting for cancellation to
+            // propagate through internalScope's dispatcher.
+            pendingInterruptOnDone?.invoke("")
+            pendingInterruptOnDone = null
+            activePlayer?.stop()
+            inFlight.cancel()
+            activeSpeakJob = null
+        }
+        // Use `coroutineContext[Job]` inside the finally rather than
+        // capturing the outer `val job` — Kotlin forbids forward
+        // references to locals, and `val job = launch { ... }` declares
+        // `job` AFTER the lambda starts executing on the same thread
+        // (UnconfinedTestDispatcher + EagerThreadStart). coroutineContext
+        // returns this coroutine's own Job regardless of when the
+        // outer assignment happens, so the identity check is still
+        // sound.
+        val job = internalScope.launch {
             try {
                 lifecycleMutex.withLock {
                     check(!closed) { "SherpaTtsEngine has been closed" }
@@ -116,14 +184,29 @@ open class SherpaTtsEngine(
                     }
                 }
             } catch (e: Throwable) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Log.e(TAG, "speak() failed: ${e.message}", e)
                 // Drop cached synthesizer on error — next speak() rebuilds.
                 runCatching { cachedSynth?.release() }
                 cachedSynth = null
             } finally {
+                // Only clear activeSpeakJob if it still points at OUR job —
+                // a concurrent speak() that already overwrote it with its
+                // own Job means we're the cancelled predecessor and the
+                // field no longer belongs to us.
+                val self = coroutineContext[kotlinx.coroutines.Job]
+                if (self != null && activeSpeakJob === self) {
+                    activeSpeakJob = null
+                }
                 onDone(utteranceId)
             }
         }
+        // Capture THIS speak()'s onDone so the NEXT speak()'s interrupt
+        // path can fire it synchronously. We assign AFTER the interrupt
+        // branch so a self-cancel path (inFlight pointing at a stale Job)
+        // never overwrites the new callback with the old one's.
+        pendingInterruptOnDone = onDone
+        activeSpeakJob = job
     }
 
     override fun stop() {

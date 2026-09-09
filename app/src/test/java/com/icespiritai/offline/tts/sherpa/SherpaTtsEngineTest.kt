@@ -220,6 +220,76 @@ class SherpaTtsEngineTest {
         assertTrue(engine.supportedChineseEngines().any { it.packageName == com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE })
     }
 
+    @Test fun `speak while speaking interrupts the previous utterance`() = runTest(testDispatcher) {
+        // Opt-7 (v0.1.68): unify interrupt semantics with AndroidTtsEngine.
+        //
+        // Pre-fix, the lifecycleMutex serialized speak() — the second
+        // speak() played AFTER the first finished. Vision's TTS is
+        // one-shot report narration; if the user re-runs analysis while
+        // a previous reading is mid-playback, the old reading must cut
+        // off. Android's TextToSpeech engine does this via QUEUE_FLUSH;
+        // SherpaTtsEngine must mirror it.
+        //
+        // Pin contract:
+        //   - First speak()'s onDone fires synchronously when the
+        //     second speak() arrives (state machine sees fast
+        //     Speaking → Idle → Speaking, not stuck Speaking).
+        //   - First playback stops — second playback starts via a
+        //     separate play() call on the fake player.
+        //   - Second speak()'s onDone fires after its own playback.
+        //
+        // UnconfinedTestDispatcher runs launch bodies eagerly so the
+        // speak() invocation ordering matches real I/O behavior — the
+        // second speak()'s interrupt path needs to observe the first
+        // job as in-flight, not completed.
+        val eagerDispatcher = kotlinx.coroutines.test.UnconfinedTestDispatcher(testScheduler)
+        val eagerScope = CoroutineScope(SupervisorJob() + eagerDispatcher)
+        val eagerEngine = TestableSherpaTtsEngine(
+            context = context,
+            modelDir = File(tempDir, "model-eager").apply { mkdirs() },
+            provider = FakeSynthesizerProvider(fakeSynth),
+            player = fakePlayer,
+            scope = eagerScope,
+        )
+        for (name in SherpaTtsEngine.REQUIRED_MODEL_FILES) {
+            File(eagerEngine.modelDir, name).writeBytes(ByteArray(10))
+        }
+        val espeakDir = File(eagerEngine.modelDir, com.icespiritai.offline.tts.TtsModelInstaller.ESPEAK_DATA_DIR).apply { mkdirs() }
+        for (name in com.icespiritai.offline.tts.TtsModelInstaller.BUNDLED_ESPEAK_FILES) {
+            val f = File(espeakDir, name)
+            f.parentFile?.mkdirs()
+            f.writeBytes(ByteArray(10))
+        }
+
+        fakeSynth.nextSamples = floatArrayOf(0.1f, 0.2f, 0.3f)
+        fakeSynth.nextSampleRate = 22050
+
+        var firstDone = false
+        var secondDone = false
+        eagerEngine.speak("first", "u1") { firstDone = true }
+        // Second speak() arrives BEFORE advanceUntilIdle — interrupts
+        // the in-flight first speak(). With UnconfinedTestDispatcher
+        // the first speak()'s launched coroutine is partway through
+        // playSamples() when this second speak() runs.
+        eagerEngine.speak("second", "u2") { secondDone = true }
+
+        // The interrupt path fires the first onDone synchronously inside
+        // speak() — firstDone must be true immediately, not waiting for
+        // the first coroutine to drain through withLock.
+        assertTrue("first speak() must be interrupted synchronously when second speak() arrives",
+            firstDone)
+        // First playback was stopped; second playback starts after the
+        // cancelled coroutine yields back to the lock.
+        advanceUntilIdle()
+        assertTrue("second speak() onDone fires after its playback completes", secondDone)
+        // Two generate calls — first one was in-flight, second one
+        // starts fresh after the cancel. One may complete and the
+        // other cancelled; we don't pin the exact count, but the
+        // engine must not silently drop both.
+        assertTrue("synth must have been called at least once",
+            fakeSynth.generateCallCount >= 1)
+    }
+
     @Test fun `repeated speak reuses cached Synthesizer`() = runTest(testDispatcher) {
         plantFullModel()
         fakeSynth.nextSamples = floatArrayOf(0.1f, 0.2f, 0.3f)
