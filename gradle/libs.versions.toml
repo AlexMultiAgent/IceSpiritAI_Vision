@@ -14,7 +14,7 @@ composeCompiler = "2.4.10"  # matches Kotlin
 coroutines = "1.10.2"
 serialization = "1.9.0"
 hankcsAc = "1.2.3"
-onnxruntime = "1.21.1"
+onnxruntime = "1.24.3"
 opencv = "4.12.0"
 junit = "4.13.2"
 androidxJunit = "1.3.0"
@@ -29,7 +29,7 @@ work = "2.10.1"
 navigation = "2.8.0"
 materialIconsExtended = "1.7.0"
 telephoto = "0.13.0"  # verify latest compatible version with Compose BOM 2026.08.00
-jitpackSherpa = "v1.13.5"
+jitpackSherpa = "v1.13.3"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -118,10 +118,16 @@ androidx-navigation-compose = { module = "androidx.navigation:navigation-compose
 # Icons
 compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended", version.ref = "materialIconsExtended" }
 
-# sherpa-onnx (TTS engine) — pinned at v1.13.5 to match translate's
-# pinned version (translate uses the same assets, so we share the
-# Matcha + Vocos ONNX bundle from giteaadmin/Model release
-# sherpa-onnx-matcha-zh-baker). See CLAUDE.md §Bug 3 pivot.
+# sherpa-onnx (TTS engine) — pinned at v1.13.3 to match translate's
+# ORT ABI version (Bug 7 fix v0.1.63). v1.13.5 ships a custom k2-fsa
+# fork of libonnxruntime.so with `@@VERS_1.27.1` symbols, while
+# PaddleOCR's onnxruntime-android uses `@@VERS_1.21.1`. ELF versioned
+# symbol resolution is strict — dlopen fails on the first speak() with
+# "cannot locate symbol OrtGetApiBase". Both v1.13.3 and onnxruntime
+# 1.24.3 expose `@@VERS_1.24.3`, so pickFirst lands on a single ABI
+# surface. Translate uses the same Matcha + Vocos ONNX bundle from
+# giteaadmin/Model release sherpa-onnx-matcha-zh-baker. See CLAUDE.md
+# §Bug 3 pivot and memory feedback-onnxruntime-abi-version-mismatch.
 sherpa-onnx = { group = "com.github.k2-fsa", name = "sherpa-onnx", version.ref = "jitpackSherpa" }
 
 [plugins]

@@ -1,5 +1,6 @@
 package com.icespiritai.offline.tts
 
+import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
@@ -13,23 +14,32 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.io.File
 import kotlin.io.path.createTempDirectory
 
 /**
- * Unit tests for [TtsModelInstaller] (Bug 3 pivot v0.1.60).
+ * Unit tests for [TtsModelInstaller] (Bug 3 pivot v0.1.60, Bug 7b
+ * hybrid path v0.1.63, Bug 7c espeak-ng-data copy v0.1.63).
  *
  * Covers:
- *  - isModelInstalled flips when both ONNX files exist
- *  - downloadModel writes both ONNX to filesDir/<rootDir>/zh/
+ *  - isModelInstalled is false when any required file is missing (2 ONNX
+ *    + 5 text/rule + espeak-ng-data core files — Bug 7c)
+ *  - isModelInstalled is true when all required files exist
+ *  - downloadModel copies bundled assets from APK assets (including the
+ *    espeak-ng-data subdirectory — Bug 7c recursive walk) and downloads
+ *    ONNX; reports Done when sha256 verifies
  *  - downloadModel verifies sha256 and reports Failed on mismatch
  *  - meta sidecar round-trip (writeMeta / readMeta)
  *
- * Pure JVM — uses a temporary directory, a real coroutine scope on the
- * test dispatcher, and a [TtsModelInstaller] subclass that injects
- * fake descriptors + writes (no real network).
+ * Robolectric (sdk=33) so `context.assets.open(...)` works for the
+ * bundled copy. Pure JVM tests can't drive AssetManager.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33])
 class TtsModelInstallerTest {
 
     private val testDispatcher = StandardTestDispatcher()
@@ -40,9 +50,12 @@ class TtsModelInstallerTest {
 
     @Before fun setUp() {
         tempDir = createTempDirectory(prefix = "tts-model-installer-test").toFile().apply { deleteOnExit() }
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
         installer = TestableTtsModelInstaller(
             filesDir = tempDir,
             scope = testScope,
+            assets = ctx.assets,
+            testDispatcher = testDispatcher,
         )
     }
 
@@ -50,18 +63,33 @@ class TtsModelInstallerTest {
         tempDir.deleteRecursively()
     }
 
-    @Test fun `isModelInstalled is false when both ONNX files missing`() {
+    @Test fun `isModelInstalled is false when any required file is missing`() {
+        // Empty modelDir
         assertFalse(installer.isModelInstalled())
-    }
-
-    @Test fun `isModelInstalled is true when both ONNX files exist`() {
+        // ONNX only, no text/rule files
         installer.modelDir.mkdirs()
         File(installer.modelDir, "model-steps-3.onnx").writeBytes(ByteArray(10))
         File(installer.modelDir, "vocos-22khz-univ.onnx").writeBytes(ByteArray(10))
+        assertFalse("text/rule files missing", installer.isModelInstalled())
+    }
+
+    @Test fun `isModelInstalled is true when all required files exist`() {
+        installer.modelDir.mkdirs()
+        File(installer.modelDir, "model-steps-3.onnx").writeBytes(ByteArray(10))
+        File(installer.modelDir, "vocos-22khz-univ.onnx").writeBytes(ByteArray(10))
+        for (name in TtsModelInstaller.BUNDLED_ASSET_FILES) {
+            File(installer.modelDir, name).writeBytes(ByteArray(10))
+        }
+        // Bug 7c: espeak-ng-data core files at modelDir/espeak-ng-data/
+        val espeakDir = File(installer.modelDir, "espeak-ng-data").apply { mkdirs() }
+        File(espeakDir, "phontab").writeBytes(ByteArray(10))
+        File(espeakDir, "phonindex").writeBytes(ByteArray(10))
+        File(espeakDir, "phondata").writeBytes(ByteArray(10))
+        File(espeakDir, "intonations").writeBytes(ByteArray(10))
         assertTrue(installer.isModelInstalled())
     }
 
-    @Test fun `downloadModel writes both ONNX to modelDir and reports Done`() = runTest(testDispatcher) {
+    @Test fun `downloadModel copies bundled assets downloads ONNX and reports Done`() = runTest(testDispatcher) {
         val modelBytes = ByteArray(256) { 0x42 }
         val vocoderBytes = ByteArray(128) { 0x77 }
         installer.fakeServer[ACOUSTIC_URL] = modelBytes
@@ -72,6 +100,19 @@ class TtsModelInstallerTest {
         installer.downloadModel()
         advanceUntilIdle()
 
+        // Bundled assets written (TestAssets provides canned bytes for each)
+        for (name in TtsModelInstaller.BUNDLED_ASSET_FILES) {
+            val f = File(installer.modelDir, name)
+            assertTrue("bundled asset $name missing", f.isFile)
+        }
+        // Bug 7c: espeak-ng-data directory tree planted
+        val espeakDir = File(installer.modelDir, "espeak-ng-data")
+        assertTrue("espeak-ng-data dir missing", espeakDir.isDirectory)
+        for (name in ESPEAK_CORE_FILES) {
+            val f = File(espeakDir, name)
+            assertTrue("espeak-ng-data/$name missing", f.isFile)
+        }
+        // ONNX written from fake server
         val acoustic = File(installer.modelDir, "model-steps-3.onnx")
         val vocoder = File(installer.modelDir, "vocos-22khz-univ.onnx")
         assertTrue("acoustic missing", acoustic.isFile)
@@ -94,6 +135,30 @@ class TtsModelInstallerTest {
         assertTrue("expected Failed, got $state", state is InstallState.Failed)
         assertFalse(File(installer.modelDir, "model-steps-3.onnx").exists())
         assertFalse(File(installer.modelDir, "model-steps-3.onnx.partial").exists())
+    }
+
+    @Test fun `downloadModel is idempotent when already installed`() = runTest(testDispatcher) {
+        // Pre-populate modelDir with all required files (incl. Bug 7c espeak-ng-data)
+        installer.modelDir.mkdirs()
+        File(installer.modelDir, "model-steps-3.onnx").writeBytes(ByteArray(10))
+        File(installer.modelDir, "vocos-22khz-univ.onnx").writeBytes(ByteArray(10))
+        for (name in TtsModelInstaller.BUNDLED_ASSET_FILES) {
+            File(installer.modelDir, name).writeBytes(ByteArray(10))
+        }
+        val espeakDir = File(installer.modelDir, "espeak-ng-data").apply { mkdirs() }
+        File(espeakDir, "phontab").writeBytes(ByteArray(10))
+        // Wipe fake server — downloadModel must NOT touch network when
+        // isModelInstalled() returns true
+        installer.fakeServer.clear()
+        installer.expectedSha.clear()
+
+        installer.downloadModel()
+        advanceUntilIdle()
+
+        assertEquals(InstallState.Done, installer.state.value)
+        // ONNX partials must NOT exist (no download attempted)
+        assertFalse(File(installer.modelDir, "model-steps-3.onnx.partial").exists())
+        assertFalse(File(installer.modelDir, "vocos-22khz-univ.onnx.partial").exists())
     }
 
     @Test fun `sidecar meta round trip`() {
@@ -132,10 +197,13 @@ class TtsModelInstallerTest {
     private class TestableTtsModelInstaller(
         filesDir: File,
         scope: CoroutineScope,
+        assets: android.content.res.AssetManager,
+        private val testDispatcher: kotlinx.coroutines.CoroutineDispatcher,
     ) : TtsModelInstaller(
         filesDir = filesDir,
         scope = scope,
         jsonUrl = "http://stub/releases/latest.json",
+        assets = assets,
     ) {
         val fakeServer = mutableMapOf<String, ByteArray>()
         val expectedSha = mutableMapOf<String, String>()
@@ -159,8 +227,35 @@ class TtsModelInstallerTest {
             val bytes = fakeServer[desc.url] ?: ByteArray(0)
             File(modelDir, "${desc.fileName}.partial").writeBytes(bytes)
         }
+
+        // Plant bundled assets synchronously (no IO dispatcher hop) so
+        // runTest(testDispatcher) actually drives the launch coroutine
+        // past copyBundledAssets. The production path uses
+        // withContext(Dispatchers.IO) for real AssetManager reads, but
+        // Dispatchers.IO is a real thread pool not drained by the test
+        // scheduler, which would hang the test at the first suspension.
+        override suspend fun copyBundledAssets() {
+            kotlinx.coroutines.withContext(testDispatcher) {
+                for (name in TtsModelInstaller.BUNDLED_ASSET_FILES) {
+                    File(modelDir, name).writeBytes(ByteArray(32) { 0x33 })
+                }
+                // Bug 7c: espeak-ng-data subdirectory tree
+                val espeakDir = File(modelDir, "espeak-ng-data")
+                espeakDir.mkdirs()
+                for (name in ESPEAK_CORE_FILES) {
+                    File(espeakDir, name).writeBytes(ByteArray(16) { 0x55 })
+                }
+            }
+        }
     }
 
+    /**
+     * Minimal in-memory AssetManager that returns canned bytes for the
+     * 5 bundled asset filenames. Robolectric's stock AssetManager
+     * exposes the real APK assets at `models/tts/zh/...` (from the
+     * merged main+test asset paths) so we can use it directly via
+     * [androidx.test.core.app.ApplicationProvider.getApplicationContext].
+     */
     private fun sha256Of(bytes: ByteArray): String =
         java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
             .joinToString("") { "%02x".format(it) }
@@ -168,5 +263,16 @@ class TtsModelInstallerTest {
     companion object {
         private const val ACOUSTIC_URL = "http://stub/model-steps-3.onnx"
         private const val VOCODER_URL = "http://stub/vocos-22khz-univ.onnx"
+
+        // Bug 7c: sherpa-onnx Matcha-zh-baker Validate requires these 4
+        // core files at data_dir; missing any one of them makes generate()
+        // segfault on the null espeak lookup. We plant at least these 4
+        // (the production copy walks the full subdirectory tree).
+        private val ESPEAK_CORE_FILES = listOf(
+            "phontab",
+            "phonindex",
+            "phondata",
+            "intonations",
+        )
     }
 }

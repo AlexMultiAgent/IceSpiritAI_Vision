@@ -1,5 +1,36 @@
 # 用户更新日志
 
+## v0.1.63 · 2026-09-09
+
+### 修复
+- **切换到「冰灵 TTS 引擎(本地)」后点播放按键无声音** — 真机发现 v0.1.62 选了本地引擎,分析完点朗读完全无音:
+  - **根因 A(Bug 7)**:`onnxruntime-android:1.21.1` 与 `sherpa-onnx:v1.13.5` 两个 AAR 都向 APK 注入同名 `libonnxruntime.so`,但 ELF 版本化符号 (`@@VERS_1.X`) 不兼容 — PaddleOCR JNI bridge 期望 `VERS_1.21.1`,sherpa-onnx v1.13.5 的自定义 fork 暴露 `VERS_1.27.1`,动态链接器严格匹配,任一无法加载另一个。`packagingOptions.jniLibs.pickFirsts` 静默取其中一个,但都不满足两者 ABI。logcat:`dlopen failed: cannot locate symbol "OrtGetApiBase"`
+  - **根因 B(Bug 7b — v0.1.63 二次发现)**:解决 Bug 7 ABI 后真机再次 tap 播放,直接 native SEGV in `libsherpa-onnx-jni.so` `Java_com_k2fsa_sherpa_onnx_OfflineTts_generateImpl+268`。根因:`sherpa-onnx` Matcha-zh-baker `OfflineTtsConfig.Validate()` 要求 `modelDir` 同时存在 **7 个文件**(2 个 ONNX + 5 个文本/规则资源:lexicon.txt / tokens.txt / phone.fst / date.fst / number.fst)。`TtsModelInstaller` v0.1.62 只下载 2 个 ONNX,Gitea 仓库的 5 个小文件从未挂到 JSON 描述符,模型目录长期残缺。`OfflineTts` ctor 拿 `null` 返回(Validate 失败时不抛异常,只 `LOG(ERROR)` "Rule fst '<path>' does not exist" + "Errors found in config!"),随后 `generate()` 内部解 null `OfflineTts*` 句柄 → native SEGV
+  - **根因 C(Bug 7c — v0.1.63 三次发现)**:补齐 Bug 7b 7 文件 + 重打 APK 后真机仍然 SEGV,栈顶 `OfflineTts_generateImpl+268`,logcat 上一行 `W OfflineTts: phontab does not exist`。根因:`SherpaTtsEngine.kt` v0.1.62 误以为 Matcha-zh-baker 是「中文专用不需要 espeak」,把 `OfflineTtsMatchaModelConfig.dataDir` 参数整段删除 —— 但 sherpa-onnx v1.13.x C++ 端有内置默认空串路径,落到第一个 token 上照样走 espeak 路径照样 NULL deref。`OfflineTtsConfig.Validate` 在 data_dir 找 `phontab` / `phonindex` / `phondata` / `intonations` 4 个核心文件,缺失只 `LOG(WARN)` 不抛错,`generate()` 走到第一个字符的 espeak lookup 时 NULL 解引用 SIGSEGV
+  - **修复**:`assets/models/tts/zh/espeak-ng-data/` 子目录树(2.2 MB,9 文件:`phontab` + `phonindex` + `phondata` + `intonations` + `cmn_dict` + `en_dict` + `phondata-manifest` + `lang/sit/cmn` + `lang/sit/cmn-Latn-pinyin`)打 APK bundle,`TtsModelInstaller.copyBundledAssets()` 新增递归 `copyAssetDirectory()` 私有方法拷子目录树(用 `AssetManager.list()` enumerate),`SherpaTtsEngine.DefaultSynthesizerProvider.create()` 把 `dataDir = File(modelDir, "espeak-ng-data").absolutePath` 加回去。原始仓库 commit `92422cb` 已 staged 这 9 个文件,只是 `copyBundledAssets()` 之前没覆盖到子目录 —— Bug 7c 真因是「资产进了 APK,拷到 modelDir 的代码没覆盖到子目录」
+  - **修复**:**hybrid path** — 2 ONNX 从 Gitea 下载,5 文本/规则资源 + 9 个 espeak-ng-data 文件打 APK bundle 在 `assets/models/tts/zh/`(1.6 MB + 2.2 MB = 3.8 MB),首次安装时 `TtsModelInstaller.copyBundledAssets()` 通过 `AssetManager.open` 拷到 `filesDir/offline-models/zh/`。`isModelInstalled()` 现校验全部 7 + 4 核心文件,缺一即触发重新安装。复用 translate 项目 `ModelInstaller.copyBundledAsset()` 已稳定 3 个月的同款 pattern
+
+### 变更
+- `app/build.gradle.kts` jniLibs.pickFirsts 注释更新(原 "ABI-compatible C-API 1.21.1" 措辞错误,改成 "BOTH .so 必须暴露相同 `@@VERS_1.X`,否则 dlopen fail")
+- `gradle/libs.versions.toml` sherpa-onnx 块注释记录 ABI 同步策略 + 引用 `feedback-onnxruntime-abi-version-mismatch` memory
+- `app/src/main/java/.../tts/TtsModelInstaller.kt` 加 `assets: AssetManager` ctor 参数 + `BUNDLED_ASSET_FILES` companion + `copyBundledAssets()` private suspend
+- `app/src/main/java/.../tts/sherpa/SherpaTtsEngine.kt` KDoc 更新:asset 布局段落明确「**11 文件必须同时存在否则 SEGV**」(2 ONNX + 5 文本规则 + 4 espeak 核心 + 字典 + 语言包) + `DefaultSynthesizerProvider.create()` 恢复 `dataDir` 参数(Bug 7c 修复关键)
+- `app/src/main/java/.../IceSpiritVisionActivity.kt`:`TtsModelInstaller` 构造时传 `assets = applicationContext.assets`
+- 新增 APK 内资产 5 个文本/规则:`assets/models/tts/zh/{lexicon.txt, tokens.txt, phone.fst, date.fst, number.fst}`(1.6 MB)+ 9 个 espeak-ng-data 文件:`assets/models/tts/zh/espeak-ng-data/{phontab, phonindex, phondata, intonations, cmn_dict, en_dict, phondata-manifest, lang/sit/cmn, lang/sit/cmn-Latn-pinyin}`(2.2 MB)— 合计 +3.8 MB,随 APK 出
+- Gitea `giteaadmin/Model` release `sherpa-onnx-matcha-zh-baker`(id 8)5 个文本/规则资源补齐上传,JSON 描述符 v1.0.1 维持 2 个 ONNX 形状(hybrid 路径不再走 JSON)
+
+### 测试
+- 新增 `TtsModelInstallerTest`(Robolectric sdk=33):`isModelInstalled` 11 文件感知(空目录 / 仅 ONNX / 全部 11 文件 3 个 case) + `downloadModel` 走 copy 路径(报告 Done,espeak-ng-data 子目录树同步生成)+ sha256 错配回退 Failed(partial 文件清理)+ 已安装时幂等不发网络请求
+- `testDebugUnitTest` 全部 7.x case 通过(纯函数 + Robolectric,无 Compose)
+- 真机 smoke:华为 nova 6 SDK 35,选「冰灵 TTS 引擎」→ 触发下载 → 验证 11 文件齐(2 ONNX + 5 文本规则 + 4 espeak 核心 + 字典 + 语言包) → 选图分析 → tap 朗读 → 无 SEGV + 出声
+
+### 构建 / 数据
+- `versionCode` 62 → 63
+- `versionName` 0.1.62 → 0.1.63
+- 依赖:`onnxruntime 1.21.1 → 1.24.3`,`sherpa-onnx v1.13.5 → v1.13.3`
+- ONNX OCR 模型 / TTS 模型 / `ad_signage_rules.json` / `food_label_rules.json` 不变
+- APK 体积 +3.8 MB(5 个 bundled 文本/规则资源 + 9 个 espeak-ng-data 文件);onnxruntime-android:1.24.3 AAR 比 1.21.1 大 ~10 MB,sherpa-onnx v1.13.3 与 v1.13.5 体积近似
+
 ## v0.1.62 · 2026-09-09
 
 ### 修复

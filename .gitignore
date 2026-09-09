@@ -138,3 +138,7 @@ app/src/test/resources/fixtures/audit66_ocr/
 
 # Local worktree directories (subagent-driven plan execution)
 .worktrees/
+
+# Per-version debug screenshot/UI dump/logcat dumps collected during
+# real-device debugging. Stay local — they're scratch not source.
+_screenshots/

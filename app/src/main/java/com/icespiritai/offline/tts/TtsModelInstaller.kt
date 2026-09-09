@@ -1,5 +1,6 @@
 package com.icespiritai.offline.tts
 
+import android.content.res.AssetManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,18 +17,26 @@ import java.net.URL
 import java.security.MessageDigest
 
 /**
- * Download the sherpa-onnx Matcha + Vocos ONNX model files into the
- * app's private `filesDir/offline-models/tts/zh/`. Replaces the
- * abandoned APK-download path (reverted at e319d39) — Bug 3 pivot
- * (v0.1.60).
+ * Install the sherpa-onnx Matcha + Vocos Chinese TTS bundle into the
+ * app's private `filesDir/offline-models/zh/`. Replaces the abandoned
+ * APK-download path (reverted at e319d39) — Bug 3 pivot (v0.1.60).
  *
- * Source: Gitea `giteaadmin/Model` release
- * `sherpa-onnx-matcha-zh-baker`. The release ships a
- * `sherpa-onnx-matcha-zh-baker-latest.json` descriptor (uploaded as a
- * release asset — see `BuildConfig.TTS_MODEL_JSON_URL`) that contains
- * the per-file `{url, size, sha256}` triples. If the JSON fetch fails
- * the installer falls back to a hardcoded constants table
- * ([FallbackDescriptors]) — see KDoc on the field.
+ * **Bug 7b fix (v0.1.63) — hybrid (translate pattern):**
+ * The Matcha config sherpa-onnx Validate requires
+ * (`model-steps-3.onnx` + `vocos-22khz-univ.onnx` + `lexicon.txt` +
+ * `tokens.txt` + `date.fst` + `number.fst` + `phone.fst`) ships
+ * across two sources:
+ * - **ONNX** (acoustic + vocoder, ~130 MB total): downloaded from
+ *   `giteaadmin/Model` release `sherpa-onnx-matcha-zh-baker` via
+ *   `sherpa-onnx-matcha-zh-baker-latest.json` descriptor (see
+ *   [BuildConfig.TTS_MODEL_JSON_URL]). Falls back to
+ *   [FallbackDescriptors] if the JSON fetch 404s.
+ * - **Text / rule resources** (lexicon.txt / tokens.txt / 3× .fst):
+ *   bundled in the APK at `assets/models/tts/zh/` (1.6 MB) and
+ *   copied to `modelDir` by [copyBundledAssets] at first install.
+ *   Same pattern as translate's `ModelInstaller.copyBundledAsset`.
+ *   Bundling avoids putting a third hardcoded URL in the fallback
+ *   table for files that rarely change.
  *
  * Resume: a sidecar `.meta` file tracks per-file `{downloadedBytes,
  * totalBytes, sha256}` and a `Range: bytes=N-` header is sent on
@@ -37,11 +46,17 @@ import java.security.MessageDigest
  * Progress: a [StateFlow]<[InstallState]> mirrors the existing
  * `InstallState` enum so the picker UI can show download bytes /
  * percentage with no other wiring change.
+ *
+ * @param assets APK AssetManager used to read bundled text/rule files.
+ *               Pass `applicationContext.assets` in production. Tests
+ *               may pass a Robolectric `ApplicationProvider` assets or
+ *               a stubbed AssetManager.
  */
 open class TtsModelInstaller(
     private val filesDir: File,
     private val scope: CoroutineScope,
     private val jsonUrl: String,
+    private val assets: AssetManager,
     private val rootDirName: String = DEFAULT_ROOT_DIR,
 ) : TtsInstallerLike {
     private val rootDir: File get() = File(filesDir, rootDirName)
@@ -56,13 +71,22 @@ open class TtsModelInstaller(
     }
 
     /**
-     * True iff BOTH ONNX files exist on disk. The two text resource
-     * bundles (tokens.txt / espeak-ng-data/) ship with the APK so they
-     * are not part of this check.
+     * True iff ALL required files exist on disk: 2 ONNX + 5 text/rule
+     * resources. The text/rule files are tiny (1.6 MB total) and ship
+     * bundled in the APK (see KDoc on the class); [copyBundledAssets]
+     * plants them at [modelDir] at first install. Without ALL 7 files
+     * present sherpa-onnx OfflineTts config Validate fails with
+     * `Rule fst '<path>' does not exist` and `generate()` segfaults
+     * (Bug 7b root cause).
      */
-    fun isModelInstalled(): Boolean =
-        File(modelDir, ACOUSTIC_MODEL_FILE).isFile &&
-            File(modelDir, VOCODER_FILE).isFile
+    fun isModelInstalled(): Boolean {
+        if (!File(modelDir, ACOUSTIC_MODEL_FILE).isFile) return false
+        if (!File(modelDir, VOCODER_FILE).isFile) return false
+        for (name in BUNDLED_ASSET_FILES) {
+            if (!File(modelDir, name).isFile) return false
+        }
+        return true
+    }
 
     /**
      * Trigger a full install. Idempotent: if [isModelInstalled] is
@@ -76,9 +100,14 @@ open class TtsModelInstaller(
                 return@launch
             }
             try {
-                state_.value = InstallState.QueryingRelease
-                val descriptors = fetchDescriptors()
                 modelDir.mkdirs()
+                // Text/rule assets are bundled in the APK — copy them
+                // before the network step so the OfflineTts config Validate
+                // finds them once the ONNX downloads finish.
+                state_.value = InstallState.QueryingRelease
+                copyBundledAssets()
+
+                val descriptors = fetchDescriptors()
                 for (desc in descriptors) {
                     if (File(modelDir, desc.fileName).isFile &&
                         verifySha256(File(modelDir, desc.fileName), desc.sha256)
@@ -102,6 +131,88 @@ open class TtsModelInstaller(
                 state_.value = InstallState.Done
             } catch (e: IOException) {
                 state_.value = InstallState.Failed("下载失败:${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Copy bundled assets from `assets/models/tts/zh/<name>` to [modelDir]:
+     *  - 5 top-level text/rule files (lexicon / tokens / 3× .fst) — Bug 7b
+     *    hybrid path (v0.1.63).
+     *  - the `espeak-ng-data/` directory tree (4 core files + cmn_dict +
+     *    en_dict + lang/sit/[cmn,cmn-Latn-pinyin]) — Bug 7c root cause: sherpa-onnx Matcha
+     *    Validate **requires** `phontab` + `phonindex` + `phondata` +
+     *    `intonations` at `data_dir`; without them generate() segfaults
+     *    on the null espeak lookup. The full 2.2 MB archive ships in
+     *    the APK at `assets/models/tts/zh/espeak-ng-data/` and is
+     *    recursively walked here (skip-existing, idempotent).
+     *
+     * Marked `protected open` so tests can override the IO dispatcher
+     * (the production [Dispatchers.IO] is a real thread pool not driven
+     * by `runTest` — without an override the test would hang at the
+     * first suspension point and `state_` would stay at
+     * `QueryingRelease`). The seam pattern matches
+     * [fetchDescriptors] / [downloadWithResume].
+     */
+    protected open suspend fun copyBundledAssets() = withContext(Dispatchers.IO) {
+        val assetBase = "models/tts/zh"
+        // Top-level files (BUNDLED_ASSET_FILES).
+        for (name in BUNDLED_ASSET_FILES) {
+            val dest = File(modelDir, name)
+            if (dest.isFile) continue
+            val assetPath = "$assetBase/$name"
+            val tmp = File(modelDir, "$name.part")
+            try {
+                assets.open(assetPath).use { input ->
+                    FileOutputStream(tmp).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                if (!tmp.renameTo(dest)) {
+                    tmp.copyTo(dest, overwrite = true)
+                    tmp.delete()
+                }
+            } catch (e: IOException) {
+                tmp.delete()
+                throw IOException("failed to copy bundled asset $assetPath: ${e.message}", e)
+            }
+        }
+        // espeak-ng-data subdirectory (Bug 7c) — recursive walk.
+        copyAssetDirectory("$assetBase/espeak-ng-data", File(modelDir, "espeak-ng-data"))
+    }
+
+    /**
+     * Recursively copy an APK asset directory tree to [destDir].
+     * Skips files that already exist (idempotent re-install). Uses
+     * [AssetManager.list] to enumerate entries; binary blobs go through
+     * the standard open/copyTo path.
+     */
+    private fun copyAssetDirectory(assetPath: String, destDir: File) {
+        val entries = assets.list(assetPath) ?: return
+        if (entries.isEmpty()) return
+        destDir.mkdirs()
+        for (entry in entries) {
+            val childAsset = "$assetPath/$entry"
+            val childDest = File(destDir, entry)
+            // If it has sub-entries it's a directory; otherwise it's a file.
+            val sub = assets.list(childAsset)
+            if (sub != null && sub.isNotEmpty()) {
+                copyAssetDirectory(childAsset, childDest)
+            } else {
+                if (childDest.isFile) continue
+                val tmp = File(destDir, "$entry.part")
+                try {
+                    assets.open(childAsset).use { input ->
+                        FileOutputStream(tmp).use { output -> input.copyTo(output) }
+                    }
+                    if (!tmp.renameTo(childDest)) {
+                        tmp.copyTo(childDest, overwrite = true)
+                        tmp.delete()
+                    }
+                } catch (e: IOException) {
+                    tmp.delete()
+                    throw IOException("failed to copy bundled asset $childAsset: ${e.message}", e)
+                }
             }
         }
     }
@@ -203,6 +314,24 @@ open class TtsModelInstaller(
         const val DEFAULT_ROOT_DIR = "offline-models"
         private const val ACOUSTIC_MODEL_FILE = "model-steps-3.onnx"
         private const val VOCODER_FILE = "vocos-22khz-univ.onnx"
+
+        /**
+         * Text/rule resource files bundled in the APK at
+         * `assets/models/tts/zh/<name>` and copied to [modelDir] at
+         * first install (see [copyBundledAssets]). sherpa-onnx
+         * Matcha-zh-baker OfflineTts config Validate requires ALL of
+         * these to be present at the same modelDir as the ONNX files;
+         * missing any one of them produces `Rule fst '<path>' does
+         * not exist` and `generate()` segfaults (Bug 7b).
+         */
+        val BUNDLED_ASSET_FILES: List<String> = listOf(
+            "lexicon.txt",
+            "tokens.txt",
+            "phone.fst",
+            "date.fst",
+            "number.fst",
+        )
+
         private const val BUFFER_SIZE = 1024 * 1024
         private const val FSYNC_INTERVAL = 5L * BUFFER_SIZE
 

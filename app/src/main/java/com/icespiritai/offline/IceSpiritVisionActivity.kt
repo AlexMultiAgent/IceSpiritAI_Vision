@@ -66,6 +66,13 @@ class IceSpiritVisionActivity : ComponentActivity() {
             filesDir = applicationContext.filesDir,
             scope = appScope,
             jsonUrl = BuildConfig.TTS_MODEL_JSON_URL,
+            // Bug 7b fix (v0.1.63): TtsModelInstaller needs AssetManager
+            // to copy the 5 bundled text/rule assets (lexicon.txt /
+            // tokens.txt / phone.fst / date.fst / number.fst) into
+            // filesDir/offline-models/zh/ at first install. ONNX stays
+            // network-downloaded from Gitea (see class KDoc on
+            // TtsModelInstaller for the hybrid pattern).
+            assets = applicationContext.assets,
         )
         val sherpaTtsEngine = SherpaTtsEngine(
             context = applicationContext,

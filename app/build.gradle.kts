@@ -73,8 +73,8 @@ android {
         applicationId = "com.icespiritai.vision"
         minSdk = 26
         targetSdk = 37
-        versionCode = 62
-        versionName = "0.1.62"
+        versionCode = 63
+        versionName = "0.1.63"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -338,12 +338,17 @@ android {
         // libs (libsherpa-onnx-c-api.so + libsherpa-onnx-cxx-api.so).
         // Both profiles ship them once sherpa-onnx is a top-level dep.
         //
-        // libonnxruntime.so conflict (v0.1.60): both
+        // libonnxruntime.so conflict (Bug 7 fix v0.1.63): both
         // `onnxruntime-android` (PaddleOCR OCR) and `sherpa-onnx`
         // (Matcha/Vocos TTS) bundle the same `.so`. We pickFirst; AGP
         // picks whichever it encounters first (no deterministic order
-        // between AAR transitive inputs). Both builds are ABI-compatible
-        // C-API 1.21.1, so OCR + TTS should load either one.
+        // between AAR transitive inputs). BOTH .so must expose the
+        // SAME versioned-symbol version (ELF `@@VERS_1.X`); the loader
+        // rejects a `@@VERS_1.27.1` request against a `@@VERS_1.21.1`
+        // definition with "cannot locate symbol OrtGetApiBase" at
+        // OfflineTts.<clinit>. Current pin: onnxruntime-android:1.24.3
+        // + sherpa-onnx:v1.13.3 — both expose `@@VERS_1.24.3`. See
+        // memory feedback-onnxruntime-abi-version-mismatch.
         jniLibs {
             useLegacyPackaging = true
             // AGP merges native libs from ALL deps; if two deps ship the

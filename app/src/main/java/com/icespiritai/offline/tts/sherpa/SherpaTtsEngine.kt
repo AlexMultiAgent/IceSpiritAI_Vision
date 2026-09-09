@@ -27,13 +27,18 @@ import java.io.File
  * `speak(text, utteranceId, onDone)`, translate uses `synthesize()` →
  * `SynthesisResult`).
  *
- * Asset layout — model installed under
- * `filesDir/offline-models/tts/zh/`:
- * - `model-steps-3.onnx` (acoustic, ~75 MB)
- * - `vocos-22khz-univ.onnx` (vocoder, ~54 MB)
- * - text resources (tokens.txt, lexicon.txt, phone.fst, date.fst,
- *   number.fst, espeak-ng-data/, dict/) live in `assets/models/tts/zh/`
- *   and are copied out by [OfflineTts] at config build time.
+ * Asset layout — model installed under `filesDir/offline-models/zh/`
+ * (hybrid: ONNX downloaded, text/rule resources bundled — Bug 7b fix v0.1.63):
+ * - `model-steps-3.onnx` (acoustic, ~75 MB) — downloaded from Gitea
+ *   `giteaadmin/Model` release `sherpa-onnx-matcha-zh-baker`
+ * - `vocos-22khz-univ.onnx` (vocoder, ~54 MB) — same source
+ * - text/rule resources (tokens.txt / lexicon.txt / phone.fst /
+ *   date.fst / number.fst, ~1.6 MB) — bundled in the APK at
+ *   `assets/models/tts/zh/` and copied to the modelDir by
+ *   [com.icespiritai.offline.tts.TtsModelInstaller.copyBundledAssets]
+ *   at first install. All 5 must be present alongside the ONNX files
+ *   or `OfflineTts` config Validate fails with
+ *   `Rule fst '<path>' does not exist` and `generate()` segfaults.
  *
  * Lifecycle:
  * - `init()` is a no-op (no async native init). OfflineTts is built
@@ -228,8 +233,14 @@ open class SherpaTtsEngine(
                             vocoder = File(modelDir, VOCODER_FILE).absolutePath,
                             lexicon = File(modelDir, "lexicon.txt").absolutePath,
                             tokens = File(modelDir, "tokens.txt").absolutePath,
+                            // Bug 7c (v0.1.63): espeak-ng-data MUST exist at dataDir or
+                            // sherpa-onnx Validate emits a warning then generate() segfaults
+                            // on the null espeak lookup. We bundle the 2.2 MB Chinese-only
+                            // subset (phontab + phonindex + phondata + intonations +
+                            // cmn_dict + lang/sit/*) in the APK at
+                            // `assets/models/tts/zh/espeak-ng-data/` and copyBundledAssets()
+                            // walks it into modelDir at install time.
                             dataDir = File(modelDir, "espeak-ng-data").absolutePath,
-                            dictDir = File(modelDir, "dict").absolutePath,
                         ),
                         numThreads = 2,
                         debug = false,
