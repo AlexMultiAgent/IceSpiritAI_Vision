@@ -6,6 +6,7 @@ import com.icespiritai.offline.tts.EngineInfo
 import com.icespiritai.offline.tts.EngineStatus
 import com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE
 import com.icespiritai.offline.tts.TtsEngine
+import com.icespiritai.offline.tts.TtsModelInstaller
 import com.k2fsa.sherpa.onnx.GeneratedAudio
 import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
@@ -173,9 +174,30 @@ open class SherpaTtsEngine(
         }
     }
 
-    private fun isModelInstalled(): Boolean =
-        File(modelDir, ACOUSTIC_MODEL_FILE).isFile &&
-            File(modelDir, VOCODER_FILE).isFile
+    /**
+     * True iff ALL files OfflineTts needs to generate without segfaulting
+     * are present on disk: 2 ONNX + 5 text/rule resources + 9
+     * espeak-ng-data files. See [com.icespiritai.offline.tts.TtsModelInstaller.isModelInstalled]
+     * for the rationale — this is the same set, kept in lockstep so the
+     * picker's Installed / NeedsDownload badge matches what speak()
+     * would actually attempt at runtime.
+     *
+     * v0.1.65 hardening: pre-fix this only checked the 2 ONNX files,
+     * which silently passed through partial installs where espeak-ng-data
+     * was missing → `OfflineTts_generateImpl+268` null deref on first
+     * playback (Bug 7c root cause). Now any missing file routes speak()
+     * into the early-return + onDone branch instead of JNI.
+     */
+    private fun isModelInstalled(): Boolean {
+        for (name in REQUIRED_MODEL_FILES) {
+            if (!File(modelDir, name).isFile) return false
+        }
+        val espeakDir = File(modelDir, TtsModelInstaller.ESPEAK_DATA_DIR)
+        for (name in TtsModelInstaller.BUNDLED_ESPEAK_FILES) {
+            if (!File(espeakDir, name).isFile) return false
+        }
+        return true
+    }
 
     /**
      * Production wires a real [PcmAudioPlayer] backed by AudioTrack;
@@ -270,5 +292,23 @@ open class SherpaTtsEngine(
         private const val TAG = "SherpaTtsEngine"
         private const val ACOUSTIC_MODEL_FILE = "model-steps-3.onnx"
         private const val VOCODER_FILE = "vocos-22khz-univ.onnx"
+
+        /**
+         * Files sherpa-onnx Matcha-zh-baker OfflineTts needs at [modelDir]
+         * (without the `espeak-ng-data/` subtree, which is checked
+         * separately via [TtsModelInstaller.BUNDLED_ESPEAK_FILES]). 2 ONNX
+         * + 5 text/rule resources (lexicon / tokens / 3× .fst). Missing any
+         * one of these triggers `Rule fst '<path>' does not exist` then
+         * segfault at OfflineTts_generateImpl+268 (Bug 7b, hardened v0.1.65).
+         */
+        val REQUIRED_MODEL_FILES: List<String> = listOf(
+            ACOUSTIC_MODEL_FILE,
+            VOCODER_FILE,
+            "lexicon.txt",
+            "tokens.txt",
+            "phone.fst",
+            "date.fst",
+            "number.fst",
+        )
     }
 }

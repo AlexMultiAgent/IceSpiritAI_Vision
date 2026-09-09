@@ -80,13 +80,29 @@ class TtsModelInstallerTest {
         for (name in TtsModelInstaller.BUNDLED_ASSET_FILES) {
             File(installer.modelDir, name).writeBytes(ByteArray(10))
         }
-        // Bug 7c: espeak-ng-data core files at modelDir/espeak-ng-data/
-        val espeakDir = File(installer.modelDir, "espeak-ng-data").apply { mkdirs() }
-        File(espeakDir, "phontab").writeBytes(ByteArray(10))
-        File(espeakDir, "phonindex").writeBytes(ByteArray(10))
-        File(espeakDir, "phondata").writeBytes(ByteArray(10))
-        File(espeakDir, "intonations").writeBytes(ByteArray(10))
+        // Bug 7c + v0.1.65 hardening: ALL 9 espeak-ng-data files must
+        // be present (partial install → null deref at
+        // OfflineTts_generateImpl+268).
+        plantAllEspeakFiles()
         assertTrue(installer.isModelInstalled())
+    }
+
+    @Test fun `isModelInstalled is false when espeak-ng-data files are missing`() {
+        installer.modelDir.mkdirs()
+        File(installer.modelDir, "model-steps-3.onnx").writeBytes(ByteArray(10))
+        File(installer.modelDir, "vocos-22khz-univ.onnx").writeBytes(ByteArray(10))
+        for (name in TtsModelInstaller.BUNDLED_ASSET_FILES) {
+            File(installer.modelDir, name).writeBytes(ByteArray(10))
+        }
+        // Plant 8 of 9 — drop the last one and verify integrity gate.
+        val espeakDir = File(installer.modelDir, TtsModelInstaller.ESPEAK_DATA_DIR).apply { mkdirs() }
+        for (name in TtsModelInstaller.BUNDLED_ESPEAK_FILES.dropLast(1)) {
+            val f = File(espeakDir, name)
+            f.parentFile?.mkdirs()
+            f.writeBytes(ByteArray(10))
+        }
+        assertFalse("missing ${TtsModelInstaller.BUNDLED_ESPEAK_FILES.last()} must fail integrity check",
+            installer.isModelInstalled())
     }
 
     @Test fun `downloadModel copies bundled assets downloads ONNX and reports Done`() = runTest(testDispatcher) {
@@ -105,10 +121,12 @@ class TtsModelInstallerTest {
             val f = File(installer.modelDir, name)
             assertTrue("bundled asset $name missing", f.isFile)
         }
-        // Bug 7c: espeak-ng-data directory tree planted
-        val espeakDir = File(installer.modelDir, "espeak-ng-data")
+        // Bug 7c + v0.1.65 hardening: full espeak-ng-data subtree (9
+        // files) planted by copyBundledAssets() — partial copy would
+        // silently leave the engine routing into the native null deref.
+        val espeakDir = File(installer.modelDir, TtsModelInstaller.ESPEAK_DATA_DIR)
         assertTrue("espeak-ng-data dir missing", espeakDir.isDirectory)
-        for (name in ESPEAK_CORE_FILES) {
+        for (name in TtsModelInstaller.BUNDLED_ESPEAK_FILES) {
             val f = File(espeakDir, name)
             assertTrue("espeak-ng-data/$name missing", f.isFile)
         }
@@ -138,15 +156,16 @@ class TtsModelInstallerTest {
     }
 
     @Test fun `downloadModel is idempotent when already installed`() = runTest(testDispatcher) {
-        // Pre-populate modelDir with all required files (incl. Bug 7c espeak-ng-data)
+        // Pre-populate modelDir with all required files (incl. v0.1.65
+        // hardening — ALL 9 espeak-ng-data files must be present for
+        // isModelInstalled() to short-circuit)
         installer.modelDir.mkdirs()
         File(installer.modelDir, "model-steps-3.onnx").writeBytes(ByteArray(10))
         File(installer.modelDir, "vocos-22khz-univ.onnx").writeBytes(ByteArray(10))
         for (name in TtsModelInstaller.BUNDLED_ASSET_FILES) {
             File(installer.modelDir, name).writeBytes(ByteArray(10))
         }
-        val espeakDir = File(installer.modelDir, "espeak-ng-data").apply { mkdirs() }
-        File(espeakDir, "phontab").writeBytes(ByteArray(10))
+        plantAllEspeakFiles()
         // Wipe fake server — downloadModel must NOT touch network when
         // isModelInstalled() returns true
         installer.fakeServer.clear()
@@ -159,6 +178,22 @@ class TtsModelInstallerTest {
         // ONNX partials must NOT exist (no download attempted)
         assertFalse(File(installer.modelDir, "model-steps-3.onnx.partial").exists())
         assertFalse(File(installer.modelDir, "vocos-22khz-univ.onnx.partial").exists())
+    }
+
+    /**
+     * Plant all 9 espeak-ng-data files under modelDir/espeak-ng-data/ as
+     * canned bytes. Used by tests that need isModelInstalled() to pass.
+     * `parentFile?.mkdirs()` is required because [TtsModelInstaller.BUNDLED_ESPEAK_FILES]
+     * includes nested paths (`lang/sit/cmn`, `lang/sit/cmn-Latn-pinyin`)
+     * whose parent directories don't exist yet on a fresh modelDir.
+     */
+    private fun plantAllEspeakFiles() {
+        val espeakDir = File(installer.modelDir, TtsModelInstaller.ESPEAK_DATA_DIR).apply { mkdirs() }
+        for (name in TtsModelInstaller.BUNDLED_ESPEAK_FILES) {
+            val f = File(espeakDir, name)
+            f.parentFile?.mkdirs()
+            f.writeBytes(ByteArray(10))
+        }
     }
 
     @Test fun `sidecar meta round trip`() {
@@ -239,11 +274,17 @@ class TtsModelInstallerTest {
                 for (name in TtsModelInstaller.BUNDLED_ASSET_FILES) {
                     File(modelDir, name).writeBytes(ByteArray(32) { 0x33 })
                 }
-                // Bug 7c: espeak-ng-data subdirectory tree
-                val espeakDir = File(modelDir, "espeak-ng-data")
+                // Bug 7c + v0.1.65 hardening: plant ALL 9 espeak-ng-data
+                // files so the test exercises the full integrity gate
+                // (not just the 4 core ones sherpa-onnx Validate checks).
+                // parentFile?.mkdirs() is required for nested paths like
+                // lang/sit/cmn whose parent dirs don't exist yet.
+                val espeakDir = File(modelDir, TtsModelInstaller.ESPEAK_DATA_DIR)
                 espeakDir.mkdirs()
-                for (name in ESPEAK_CORE_FILES) {
-                    File(espeakDir, name).writeBytes(ByteArray(16) { 0x55 })
+                for (name in TtsModelInstaller.BUNDLED_ESPEAK_FILES) {
+                    val f = File(espeakDir, name)
+                    f.parentFile?.mkdirs()
+                    f.writeBytes(ByteArray(16) { 0x55 })
                 }
             }
         }
@@ -263,16 +304,5 @@ class TtsModelInstallerTest {
     companion object {
         private const val ACOUSTIC_URL = "http://stub/model-steps-3.onnx"
         private const val VOCODER_URL = "http://stub/vocos-22khz-univ.onnx"
-
-        // Bug 7c: sherpa-onnx Matcha-zh-baker Validate requires these 4
-        // core files at data_dir; missing any one of them makes generate()
-        // segfault on the null espeak lookup. We plant at least these 4
-        // (the production copy walks the full subdirectory tree).
-        private val ESPEAK_CORE_FILES = listOf(
-            "phontab",
-            "phonindex",
-            "phondata",
-            "intonations",
-        )
     }
 }

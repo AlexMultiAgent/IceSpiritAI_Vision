@@ -1,5 +1,21 @@
 # 用户更新日志
 
+## v0.1.65 — 2026-09-09
+
+TTS 本地引擎 integrity gate 强化(espeak-ng-data 9 文件齐备性校验)。
+
+### 修复
+
+- **Bug 7c hardening(防 partial install 复现)**:v0.1.63 修复了「speech 文本/规则资源缺失」导致 native SEGV 的根因,但 `SherpaTtsEngine.isModelInstalled()` 只校验 2 个 ONNX 文件,未校验 `espeak-ng-data/` 子目录的 9 个文件。若 install 流程中途打断(磁盘满 / 用户在 `Downloading` 状态杀进程 / future 多 APK 场景下手动清理),picker 会显示「已安装」但实际 `OfflineTts` 仍会在 `generate()` 内部走 null espeak lookup → `OfflineTts_generateImpl+268` 同样闪退。v0.1.65 把 9 个 espeak 文件 (`phontab` / `phonindex` / `phondata` / `phondata-manifest` / `intonations` / `cmn_dict` / `en_dict` / `lang/sit/cmn` / `lang/sit/cmn-Latn-pinyin`) 全部纳入 `isModelInstalled()`,任一缺失 → speak() 走 early-return + onDone,不触发 native;同时 picker 的 Installed 状态与 speak() 实际可执行能力严格保持一致(不再误显「已安装」)。
+
+### 变更
+
+- 无功能/规则变更;本次仅 defensive hardening,沿用 v0.1.64 规则库版本(ad_signage v20 / food_label v4)。
+
+### 验证
+
+- `./gradlew testDebugUnitTest` 全过:新增 `isModelInstalled is false when espeak-ng-data files are missing`(TtsModelInstaller)+ `speak gracefully skips when espeak-ng-data missing` + `supportedChineseEngines returns NeedsDownload when espeak-ng-data missing`(SherpaTtsEngine) 三个回归测试;旧测试中 plant 4 个 espeak 文件的假数据已升级为 plant 全 9 个。
+
 ## v0.1.64 — 2026-09-09
 
 规则库数据质量修正 + 14 条广告业务违规判定规则扩展(广告招牌 tab 仍然唯一 UI tab)。

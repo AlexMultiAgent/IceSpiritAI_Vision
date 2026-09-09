@@ -79,11 +79,31 @@ open class TtsModelInstaller(
      * `Rule fst '<path>' does not exist` and `generate()` segfaults
      * (Bug 7b root cause).
      */
+    /**
+     * True iff ALL required files exist on disk: 2 ONNX + 5 text/rule
+     * resources + 9 espeak-ng-data files. The text/rule files are tiny
+     * (1.6 MB total) and ship bundled in the APK at
+     * `assets/models/tts/zh/`; the espeak-ng-data tree (2.2 MB) ships at
+     * `assets/models/tts/zh/espeak-ng-data/`. [copyBundledAssets] plants
+     * both at [modelDir] at first install.
+     *
+     * Without ALL 16 files present sherpa-onnx OfflineTts config
+     * Validate fails with `Rule fst '<path>' does not exist` (Bug 7b)
+     * or `phontab does not exist` (Bug 7c) and `generate()` segfaults
+     * at `OfflineTts_generateImpl+268` — null deref on the missing
+     * espeak lookup. Integrity check guards against partial install
+     * states that pass the 7-file check but still route into the
+     * native null deref path.
+     */
     fun isModelInstalled(): Boolean {
         if (!File(modelDir, ACOUSTIC_MODEL_FILE).isFile) return false
         if (!File(modelDir, VOCODER_FILE).isFile) return false
         for (name in BUNDLED_ASSET_FILES) {
             if (!File(modelDir, name).isFile) return false
+        }
+        val espeakDir = File(modelDir, ESPEAK_DATA_DIR)
+        for (name in BUNDLED_ESPEAK_FILES) {
+            if (!File(espeakDir, name).isFile) return false
         }
         return true
     }
@@ -330,6 +350,40 @@ open class TtsModelInstaller(
             "phone.fst",
             "date.fst",
             "number.fst",
+        )
+
+        /**
+         * Subdirectory of [modelDir] that holds the bundled espeak-ng-data
+         * tree. sherpa-onnx Matcha-zh-baker passes this path as
+         * `data_dir` to its internal espeak lookup; missing or partial
+         * content produces `phontab does not exist` then SIGSEGV at
+         * OfflineTts_generateImpl+268 (Bug 7c, hardened v0.1.65).
+         */
+        const val ESPEAK_DATA_DIR = "espeak-ng-data"
+
+        /**
+         * Bug 7c (v0.1.63) + v0.1.65 hardening: sherpa-onnx Matcha-zh-baker
+         * [com.k2fsa.sherpa.onnx.OfflineTts.generate] requires ALL 9 of
+         * these files under [ESPEAK_DATA_DIR]. Missing any one of them
+         * routes generate() into a null espeak lookup → SIGSEGV.
+         *
+         * The full archive is bundled in the APK at
+         * `assets/models/tts/zh/espeak-ng-data/` (2.2 MB) and
+         * recursively walked into modelDir by [copyBundledAssets]. This
+         * list is also the source of truth for [isModelInstalled]'s
+         * integrity check so a partial / corrupt install cannot route
+         * into the native null deref.
+         */
+        val BUNDLED_ESPEAK_FILES: List<String> = listOf(
+            "phontab",
+            "phonindex",
+            "phondata",
+            "phondata-manifest",
+            "intonations",
+            "cmn_dict",
+            "en_dict",
+            "lang/sit/cmn",
+            "lang/sit/cmn-Latn-pinyin",
         )
 
         private const val BUFFER_SIZE = 1024 * 1024
