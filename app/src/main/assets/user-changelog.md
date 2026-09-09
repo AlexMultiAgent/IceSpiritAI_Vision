@@ -1,5 +1,26 @@
 # 用户更新日志
 
+## v0.1.67 — 2026-09-09
+
+UI 严重度/字体/Info 配色/Loading skeleton 四项 P1+P2 审计收口。广告招牌 tab 仍是唯一 UI tab。
+
+### 修复
+
+- **Type.kt 字体接入 EditorialFontFamily**:v0.1.41 之前 11 个 TextStyle 全部无 fontFamily,DisclaimerDialog.kt KDoc 写的「Source Han Serif SC Bold 经 MaterialTheme 透传」是空话 — 实际渲染 Roboto。v0.1.67 新增 `EditorialFontFamily = FontFamily.Serif`(平台衬线 = AOSP / EMUI 上的 Noto Serif),并把 `fontFamily = EditorialFontFamily` 加到 11 个 TextStyle,design intent 与渲染产物首次对齐。真正的 Source Han Serif SC OTF 体积 10–24 MB / 14 MB VF subset,在不显著膨胀 APK(目前 58 MB)的前提下,通过镜像反复失败(CN 网络到 github.com raw 在 19 s 处稳定 connection reset),本次走系统衬线 fallback + drop-in 升级路径;`Type.kt` KDoc 详细记录「投放 `res/font/source_han_serif_sc.ttf` 后只需替换 4 行 FontFamily body」的迁移路径。
+- **Color.kt Info 桶去家族蓝**:之前 DarkIceChatInfo = `0xFF60A5FA`(Blue 400)/ LightIceChatInfo = `0xFF2563EB`(Blue 600),命中 memory `feedback-dual-theme.md`「不要家族蓝」红线。v0.1.67 复用 slate-navy family 调色板的 AccentSecondary token — DarkIceChatInfo = `0xFF7DA4BD`(= DarkIceChatAccentSecondary),LightIceChatInfo = `0xFF5A7090`(= LightIceChatAccentSecondary);InfoContainer / OnInfoContainer 同步换深一档海军蓝 `0xFF1E3A5F` 保证 contrast。`ColorTokensTest` 4 个 Info pin 同步更新;SeverityColorsTest 不受影响(只引用 Info token 名,不 pin RGB)。
+- **HomeScreen Loading 分支接进 LoadingOverlay**:v0.1.45 editorial-redesign 分支写了 shimmer 骨架屏 + 三张幽灵 hit-card 的 `LoadingOverlay`,但 commit `ad54b4b` 从未 merge 进 main,Loading 分支一直停在「一行 phase text」。v0.1.67 真正把 `LoadingOverlay(phase = s.stage, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))` 接进 `HomeScreen.kt:281` 的 `is AnalysisState.Loading ->` 分支;`loadingLabelRes` helper 保留(LoadingOverlay.kt 内部还要消费它),LoadingOverlay KDoc 47-49 行 stale 「uncalled by any production code」注释同期改写。
+- **UpdateDetailScreenTest 新增**:settings/ 之前唯一漏测试的可导航屏幕,v0.1.67 补 Robolectric 测试覆盖 5 个分支 — top-bar title 渲染 / 返回箭头回调 / Idle 态 no-pending 消息 / UpdateAvailable 态 banner + changelog 行渲染 / 非 UpdateAvailable 其它态(Checking 显式 pin)fallback。`UpdateRepository._state` 通过反射设值,`@After` 复位 Idle 防止污染同 JVM 的 UpdateSectionTest。
+
+### 变更
+
+- **无规则库 / TTS 模型变更**;本次仅 UI 完整性 + 编辑性收口,沿用 v0.1.66 规则库版本(ad_signage v20 / food_label v4)。
+- **APK 体积**:无显著变化 — EditorialFontFamily 走系统衬线、不下载 OTF,实际产物大小与 v0.1.66 同量级。
+
+### 验证
+
+- `./gradlew testDebugUnitTest` 全过:UpdateDetailScreenTest 5 个新测试 + ColorTokensTest 4 个 Info pin 更新 + 现有 v0.1.66 测试稳定(835 + 5 = 840 个用例,0 fail,2 skip)。
+- `ChangelogScreenTest` shipping-version pin 同步到 v0.1.67。
+
 ## v0.1.66 — 2026-09-09
 
 UI 严重度契约一致性 + SeverityChip 可读性(WCAG AA)修复。广告招牌 tab 仍是唯一 UI tab。

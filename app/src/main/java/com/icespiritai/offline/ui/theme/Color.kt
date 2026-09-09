@@ -51,10 +51,18 @@ val DarkIceChatOnPositiveContainer = Color(0xFFBBF7D0)
 val DarkIceChatOnPositive = Color(0xFF08131B)
 
 // Info — 4-token full role (didn't exist before Phase 3.1)
-val DarkIceChatInfo = Color(0xFF60A5FA)
+// v0.1.67 audit fix: previously `0xFF60A5FA` (Blue 400) / `0xFF2563EB`
+// (Blue 600) — those are pure Material Blue and conflict with the project's
+// memory [feedback-dual-theme] rule "不要家族蓝". The Info accent now
+// reuses the slate-navy `AccentSecondary` family token, keeping Info
+// visually distinct from Accent (`0xFFA8C0D0` / `0xFF1F3A52`) while
+// staying inside the editorial slate palette. Container / onContainer
+// stay tuned to the new accent (dark navy on dark, dark navy text on
+// pale blue-tint in light).
+val DarkIceChatInfo = Color(0xFF7DA4BD)
 val DarkIceChatOnInfo = Color(0xFF08131B)
-val DarkIceChatInfoContainer = Color(0xFF1E3A8A)
-val DarkIceChatOnInfoContainer = Color(0xFFBFDBFE)
+val DarkIceChatInfoContainer = Color(0xFF1E3A5F)
+val DarkIceChatOnInfoContainer = Color(0xFFD6E2EC)
 
 // Light scheme (Day — soft white, archive / export)
 val LightIceChatBg = Color(0xFFF4F8FB)
@@ -90,7 +98,7 @@ val LightIceChatOnPositiveContainer = Color(0xFF14532D)
 val LightIceChatOnPositive = Color(0xFFFFFFFF)
 
 // Info — 4-token full role (didn't exist before Phase 3.1)
-val LightIceChatInfo = Color(0xFF2563EB)
+val LightIceChatInfo = Color(0xFF5A7090)
 val LightIceChatOnInfo = Color(0xFFFFFFFF)
-val LightIceChatInfoContainer = Color(0xFFDBEAFE)
-val LightIceChatOnInfoContainer = Color(0xFF1E3A8A)
+val LightIceChatInfoContainer = Color(0xFFD6E2EC)
+val LightIceChatOnInfoContainer = Color(0xFF1E3A5F)

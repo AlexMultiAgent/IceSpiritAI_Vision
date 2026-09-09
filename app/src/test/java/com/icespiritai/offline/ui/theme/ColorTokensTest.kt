@@ -75,12 +75,12 @@ class ColorTokensTest {
     @Test fun darkIceChatOnPositiveIsPinned() = assertEquals(Color(0xFF08131B), DarkIceChatOnPositive)
     @Test fun lightIceChatOnPositiveIsPinned() = assertEquals(Color(0xFFFFFFFF), LightIceChatOnPositive)
 
-    @Test fun darkIceChatInfoIsPinned() = assertEquals(Color(0xFF60A5FA), DarkIceChatInfo)
+    @Test fun darkIceChatInfoIsPinned() = assertEquals(Color(0xFF7DA4BD), DarkIceChatInfo)
     @Test fun darkIceChatOnInfoIsPinned() = assertEquals(Color(0xFF08131B), DarkIceChatOnInfo)
-    @Test fun darkIceChatInfoContainerIsPinned() = assertEquals(Color(0xFF1E3A8A), DarkIceChatInfoContainer)
-    @Test fun darkIceChatOnInfoContainerIsPinned() = assertEquals(Color(0xFFBFDBFE), DarkIceChatOnInfoContainer)
-    @Test fun lightIceChatInfoIsPinned() = assertEquals(Color(0xFF2563EB), LightIceChatInfo)
+    @Test fun darkIceChatInfoContainerIsPinned() = assertEquals(Color(0xFF1E3A5F), DarkIceChatInfoContainer)
+    @Test fun darkIceChatOnInfoContainerIsPinned() = assertEquals(Color(0xFFD6E2EC), DarkIceChatOnInfoContainer)
+    @Test fun lightIceChatInfoIsPinned() = assertEquals(Color(0xFF5A7090), LightIceChatInfo)
     @Test fun lightIceChatOnInfoIsPinned() = assertEquals(Color(0xFFFFFFFF), LightIceChatOnInfo)
-    @Test fun lightIceChatInfoContainerIsPinned() = assertEquals(Color(0xFFDBEAFE), LightIceChatInfoContainer)
-    @Test fun lightIceChatOnInfoContainerIsPinned() = assertEquals(Color(0xFF1E3A8A), LightIceChatOnInfoContainer)
+    @Test fun lightIceChatInfoContainerIsPinned() = assertEquals(Color(0xFFD6E2EC), LightIceChatInfoContainer)
+    @Test fun lightIceChatOnInfoContainerIsPinned() = assertEquals(Color(0xFF1E3A5F), LightIceChatOnInfoContainer)
 }

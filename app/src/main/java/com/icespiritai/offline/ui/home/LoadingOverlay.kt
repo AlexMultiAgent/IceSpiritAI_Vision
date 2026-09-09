@@ -42,13 +42,12 @@ fun loadingLabelRes(stage: AnalysisState.Loading.Stage): Int = when (stage) {
  * bars, plus a phase label beneath. The visual intent is "results are
  * loading" — not a spinner.
  *
- * Replaces the plain `Text(stringResource(loadingLabelRes(...)))` slot in
- * HomeScreen's Loading branch (Task 18 wires the actual call site). For now
- * the Composable is structurally complete but uncalled by any production
- * code — `HomeScreen.kt:178` still uses [loadingLabelRes] directly.
+ * v0.1.67: now called from HomeScreen's Loading branch (was the structural
+ * skeleton left over from v0.1.45's editorial-redesign branch — production
+ * wiring finally landed in this release).
  *
- * Callers are expected to pass `Modifier.weight(1f).fillMaxWidth()` so the
- * overlay occupies the same vertical slot as the eventual `ResultPanel`.
+ * Callers are expected to pass `Modifier.fillMaxWidth().padding(horizontal = 16.dp)`
+ * so the overlay occupies the same vertical slot as the eventual `ResultPanel`.
  */
 @Composable
 fun LoadingOverlay(

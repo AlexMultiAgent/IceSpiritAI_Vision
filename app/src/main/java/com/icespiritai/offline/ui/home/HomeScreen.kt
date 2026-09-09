@@ -276,10 +276,15 @@ fun HomeScreen(
                 // is the single place that states the capture instruction.
             }
             is AnalysisState.Loading -> {
-                Text(
-                    text = stringResource(loadingLabelRes(s.stage)),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(16.dp),
+                // v0.1.67: replace inline phase-text with the v0.1.45-era
+                // LoadingOverlay skeleton (3 shimmer hit-card ghosts + phase
+                // label). Pre-fix this branch emitted a one-liner; the visual
+                // intent is "results are loading", not "spinner".
+                // See LoadingOverlay.kt KDoc lines 47-49 for the prior
+                // "uncalled by any production code" history.
+                LoadingOverlay(
+                    phase = s.stage,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 )
             }
             is AnalysisState.Complete -> {

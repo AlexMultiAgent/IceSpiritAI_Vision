@@ -17,7 +17,12 @@ import com.icespiritai.offline.R
  * 首次启动免责声明对话框(spec §6.4)。
  *
  * - AlertDialog (Material3),surfaceContainerHigh 背景,16dp corner
- * - title: 使用提示(titleLarge + Source Han Serif SC Bold,经 MaterialTheme 透传)
+ * - title: 使用提示(titleLarge,经 MaterialTheme → EditorialFontFamily 透传)
+ *   v0.1.67: 之前 KDoc 写「Source Han Serif SC Bold 经 MaterialTheme 透传」是空话 —
+ *   Type.kt 11 个 TextStyle 全部无 fontFamily,实际渲染 Roboto。v0.1.67 接入
+ *   EditorialFontFamily (= FontFamily.Serif),给 Latin 衬线 + CJK 走系统 CJK
+ *   fallback 的 Editorial 观感;真正的 Source Han Serif SC OTF 留待后续 build
+ *   pipeline 单独 step 投放 res/font/source_han_serif_sc.ttf。
  * - body: 3 段 bodyMedium
  * - 唯一 positive button "我了解",click → onAcknowledge()
  * - setCancelable(false) 通过 properties.dismissOnBackPress / dismissOnClickOutside 实现
