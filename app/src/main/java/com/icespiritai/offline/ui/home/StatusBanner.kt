@@ -32,6 +32,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -107,6 +108,7 @@ fun StatusBanner(
             .fillMaxWidth()
             .background(bg)
             .padding(horizontal = 16.dp, vertical = 6.dp)
+            .testTag(HomeScreenTestTags.STATUS_BANNER)
             .semantics { contentDescription = statusBannerA11y(kind, violationCount, warningCount, infoCount) },
     ) {
         when (kind) {
@@ -176,6 +178,7 @@ private fun KpiRow(
             onBg = onBg,
             tooltipText = stringResource(R.string.kpi_tooltip_violation),
             icon = { Icon(Icons.Default.WarningAmber, contentDescription = null, tint = accent) },
+            cellTag = HomeScreenTestTags.KPI_VIOLATION,
         )
         KpiCell(
             count = warningCount,
@@ -184,6 +187,7 @@ private fun KpiRow(
             onBg = onBg,
             tooltipText = stringResource(R.string.kpi_tooltip_warning),
             icon = { Icon(Icons.Default.WarningAmber, contentDescription = null, tint = accent) },
+            cellTag = HomeScreenTestTags.KPI_WARNING,
         )
         KpiCell(
             count = infoCount,
@@ -192,6 +196,7 @@ private fun KpiRow(
             onBg = onBg,
             tooltipText = stringResource(R.string.kpi_tooltip_info),
             icon = { Icon(Icons.Default.Info, contentDescription = null, tint = accent) },
+            cellTag = HomeScreenTestTags.KPI_INFO,
         )
     }
 }
@@ -217,6 +222,7 @@ private fun KpiCell(
     onBg: Color,
     tooltipText: String,
     icon: @Composable () -> Unit,
+    cellTag: String,
 ) {
     val tooltipState = rememberTooltipState(isPersistent = true)
     val coroutineScope = rememberCoroutineScope()
@@ -233,7 +239,9 @@ private fun KpiCell(
         state = tooltipState,
     ) {
         Row(
-            modifier = Modifier.clickable {
+            modifier = Modifier
+                .testTag(cellTag)
+                .clickable {
                 // show()/dismiss() are suspend — must launch from a
                 // coroutineScope. The toggle pattern: hide if visible,
                 // otherwise show. Persistent tooltip stays until user

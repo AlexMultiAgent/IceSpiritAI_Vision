@@ -31,6 +31,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -367,13 +368,18 @@ private fun StatusBannerFor(state: AnalysisState) {
 }
 
 @Composable
-private fun ErrorPanel(
+@VisibleForTesting
+internal fun ErrorPanel(
     code: ErrorCode,
     retryable: Boolean,
     onRetry: () -> Unit,
     onReset: () -> Unit,
 ) {
-    Column(modifier = Modifier.padding(16.dp)) {
+    Column(
+        modifier = Modifier
+            .padding(16.dp)
+            .testTag(HomeScreenTestTags.ERROR_PANEL),
+    ) {
         Text(
             text = stringResource(errorMessageRes(code)),
             color = MaterialTheme.colorScheme.error,
@@ -381,11 +387,17 @@ private fun ErrorPanel(
         )
         Row(modifier = Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (retryable) {
-                Button(onClick = onRetry) { Text(stringResource(R.string.action_retry)) }
+                Button(
+                    onClick = onRetry,
+                    modifier = Modifier.testTag(HomeScreenTestTags.ERROR_PANEL_RETRY),
+                ) { Text(stringResource(R.string.action_retry)) }
             } else {
                 // Non-retryable (packaging defect, e.g. missing rules): the only
                 // useful escape hatch is going back to pick a new image.
-                TextButton(onClick = onReset) { Text(stringResource(R.string.action_back)) }
+                TextButton(
+                    onClick = onReset,
+                    modifier = Modifier.testTag(HomeScreenTestTags.ERROR_PANEL_BACK),
+                ) { Text(stringResource(R.string.action_back)) }
             }
         }
     }

@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -100,7 +101,9 @@ fun CaptureBar(
                         )
                     }
                 },
-                modifier = Modifier.semantics { contentDescription = pickA11y },
+                modifier = Modifier
+                    .testTag(HomeScreenTestTags.CAPTURE_BAR_PICK)
+                    .semantics { contentDescription = pickA11y },
             )
         }
 
@@ -127,7 +130,9 @@ fun CaptureBar(
                             )
                         }
                     },
-                    modifier = Modifier.semantics { contentDescription = exportA11y },
+                    modifier = Modifier
+                        .testTag(HomeScreenTestTags.CAPTURE_BAR_EXPORT)
+                        .semantics { contentDescription = exportA11y },
                 )
             }
         }
@@ -144,7 +149,9 @@ fun CaptureBar(
                 // of the bar (per v0.1.31 user spec). 3-button layout: weight
                 // 1f above already bounds it; fillMaxWidth stays correct
                 // because both weights are equal.
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(HomeScreenTestTags.CAPTURE_BAR_CAPTURE),
             )
         }
     }
