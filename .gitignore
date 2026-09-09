@@ -142,3 +142,10 @@ app/src/test/resources/fixtures/audit66_ocr/
 # Per-version debug screenshot/UI dump/logcat dumps collected during
 # real-device debugging. Stay local — they're scratch not source.
 _screenshots/
+
+# Local audit scratch — one-off scripts that scan rules.json + KB and
+# dump JSON reports. Output is regenerable by re-running the script;
+# the scripts themselves rarely warrant committing. If a particular
+# .tmp_audit subdir stabilizes into a real tool, move it to tools/ and
+# add a tracked entry instead.
+.tmp_audit/
