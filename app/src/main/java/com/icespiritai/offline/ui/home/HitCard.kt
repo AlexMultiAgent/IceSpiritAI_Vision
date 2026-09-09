@@ -66,6 +66,15 @@ fun HitCard(hit: RuleHit, modifier: Modifier = Modifier) {
     val accent = sev.accent(hit.severity)
     val container = sev.container(hit.severity)
     val onContainer = sev.onContainer(hit.severity)
+    // v0.1.66 (P0 a11y fix): the severity chip's background is the
+    // saturated accent (red/amber/blue), so its TEXT must come from
+    // `onAccent` (the color tuned for that accent) — not from
+    // `onContainer` (the color tuned for the pale container background).
+    // Pre-fix this called `SeverityChip(..., onContainer = onContainer)`,
+    // which left contrast at 1.6-2.2:1 across all severity/theme combos
+    // (WCAG AA needs 4.5:1); ResultPanel's section header uses
+    // `sev.onAccent(severity)` and reads cleanly, so we mirror that here.
+    val onAccent = sev.onAccent(hit.severity)
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -100,7 +109,7 @@ fun HitCard(hit: RuleHit, modifier: Modifier = Modifier) {
                 )
                 // Severity chip — small pill at the top-right. Self-contained
                 // signal that doesn't rely on color alone.
-                SeverityChip(label = severityLabel, accent = accent, onContainer = onContainer)
+                SeverityChip(label = severityLabel, accent = accent, onAccent = onAccent)
             }
             Text(
                 text = stringResource(R.string.hit_card_regulation, hit.regulation),
@@ -146,7 +155,7 @@ fun HitCard(hit: RuleHit, modifier: Modifier = Modifier) {
 private fun SeverityChip(
     label: String,
     accent: androidx.compose.ui.graphics.Color,
-    onContainer: androidx.compose.ui.graphics.Color,
+    onAccent: androidx.compose.ui.graphics.Color,
 ) {
     Box(
         modifier = Modifier
@@ -157,7 +166,7 @@ private fun SeverityChip(
         Text(
             text = label,
             style = MaterialTheme.typography.labelLarge,
-            color = onContainer,
+            color = onAccent,
         )
     }
 }

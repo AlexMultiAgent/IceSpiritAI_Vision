@@ -1,5 +1,23 @@
 # 用户更新日志
 
+## v0.1.66 — 2026-09-09
+
+UI 严重度契约一致性 + SeverityChip 可读性(WCAG AA)修复。广告招牌 tab 仍是唯一 UI tab。
+
+### 修复
+
+- **HighlightOverlay worst-severity pick 改用 `severityRank` + 过滤 Positive**:v0.1.36 落地时把 HomeScreen.kt / ViewerTextList.kt 的 worst-pick 迁到 `domain.severityRank` 函数,但 `HighlightOverlay`(首页 + Viewer 全屏图叠命中框渲染命中框的 Composable)仍在用 `maxOfOrNull { it.second }`,依赖 `Comparable<Severity>` 按 ordinal 排序 → Positive(ordinal=3)会反向压制 Violation(ordinal=2)。目前规则库还没 Positive-emit 规则所以 latent,但同图 Positive + Violation 一旦共存,框会错画绿色。v0.1.66 把 picker 抽成 `internal worstSeverityForOverlay(normalizedLine, normalizedHits)` top-level helper,走 `severityRank` + `.filter { it.second != Severity.Positive }`,与 `ViewerTextList.worstSeverityForLine` 完全一致,新增 `HighlightOverlaySeverityRankingTest.kt` 10 个回归 pin(violation > warning > info / positive + violation 共存取 violation / positive + warning 共存取 warning / positive-only 不画框 / 空 hits / 空 line / whitespace-tolerant containment)。stale FIXME 注释(`Severity enum is currently [Info, Warning, Violation, Positive]; maxOfOrNull uses Comparable ...`)同期删除。
+- **HitCard SeverityChip 文字颜色配对修正**:违规 / 警告 / 信息 chip 的 background 是 `sev.accent`(饱和红 / 琥珀 / 蓝),但 v0.1.41 实现时文字用的是 `sev.onContainer`(配 `container` 浅色背景的 token),contrast 仅 1.6-2.2:1,WCAG AA 4.5:1 不达标。ResultPanel section header 同场景(背景也是 accent)正确用了 `sev.onAccent`,contrast 6-9:1。v0.1.66 把 chip 的文字 color 也切到 `sev.onAccent(hit.severity)`,SeverityChip 私有 Composable 形参 `onContainer` → `onAccent`,call site 同步。视觉对比度合规后,用户在户外强光下、低亮度屏、灰度模式阅读都不会丢信息。
+
+### 变更
+
+- 无功能 / 规则变更;本次仅 correctness + a11y hardening,沿用 v0.1.65 规则库版本(ad_signage v20 / food_label v4)与 TTS 模型。
+
+### 验证
+
+- `./gradlew testDebugUnitTest` 全过:新增 `HighlightOverlaySeverityRankingTest` 10 个回归 pin(覆盖 worst-pick 全部分支);`HitCardTest` 现有 7 个测试已对 compose 不崩提供兜底(`IceSpiritVisionTheme` 包裹 → `LocalSeverityColors` 抛错即挂),SeverityChip onAccent 改完不影响现存断言。
+- `CHANGELOG_SCREEN_TEST_VERSION` 同步到 v0.1.66。
+
 ## v0.1.65 — 2026-09-09
 
 TTS 本地引擎 integrity gate 强化(espeak-ng-data 9 文件齐备性校验)。

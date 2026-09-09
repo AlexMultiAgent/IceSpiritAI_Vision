@@ -12,8 +12,10 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.drawscope.Stroke
 import com.icespiritai.offline.domain.RuleHit
+import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.domain.TextLine
 import com.icespiritai.offline.domain.TextNormalizer
+import com.icespiritai.offline.domain.severityRank
 import com.icespiritai.offline.ui.theme.IceMotion
 import com.icespiritai.offline.ui.theme.iceSpiritSeverityColors
 
@@ -44,12 +46,15 @@ fun HighlightOverlay(
     Canvas(modifier = modifier) {
         lines.forEach { line ->
             val normalizedLine = TextNormalizer.forMatching(line.text)
-            // FIXME Task 11: Severity enum is currently [Info, Warning, Violation, Positive];
-            // maxOfOrNull uses Comparable (ordinal-based), so Positive wins over Violation.
-            // Reorder enum to [Violation, Warning, Info, Positive] before Positive hits get emitted.
-            val lineSeverity = normalizedHits
-                .filter { normalizedLine.contains(it.first) }
-                .maxOfOrNull { it.second }
+            // v0.1.66 (P0 audit fix): worst-severity pick now uses
+            // [severityRank] (Violation=3 / Warning=2 / Info=1 / Positive=0)
+            // rather than enum.ordinal — and Positive is dropped from the
+            // candidate pool, matching [worstSeverityForLine] in
+            // ViewerTextList.kt. Pre-fix this used `maxOfOrNull { it.second }`,
+            // which relied on `Comparable<Severity>` ordering by ordinal and
+            // would surface Positive (ordinal=3) as the "worst" hit once
+            // a Positive-emit rule ships.
+            val lineSeverity = worstSeverityForOverlay(normalizedLine, normalizedHits)
                 ?: return@forEach
             val color = sev.accent(lineSeverity)
             val x = offsetX + line.box.left * scaleX
@@ -73,4 +78,32 @@ fun HighlightOverlay(
             )
         }
     }
+}
+
+/**
+ * Worst-severity pick for the HomeScreen highlight overlay. Internal so
+ * [HighlightOverlaySeverityRankingTest] can pin the contract directly
+ * without going through Canvas pixels (which are opaque to Compose UI
+ * tests).
+ *
+ * Pre-v0.1.66 this logic was inlined inside the Canvas DrawScope, which
+ * (a) meant the audit-time "Positive wins over Violation" bug went
+ * unnoticed for a year and (b) left a stale FIXME blaming the Severity
+ * enum ordering instead of the call site.
+ *
+ * Mirrors [com.icespiritai.offline.ui.viewer.worstSeverityForLine] but
+ * takes pre-normalized inputs (this Composable normalizes once outside
+ * the loop to avoid re-running the normalizer per line).
+ */
+internal fun worstSeverityForOverlay(
+    normalizedLine: String,
+    normalizedHits: List<Pair<String, Severity>>,
+): Severity? {
+    if (normalizedHits.isEmpty() || normalizedLine.isEmpty()) return null
+    return normalizedHits
+        .asSequence()
+        .filter { it.second != Severity.Positive }
+        .filter { normalizedLine.contains(it.first) }
+        .maxByOrNull { severityRank(it.second) }
+        ?.second
 }
