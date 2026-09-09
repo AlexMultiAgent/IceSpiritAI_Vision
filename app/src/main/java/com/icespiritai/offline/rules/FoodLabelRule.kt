@@ -5,17 +5,17 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class FoodLabelRule(
-    val id: String,
-    val category: String,
-    val regulation: String,
-    val keywords: List<String>,
-    val severity: Severity,
+    override val id: String,
+    override val category: String,
+    override val regulation: String,
+    override val keywords: List<String>,
+    override val severity: Severity,
     /**
      * Full text of the cited provision(s), bundled with the rule so the result
      * card can show the exact legal wording offline without a network lookup.
      */
-    val lawText: String = "",
-)
+    override val lawText: String = "",
+) : Rule
 
 /**
  * Top-level wrapper for the bundled `food_label_rules.json` asset. Mirrors

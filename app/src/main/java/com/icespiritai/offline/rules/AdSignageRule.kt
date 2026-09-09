@@ -5,17 +5,17 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class AdSignageRule(
-    val id: String,
-    val category: String,
-    val regulation: String,
-    val keywords: List<String>,
-    val severity: Severity,
+    override val id: String,
+    override val category: String,
+    override val regulation: String,
+    override val keywords: List<String>,
+    override val severity: Severity,
     /**
      * Full text of the cited provision(s), bundled with the rule so the result
      * card can show the exact legal wording offline without a network lookup.
      */
-    val lawText: String = "",
-    val sourceMarkers: List<String> = emptyList(),
+    override val lawText: String = "",
+    override val sourceMarkers: List<String> = emptyList(),
     /**
      * Domain-anchor substrings: when this list is non-empty, the rule only
      * fires if the scanned text contains at least one of these anchors after
@@ -28,7 +28,7 @@ data class AdSignageRule(
      * (e.g.「不如」「按摩」「美白」「儿童」) and would otherwise fire on
      * non-domain ads. The anchor gate scopes the rule to its real domain.
      */
-    val categoryAnchors: List<String> = emptyList(),
+    override val categoryAnchors: List<String> = emptyList(),
     /**
      * Inverse-polarity domain-anchor: when this list is non-empty, the rule
      * ONLY fires if the scanned text contains NONE of these anchors after
@@ -44,8 +44,8 @@ data class AdSignageRule(
      * gate scopes it to the illegal-target subset (non-medical ad text
      * mentioning those same terms).
      */
-    val categoryAnchorsAbsent: List<String> = emptyList(),
-)
+    override val categoryAnchorsAbsent: List<String> = emptyList(),
+) : Rule
 
 /**
  * Top-level wrapper for the bundled `ad_signage_rules.json` asset. The
