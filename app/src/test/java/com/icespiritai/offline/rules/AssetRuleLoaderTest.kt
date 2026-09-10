@@ -101,8 +101,8 @@ class AssetRuleLoaderTest {
             set.rules.size >= 1,
         )
         assertTrue(
-            "shipped food_label_rules.json must bundle 6 golden + 30 incremental + 29 v3 + 1 v4-split rules",
-            set.rules.size >= 65,
+            "shipped food_label_rules.json must bundle 6 golden + 30 incremental + 29 v3 + 1 v4-split + 12 v5-allergen + 12 v5-gap-fill + 3 v5-safety-law + 2 v5-infant-milk rules (T9.1-T9.4)",
+            set.rules.size >= 95,
         )
         assertTrue(
             "every shipped food rule must bundle its full provision text",

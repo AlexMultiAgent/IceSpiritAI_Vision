@@ -1214,4 +1214,488 @@ class FoodLabelRuleMatcherTest {
         )
         assertEquals("控糖稳血糖", hits[0].matchedText)
     }
+
+    // --- GB 7718-2025 §5 致敏原强制 + 推荐标示 — 12 条（v5 增量，T9.1 落地）---
+
+    @Test
+    fun scan_gb7718Sec5AllergenGluten_firesOn小麦() {
+        val r = FoodLabelRule(
+            "food_gb7718_2025_sec5_allergen_gluten",
+            "allergen",
+            "GB 7718-2025 §5.1（含麸质的谷物及其制品）",
+            listOf("小麦", "黑麦", "大麦", "燕麦", "麸质"),
+            Severity.Violation,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品含小麦、黑麦、大麦、燕麦、麸质")
+        assertEquals(5, hits.size)
+        assertEquals(Severity.Violation, hits[0].severity)
+    }
+
+    @Test
+    fun scan_gb7718Sec5AllergenCrustacean_firesOn虾() {
+        val r = FoodLabelRule(
+            "food_gb7718_2025_sec5_allergen_crustacean",
+            "allergen",
+            "GB 7718-2025 §5.1（甲壳纲动物及其制品）",
+            listOf("虾", "蟹", "龙虾", "虾仁", "蟹棒"),
+            Severity.Violation,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品含虾、蟹、龙虾、虾仁、蟹棒")
+        // Phase 2.5 substring dedup (Bug 1): "虾" ⊂ "虾仁", "蟹" ⊂ "蟹棒"。5 - 2 = 3。
+        assertEquals(3, hits.size)
+        assertEquals(Severity.Violation, hits[0].severity)
+    }
+
+    @Test
+    fun scan_gb7718Sec5AllergenFish_firesOn鱼() {
+        val r = FoodLabelRule(
+            "food_gb7718_2025_sec5_allergen_fish",
+            "allergen",
+            "GB 7718-2025 §5.1（鱼类及其制品）",
+            listOf("鱼", "鱼糜", "鱼露", "鲈鱼", "鳕鱼"),
+            Severity.Violation,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品含鱼糜、鱼露、鲈鱼、鳕鱼")
+        // Phase 2.5 substring dedup: "鱼" ⊂ "鱼糜"/"鱼露"/"鲈鱼"/"鳕鱼" → "鱼" 被吸收,5 - 1 = 4。
+        assertEquals(4, hits.size)
+    }
+
+    @Test
+    fun scan_gb7718Sec5AllergenEgg_firesOn鸡蛋() {
+        val r = FoodLabelRule(
+            "food_gb7718_2025_sec5_allergen_egg",
+            "allergen",
+            "GB 7718-2025 §5.1（蛋类及其制品）",
+            listOf("蛋", "鸡蛋", "鸭蛋", "蛋黄", "蛋清", "全蛋粉"),
+            Severity.Violation,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品含鸡蛋、鸭蛋、蛋黄、蛋清、全蛋粉")
+        // Phase 2.5 substring dedup: "蛋" ⊂ "鸡蛋"/"鸭蛋"/"蛋黄"/"蛋清"。6 - 1 = 5。
+        assertEquals(5, hits.size)
+    }
+
+    @Test
+    fun scan_gb7718Sec5AllergenPeanut_firesOn花生() {
+        val r = FoodLabelRule(
+            "food_gb7718_2025_sec5_allergen_peanut",
+            "allergen",
+            "GB 7718-2025 §5.1（花生及其制品）",
+            listOf("花生", "花生仁", "花生酱", "花生碎"),
+            Severity.Violation,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品含花生仁、花生酱、花生碎")
+        // Phase 2.5 substring dedup: "花生" ⊂ "花生仁"/"花生酱"/"花生碎"。4 - 1 = 3。
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_gb7718Sec5AllergenSoy_firesOn大豆() {
+        val r = FoodLabelRule(
+            "food_gb7718_2025_sec5_allergen_soy",
+            "allergen",
+            "GB 7718-2025 §5.1（大豆及其制品）",
+            listOf("大豆", "黄豆", "大豆蛋白", "豆豉", "毛豆"),
+            Severity.Violation,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品含大豆蛋白、黄豆、豆豉、毛豆")
+        // Phase 2.5 substring dedup: "大豆" ⊂ "大豆蛋白"。5 - 1 = 4。
+        assertEquals(4, hits.size)
+    }
+
+    @Test
+    fun scan_gb7718Sec5AllergenDairy_firesOn牛奶() {
+        val r = FoodLabelRule(
+            "food_gb7718_2025_sec5_allergen_dairy",
+            "allergen",
+            "GB 7718-2025 §5.1（乳及乳制品）",
+            listOf("牛奶", "乳粉", "乳清", "奶酪", "黄油", "乳糖", "酪蛋白"),
+            Severity.Violation,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品含牛奶、乳粉、乳清、奶酪、黄油、乳糖、酪蛋白")
+        // 7 个独立 keyword，无 substring 重叠 → 7 hits。
+        assertEquals(7, hits.size)
+    }
+
+    @Test
+    fun scan_gb7718Sec5AllergenTreeNut_firesOn杏仁() {
+        val r = FoodLabelRule(
+            "food_gb7718_2025_sec5_allergen_tree_nut",
+            "allergen",
+            "GB 7718-2025 §5.1（坚果及其果仁类制品）",
+            listOf("杏仁", "腰果", "核桃", "榛子", "开心果", "松子", "栗子"),
+            Severity.Violation,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品含杏仁、腰果、核桃、榛子、开心果、松子、栗子")
+        // 7 个独立 keyword，无 substring 重叠 → 7 hits。
+        assertEquals(7, hits.size)
+    }
+
+    @Test
+    fun scan_gb7718Sec5AllergenCelery_firesOn芹菜() {
+        val r = FoodLabelRule(
+            "food_gb7718_2025_sec5_allergen_celery",
+            "allergen",
+            "GB 7718-2025 §5.2（芹菜及其制品，推荐性）",
+            listOf("芹菜"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品含芹菜籽粉")
+        assertEquals(1, hits.size)
+        assertEquals(Severity.Info, hits[0].severity)
+    }
+
+    @Test
+    fun scan_gb7718Sec5AllergenMustard_firesOn芥末() {
+        val r = FoodLabelRule(
+            "food_gb7718_2025_sec5_allergen_mustard",
+            "allergen",
+            "GB 7718-2025 §5.2（芥末及其制品，推荐性）",
+            listOf("芥末"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品含黄芥末调味")
+        assertEquals(1, hits.size)
+        assertEquals(Severity.Info, hits[0].severity)
+    }
+
+    @Test
+    fun scan_gb7718Sec5AllergenSesame_firesOn芝麻() {
+        val r = FoodLabelRule(
+            "food_gb7718_2025_sec5_allergen_sesame",
+            "allergen",
+            "GB 7718-2025 §5.2（芝麻及其制品，推荐性）",
+            listOf("芝麻"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品撒白芝麻")
+        assertEquals(1, hits.size)
+        assertEquals(Severity.Info, hits[0].severity)
+    }
+
+    @Test
+    fun scan_gb7718Sec5AllergenSulphite_firesOn二氧化硫() {
+        val r = FoodLabelRule(
+            "food_gb7718_2025_sec5_allergen_sulphite",
+            "allergen",
+            "GB 7718-2025 §5.2（二氧化硫及亚硫酸盐，推荐性）",
+            listOf("二氧化硫", "亚硫酸盐"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品含二氧化硫、亚硫酸盐（防腐剂）")
+        assertEquals(2, hits.size)
+        assertEquals(Severity.Info, hits[0].severity)
+    }
+
+    @Test
+    fun scan_multipleV5AllergenRules_fireIndependentlyOnCombinedText() {
+        // 强制 8 类与推荐 4 类规则在同一段文本上各自独立触发 — 不同 ruleId 各一条 hit
+        val rules = listOf(
+            FoodLabelRule("r_gluten", "allergen", "§5.1(1)", listOf("小麦"), Severity.Violation),
+            FoodLabelRule("r_peanut", "allergen", "§5.1(5)", listOf("花生"), Severity.Violation),
+            FoodLabelRule("r_dairy", "allergen", "§5.1(7)", listOf("牛奶"), Severity.Violation),
+            FoodLabelRule("r_sesame", "allergen", "§5.2(3)", listOf("芝麻"), Severity.Info),
+        )
+        val hits = FoodLabelRuleMatcher(rules).scan("含小麦粉、花生碎、牛奶、芝麻")
+        assertEquals(4, hits.size)
+        assertEquals(
+            setOf("r_gluten", "r_peanut", "r_dairy", "r_sesame"),
+            hits.map { it.ruleId }.toSet(),
+        )
+    }
+
+    // --- 食品标识监督管理办法 §7-§40 gap-fill — 12 条（v5 增量，T9.2 落地）---
+
+    @Test
+    fun scan_art9MandatoryBasis_firesOn食品安全法第六十七条() {
+        val r = FoodLabelRule(
+            "food_art9_mandatory_basis",
+            "label_form",
+            "食品标识监督管理办法 第九条",
+            listOf("食品安全法第六十七条", "食品安全法第七十条"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("按食品安全法第六十七条执行")
+        assertEquals(1, hits.size)
+    }
+
+    @Test
+    fun scan_art10MinimalUnit_firesOn最小销售单元() {
+        val r = FoodLabelRule(
+            "food_art10_minimal_unit",
+            "label_form",
+            "食品标识监督管理办法 第十条",
+            listOf("最小销售单元", "多层包装"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品最小销售单元，多层包装")
+        assertEquals(2, hits.size)
+    }
+
+    @Test
+    fun scan_art11ChinesePriority_firesOn规范汉字() {
+        val r = FoodLabelRule(
+            "food_art11_chinese_priority",
+            "label_form",
+            "食品标识监督管理办法 第十一条",
+            listOf("规范汉字", "繁体字", "拼音", "字高不得大于", "外文字高"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品使用规范汉字 + 繁体字 + 拼音 + 字高不得大于 + 外文字高")
+        assertEquals(5, hits.size)
+    }
+
+    @Test
+    fun scan_art14DateZone_firesOn见包装物某部位() {
+        val r = FoodLabelRule(
+            "food_art14_date_zone",
+            "production_date",
+            "食品标识监督管理办法 第十四条",
+            listOf("见包装物某部位", "独立区域", "不易脱落"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("生产日期见包装物某部位 / 独立区域标注不易脱落")
+        // 3 个独立 keyword，无 substring 重叠 → 3 hits。
+        assertEquals(3, hits.size)
+    }
+
+    @Test
+    fun scan_art17Entrust_firesOn委托方() {
+        val r = FoodLabelRule(
+            "food_art17_entrust",
+            "label_form",
+            "食品标识监督管理办法 第十七条第二款至第四款",
+            listOf("委托方", "受托方", "委托单位", "受托单位", "委托生产"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("委托方 / 受托方 / 委托单位 / 受托单位 / 委托生产")
+        assertEquals(5, hits.size)
+    }
+
+    @Test
+    fun scan_art20MultiSpec_firesOn单件净含量() {
+        val r = FoodLabelRule(
+            "food_art20_multi_spec",
+            "net_weight",
+            "食品标识监督管理办法 第二十条",
+            listOf("单件净含量", "总件数", "总净含量", "每种不同"),
+            Severity.Warning,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("单件净含量 + 总件数 + 总净含量 + 每种不同")
+        assertEquals(4, hits.size)
+    }
+
+    @Test
+    fun scan_art26NutrientSupplement_firesOn营养素补充剂() {
+        val r = FoodLabelRule(
+            "food_art26_nutrient_supplement",
+            "specific_food",
+            "食品标识监督管理办法 第二十六条第二款",
+            listOf("营养素补充剂"),
+            Severity.Violation,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品为营养素补充剂")
+        assertEquals(1, hits.size)
+        assertEquals(Severity.Violation, hits[0].severity)
+    }
+
+    @Test
+    fun scan_art29HealthSpec_firesOn最小制剂单位() {
+        val r = FoodLabelRule(
+            "food_art29_health_spec",
+            "net_weight",
+            "食品标识监督管理办法 第二十九条",
+            listOf("最小制剂单位"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("规格以最小制剂单位计")
+        assertEquals(1, hits.size)
+    }
+
+    @Test
+    fun scan_art34SalesPage_firesOn销售主页面() {
+        val r = FoodLabelRule(
+            "food_art34_sales_page",
+            "label_form",
+            "食品标识监督管理办法 第三十四条第一款",
+            listOf("销售主页面"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("销售主页面刊载食品名称")
+        assertEquals(1, hits.size)
+    }
+
+    @Test
+    fun scan_art36HealthDisclaimerPresent_firesOn不能代替药物() {
+        val r = FoodLabelRule(
+            "food_art36_health_disclaimer_present",
+            "specific_food",
+            "食品标识监督管理办法 第三十六条第二款",
+            listOf("保健食品不是药物", "不能代替药物"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("保健食品不是药物 + 不能代替药物治疗疾病")
+        assertEquals(2, hits.size)
+        assertEquals(Severity.Info, hits[0].severity)
+    }
+
+    @Test
+    fun scan_art52Export_firesOn仅用于出口() {
+        val r = FoodLabelRule(
+            "food_art52_export",
+            "label_form",
+            "食品标识监督管理办法 第五十二条",
+            listOf("仅用于出口", "进口国"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品仅用于出口，符合进口国标准")
+        assertEquals(2, hits.size)
+    }
+
+    @Test
+    fun scan_art53SmallWorkshop_firesOn小作坊() {
+        val r = FoodLabelRule(
+            "food_art53_small_workshop",
+            "label_form",
+            "食品标识监督管理办法 第五十三条",
+            listOf("食品生产加工小作坊", "小作坊"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("食品生产加工小作坊生产")
+        // Phase 2.5 substring dedup: "小作坊" ⊂ "食品生产加工小作坊"。2 - 1 = 1。
+        assertEquals(1, hits.size)
+    }
+
+    @Test
+    fun scan_multipleV5GapFillRules_fireIndependentlyOnCombinedText() {
+        // §9 / §10 / §14 / §17 / §20 / §26 / §29 / §34 / §36 / §52 / §53 不同条规则在同一段文本上各自独立触发
+        val rules = listOf(
+            FoodLabelRule("r_art10", "label_form", "§10", listOf("最小销售单元"), Severity.Info),
+            FoodLabelRule("r_art14", "production_date", "§14", listOf("见包装物某部位"), Severity.Warning),
+            FoodLabelRule("r_art20", "net_weight", "§20", listOf("单件净含量"), Severity.Warning),
+            FoodLabelRule("r_art26", "specific_food", "§26", listOf("营养素补充剂"), Severity.Violation),
+            FoodLabelRule("r_art52", "label_form", "§52", listOf("仅用于出口"), Severity.Info),
+        )
+        val hits = FoodLabelRuleMatcher(rules).scan("最小销售单元 / 见包装物某部位 / 单件净含量 / 营养素补充剂 / 仅用于出口")
+        assertEquals(5, hits.size)
+        assertEquals(
+            setOf("r_art10", "r_art14", "r_art20", "r_art26", "r_art52"),
+            hits.map { it.ruleId }.toSet(),
+        )
+    }
+
+    // --- 食品安全法 §69 / §81 / §83 — 3 条（v5 增量，T9.3 落地）---
+
+    @Test
+    fun scan_safetyArt69GmoLabel_firesOn转基因() {
+        val r = FoodLabelRule(
+            "food_safety_art69_gmo_label",
+            "label_form",
+            "食品安全法 第六十九条",
+            listOf("转基因", "GMO", "基因改造"),
+            Severity.Violation,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品含转基因成分 + GMO标识 + 基因改造大豆")
+        assertEquals(3, hits.size)
+        assertEquals(Severity.Violation, hits[0].severity)
+    }
+
+    @Test
+    fun scan_safetyArt81NoSameFormula_firesOn同一配方() {
+        val r = FoodLabelRule(
+            "food_safety_art81_no_same_formula",
+            "specific_food",
+            "食品安全法 第八十一条",
+            listOf("同一配方", "不同品牌"),
+            Severity.Violation,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("同一企业不得用同一配方生产不同品牌的婴幼儿配方乳粉")
+        assertEquals(2, hits.size)
+        assertEquals(Severity.Violation, hits[0].severity)
+    }
+
+    @Test
+    fun scan_safetyArt83Gmp_firesOnGMP() {
+        val r = FoodLabelRule(
+            "food_safety_art83_gmp",
+            "specific_food",
+            "食品安全法 第八十三条",
+            listOf("良好生产规范", "GMP", "生产质量管理体系", "自查报告"),
+            Severity.Info,
+        )
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("本品按良好生产规范 + GMP + 生产质量管理体系 + 自查报告管理")
+        assertEquals(4, hits.size)
+        assertEquals(Severity.Info, hits[0].severity)
+    }
+
+    @Test
+    fun scan_multipleV5SafetyLawRules_fireIndependentlyOnCombinedText() {
+        // §69 / §81 / §83 不同条规则在同一段文本上各自独立触发
+        val rules = listOf(
+            FoodLabelRule("r_gmo", "label_form", "§69", listOf("转基因"), Severity.Violation),
+            FoodLabelRule("r_no_same_formula", "specific_food", "§81", listOf("同一配方", "不同品牌"), Severity.Violation),
+            FoodLabelRule("r_gmp", "specific_food", "§83", listOf("良好生产规范", "GMP", "自查报告"), Severity.Info),
+        )
+        val hits = FoodLabelRuleMatcher(rules).scan("转基因 + 同一配方 + 不同品牌 + 良好生产规范 + GMP + 自查报告")
+        // 6 个独立 keyword，无 substring 重叠 → 6 hits。
+        assertEquals(6, hits.size)
+        assertEquals(
+            setOf("r_gmo", "r_no_same_formula", "r_gmp"),
+            hits.map { it.ruleId }.toSet(),
+        )
+    }
+
+    // --- 婴幼儿配方乳粉产品配方注册管理办法 §5 / §7 — 2 条（v5 增量，T9.4 落地）---
+
+    @Test
+    fun scan_infantMilkRegisterNoFormat_firesOn国食注字YP() {
+        val r = FoodLabelRule(
+            "food_infant_formula_milk_register_no_format",
+            "specific_food",
+            "婴幼儿配方乳粉产品配方注册管理办法 §5 + 食品安全法 §81",
+            listOf("国食注字", "国食注字YP", "配方注册号", "配方注册编号"),
+            Severity.Violation,
+        )
+        // 文本同时含「国食注字 YP2023XXXX」+「配方注册编号 ABC」两个完整标注项
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("国食注字YP2023XXXX + 配方注册编号 ABC")
+        // Phase 2.5 substring dedup（Bug 1）:
+        //   "国食注字" ⊂ "国食注字YP"（同 position）→ 短被吸收
+        //   "配方注册号" ⊂ "配方注册编号"（同 position）→ 短被吸收
+        // 4 keywords - 2 substring pairs = 2 distinct longest matches.
+        assertEquals(2, hits.size)
+        assertEquals(Severity.Violation, hits[0].severity)
+    }
+
+    @Test
+    fun scan_infantMilkRegisterTerm5y_firesOn注册证书有效期() {
+        val r = FoodLabelRule(
+            "food_infant_formula_milk_register_term_5y",
+            "specific_food",
+            "婴幼儿配方乳粉产品配方注册管理办法 §7",
+            listOf("有效期5年", "有效期 5 年", "注册证书有效期", "5年有效期", "有效期届满"),
+            Severity.Info,
+        )
+        // 文本同时含「注册证书有效期5年」+「有效期届满」+「5年有效期」+「有效期 5 年」(空格 normalize 后 = 有效期5年)
+        val hits = FoodLabelRuleMatcher(listOf(r)).scan("注册证书有效期5年有效期届满 + 5年有效期 + 有效期 5 年")
+        // TextNormalizer 去空白:
+        //   "有效期5年" + "有效期 5 年" → 同一条 normalized 关键词 = 1 distinct
+        //   "注册证书有效期" / "5年有效期" / "有效期届满" / 加上归一化的 "有效期5年" = 4 distinct keywords
+        assertEquals(4, hits.size)
+        assertEquals(Severity.Info, hits[0].severity)
+    }
+
+    @Test
+    fun scan_multipleV4InfantMilkRules_fireIndependentlyOnCombinedText() {
+        // §5 配方注册号格式 + §7 注册证书有效期 两条规则同段文本各自独立触发
+        val rules = listOf(
+            FoodLabelRule("r_no_format", "specific_food", "§5", listOf("国食注字YP", "配方注册编号"), Severity.Violation),
+            FoodLabelRule("r_term_5y", "specific_food", "§7", listOf("注册证书有效期", "5年有效期"), Severity.Info),
+        )
+        val hits = FoodLabelRuleMatcher(rules).scan("国食注字YP2023XXXX / 配方注册编号 / 注册证书有效期5年 / 5年有效期")
+        // 4 个独立 keyword，无 substring 重叠 → 4 hits。
+        assertEquals(4, hits.size)
+        assertEquals(
+            setOf("r_no_format", "r_term_5y"),
+            hits.map { it.ruleId }.toSet(),
+        )
+    }
 }
