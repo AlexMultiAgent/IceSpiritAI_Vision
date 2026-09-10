@@ -6,6 +6,10 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.CreationExtras
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import com.icespiritai.offline.analysis.ImageAnalyzerRepository
 import com.icespiritai.offline.domain.AnalysisState
 import com.icespiritai.offline.domain.AnalysisState.Idle
@@ -119,12 +123,24 @@ class IceSpiritVisionViewModel(
      * null result and skip the analyze pipeline if the requested tab is
      * disabled.
      *
-     * Returns the lazy delegate itself when [tab] is enabled — does NOT
-     * force-resolve the asset loader. The lazy resolves on first
-     * [RuleMatcher.scan] call inside the analyze pipeline, which is what
-     * we want: a disabled tab never triggers asset load, and an enabled
-     * tab's load is deferred to the moment the user actually analyzes
-     * (see [AdSignageRuleMatcher] / [FoodLabelRuleMatcher] lazy docs).
+     * **Resolution side-effect — read this before calling from Compose.**
+     * `adMatcher` / `foodMatcher` are declared `by lazy { ... }` of static
+     * type [RuleMatcher]; reading them from this function synchronously
+     * invokes the generated getter and **force-resolves the lazy** (asset
+     * read + JSON parse + Aho-Corasick keyword automaton build, ~tens of ms
+     * on a cold device). The function cannot return the unresolved delegate
+     * — its return type is [RuleMatcher], not `Lazy<RuleMatcher>`. The lazy
+     * is process-cached: the *first* call per tab in the VM's lifetime pays
+     * this cost; every subsequent call is O(1). A disabled tab is short-
+     * circuited before resolution, so the asset is never read.
+     *
+     * **Do NOT call this from a Composable body without wrapping in
+     * `remember` / `derivedStateOf`** — a recomposition would force-resolve
+     * the lazy on every frame. Production call sites consume [startAnalysis]
+     * (which is event-driven, not recomposition-driven), so this hazard
+     * doesn't currently bite. If a future caller needs visibility, use
+     * [isTabEnabled] for the cheap path and cache the matcher reference
+     * via `remember { vm.matcherFor(tab) }` if the resolve is intentional.
      */
     internal fun matcherFor(tab: RuleTab): RuleMatcher? {
         val enabledTabs = visibleFeatures.value
@@ -140,6 +156,22 @@ class IceSpiritVisionViewModel(
             RuleTab.FoodLabeling -> foodMatcher
         }
     }
+
+    /**
+     * Cheap visibility probe for [tab]. Returns `true` iff [tab] is in the
+     * current [visibleFeatures] set.
+     *
+     * Exists alongside [matcherFor] so UI callers (e.g. a future
+     * `RuleTabBar` parameterization in Task 4 that needs to grey-out or
+     * hide a tab) can check visibility **without** paying the matcher
+     * lazy-resolve cost. A visibility check is a pure `Set.contains` over
+     * a StateFlow snapshot — O(1), no asset I/O, no Aho-Corasick build.
+     *
+     * Use [isTabEnabled] when the question is "should this tab render at
+     * all". Use [matcherFor] only when an actual matcher reference is
+     * needed (the only such caller today is [startAnalysis]).
+     */
+    fun isTabEnabled(tab: RuleTab): Boolean = tab in visibleFeatures.value
 
     private val repository = ImageAnalyzerRepository(ocrEngine)
 
@@ -169,28 +201,34 @@ class IceSpiritVisionViewModel(
     private var currentJob: Job? = null
 
     /**
-     * Switch the active tab. Returns `true` when the call actually changed
-     * the selected tab; `false` when the request was rejected (tab disabled
-     * in settings) or fell into a no-op clause.
+     * Switch the active tab. Returns `true` iff the call actually changed
+     * the selected tab. **`false` is overloaded** — it does not mean
+     * "nothing happened"; inspect the case below:
      *
-     * Two-layer contract:
+     *  1. **Disabled tab — rejected, no mutation.** [tab] is not in
+     *     [visibleFeatures]: returns `false`, leaves [_currentTab] /
+     *     [state] / [pendingUri] untouched. Guards the Spec §3.3 race
+     *     (settings hide racing a stale TabBar render that still shows
+     *     the disabled tab).
+     *  2. **Same tab, state is Loading — no-op, no mutation.** Returns
+     *     `false`, state stays Loading. Prevents a mis-tap from
+     *     interrupting an in-flight OCR / rule scan.
+     *  3. **Same tab, state is not Loading — `reset()` ran, but the tab
+     *     itself did not change.** Returns `false` while
+     *     synchronously clearing [state] to [Idle] and [pendingUri] to
+     *     `null`. The user-facing intent here is the CLAUDE.md §Tab →
+     *     初始页 affordance: tapping the already-selected tab on a
+     *     Complete report goes back to the Idle initial page so a new
+     *     image can be picked. The return value stays `false` because
+     *     `_currentTab` did not change — callers that key off the
+     *     "tab actually changed" signal are unaffected by this branch.
      *
-     * **Spec §3.3 race (settings hide)**: if [tab] is not in [visibleFeatures],
-     * the call is rejected — `false` returned, no state change. This guards
-     * against a settings-driven hide racing with a stale TabBar render that
-     * still shows the disabled tab.
-     *
-     * **Tab-routing contract (CLAUDE.md §Tab → 初始页, 2026-08-26)** when
-     * [tab] is enabled:
-     *   - tab 切换 → 老路径:切换 matcher,保留 state (no reset)
-     *   - tab 不变 + `state is Loading` → no-op(防误触打断正在跑的 OCR / 规则扫描)
-     *   - tab 不变 + `state !is Loading` → 「回到初始」调 reset()(清 pendingUri +
-     *     state 走回 Idle)
-     *
-     * The third clause covers the user scenario where after a `Complete`
-     * report is shown, the user taps the already-selected 「广告招牌」tab
-     * to start fresh on a new image — there's no separate "back to home"
-     * button, and the tab is the cleanest "clear" affordance.
+     * **Caller note:** the only current caller (`HomeScreen.onSelectTab`)
+     * ignores the return value, so the `false`-on-reset overload does
+     * not affect production behaviour. If a future caller wants to
+     * distinguish case 1 (reject, no mutation) from case 3 (reset
+     * happened), it must inspect [state] / [pendingUri] afterwards
+     * rather than rely on the Boolean alone.
      */
     fun setTab(tab: RuleTab): Boolean {
         if (tab !in visibleFeatures.value) {
@@ -347,27 +385,38 @@ class IceSpiritVisionViewModel(
         const val ANALYZE_WATCHDOG_TIMEOUT_MS = 30_000L
 
         /**
-         * Mirror of [com.icespiritai.offline.settings.SettingsViewModel.factory]:
-         * a [ViewModelProvider.Factory] that wires a real DataStore-backed
-         * [SettingsRepository] into the VM. Required because this VM is an
-         * [AndroidViewModel] and now needs both the [Application] (for asset
-         * loading / `OcrEngineFactoryLocator`) and the settings source (for
-         * [visibleFeatures]) — the default `viewModel()` factory can only
-         * construct the no-arg `AndroidViewModel(application)`.
+         * [androidx.lifecycle.ViewModelProvider.Factory] that wires a real
+         * DataStore-backed [SettingsRepository] into the VM. Mirrors
+         * [com.icespiritai.offline.settings.SettingsViewModel.factory] in
+         * shape (single `repository` argument) — deviating from the
+         * `AndroidViewModel`'s default factory is required because this VM
+         * needs both an [Application] (for asset loading /
+         * `OcrEngineFactoryLocator`) **and** a settings source (for
+         * [visibleFeatures]) and the default factory only knows the no-arg
+         * `AndroidViewModel(application)` constructor.
          *
-         * Used by [com.icespiritai.offline.ui.nav.IceSpiritNavHost] via
-         * `viewModel(factory = IceSpiritVisionViewModel.factory(application, repo))`.
+         * The [Application] is recovered from [CreationExtras] via
+         * [APPLICATION_KEY] — `viewModel()` populates this automatically
+         * from the enclosing `LocalViewModelStoreOwner`'s
+         * `ViewModelStoreOwner.androidApplicationContext` (the Activity,
+         * when called from inside a `composable` block), so callers do
+         * not need to pass it themselves and there is no
+         * `as android.app.Application` cast at the call sites.
+         *
+         * Used by [com.icespiritai.offline.ui.nav.IceSpiritNavHost] and
+         * the default branch of [com.icespiritai.offline.ui.home.HomeScreen].
          * Tests use a `FakeThemeSettingsSource` directly via the public
          * constructor.
          */
-        fun factory(
-            application: Application,
-            repository: SettingsRepository,
-        ): androidx.lifecycle.ViewModelProvider.Factory =
-            object : androidx.lifecycle.ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return IceSpiritVisionViewModel(application, repository) as T
+        fun factory(repository: SettingsRepository): androidx.lifecycle.ViewModelProvider.Factory =
+            viewModelFactory {
+                initializer {
+                    val app = checkNotNull(this[APPLICATION_KEY]) {
+                        "APPLICATION_KEY missing from CreationExtras — IceSpiritVisionViewModel.factory " +
+                            "must be invoked through viewModel(), which populates it from the enclosing " +
+                            "LocalViewModelStoreOwner's android context."
+                    }
+                    IceSpiritVisionViewModel(app, repository)
                 }
             }
     }

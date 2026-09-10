@@ -73,13 +73,21 @@ fun HomeScreen(
      * `HomeScreen` directly (`HomeScreenTest`, `HomeScreenScreenshotTest`)
      * also hit this default path; they run in a Robolectric-shaded context
      * so the DataStore-backed SettingsRepository is safe to construct.
+     *
+     * **v0.1.70**: the default value is built via the private helper
+     * [rememberDefaultHomeViewModel] rather than reading `LocalContext.current`
+     * and constructing a fresh `SettingsRepository` + `Factory` on every
+     * recomposition. The `Context.dataStore` delegate is a singleton keyed
+     * on the application context, so re-creating `SettingsRepository` was
+     * harmless — but the `Factory` object allocation + `LocalContext`
+     * lookups were needless churn. Memoizing keeps the per-composition
+     * cost constant. The helper exists because `remember { ... }` is
+     * `@DisallowComposableCalls` and `viewModel(...)` is `@Composable` —
+     * the only safe way to cache both the factory and the VM across
+     * recompositions is to put the `remember` around the factory only
+     * and call `viewModel(...)` at the composable scope.
      */
-    viewModel: IceSpiritVisionViewModel = viewModel(
-        factory = IceSpiritVisionViewModel.factory(
-            application = LocalContext.current.applicationContext as android.app.Application,
-            repository = SettingsRepository(LocalContext.current.applicationContext),
-        ),
-    ),
+    viewModel: IceSpiritVisionViewModel = rememberDefaultHomeViewModel(),
     /**
      * TTS controller state machine (spec §5.1). Threaded from
      * `IceSpiritNavHost` so the top-bar speaker icon can flip between
@@ -470,4 +478,40 @@ internal fun imageSizeForState(
     completeReport != null && completeReport.imageWidth > 0 && completeReport.imageHeight > 0 ->
         IntSize(completeReport.imageWidth, completeReport.imageHeight)
     else -> null
+}
+
+/**
+ * Compose-scope helper that builds the default [IceSpiritVisionViewModel]
+ * used by [HomeScreen]'s `viewModel` parameter when the caller (the
+ * NavHost) does not provide one.
+ *
+ * Lives as a private `@Composable` so the default-param expression can
+ * call it directly. Inlining `remember { viewModel(factory = ...) }`
+ * into the default value position is awkward: `remember`'s calculation
+ * lambda is `@DisallowComposableCalls`, so `LocalContext.current` cannot
+ * be read inside it; and `viewModel(...)` is itself `@Composable`, so
+ * it can't be called from inside `remember { ... }` either. The helper
+ * memoizes just the [SettingsRepository] + `viewModelFactory` builder
+ * (the cheap things that allocate per recomposition) and lets
+ * `viewModel(...)` resolve the VM from its own
+ * `ViewModelStoreOwner`-keyed cache — which is what we actually wanted
+ * in the first place.
+ */
+@Composable
+private fun rememberDefaultHomeViewModel(): IceSpiritVisionViewModel {
+    val appCtx = LocalContext.current.applicationContext
+    // `viewModel(...)` is itself `@Composable` — it cannot be called
+    // from inside `remember { ... }`'s `@DisallowComposableCalls` lambda.
+    // Instead we memoize the *factory* (the cheap thing that allocates
+    // on every recomposition: SettingsRepository + the viewModelFactory
+    // builder lambda capture) and let `viewModel(...)` resolve the VM
+    // from its own ViewModelStoreOwner-keyed cache. The factory is
+    // recomputed only when `appCtx` changes (effectively never — the
+    // Application is a singleton).
+    val factory = remember(appCtx) {
+        IceSpiritVisionViewModel.factory(
+            repository = SettingsRepository(appCtx),
+        )
+    }
+    return viewModel(factory = factory)
 }

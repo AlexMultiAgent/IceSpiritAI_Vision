@@ -31,23 +31,32 @@ import org.robolectric.annotation.Config
 /**
  * Tab-routing coverage for [IceSpiritVisionViewModel].
  *
- * Verifies the three contracts of the dual-domain wiring without forcing
- * the lazy `adMatcher` / `foodMatcher` resolution (Robolectric's shadow
- * asset manager does not ship `app/src/main/assets/rules/...` into the
- * test JVM, so materializing the lazy would throw
- * `RuleLoadFailed(FileNotFoundException)`):
+ * Verifies the three contracts of the dual-domain wiring by reading the
+ * routing inputs (current tab, visible-features set) and exercising
+ * `setTab` / `matcherFor` — never `repository.analyze`, which would
+ * trigger the lazy `adMatcher` / `foodMatcher` resolve and the full
+ * OCR → RuleMatcher.scan pipeline. The lazy resolve itself is covered
+ * by the on-device smoke plan (`docs/smoke/`).
  *
  *   1. [IceSpiritVisionViewModel.currentTab] defaults to `RuleTab.AdSignage`.
  *   2. [IceSpiritVisionViewModel.setTab] returns `true` only on an actual
- *      transition — caller uses that signal to reset the stale report.
- *   3. [IceSpiritVisionViewModel.startAnalysis] reads `_currentTab` at call
- *      time (proven via reflection on the StateFlow value before/after
- *      each call) so a tab switch made *between* two analyses routes the
- *      second one through the new domain's matcher.
+ *      transition; the other `false` cases (disabled-tab reject,
+ *      same-tab Loading no-op, same-tab non-Loading reset) are pinned
+ *      separately so the overload in the return value doesn't regress.
+ *   3. [IceSpiritVisionViewModel.matcherFor] returns `null` for a tab
+ *      disabled in [visibleFeatures] and a non-null reference for an
+ *      enabled one — and that non-null reference **is** the resolved
+ *      matcher (the function cannot defer the lazy resolve; see the
+ *      KDoc on [IceSpiritVisionViewModel.matcherFor]).
  *
- * The matcher-selection itself is exercised end-to-end by the on-device
- * smoke plan; here we assert on the routing inputs, not on the matcher
- * output, which is the layer where Robolectric can substitute.
+ * **Robolectric asset availability**: the bundled `app/src/main/assets/...`
+ * files **are** available under Robolectric because
+ * `app/build.gradle.kts` sets `unitTests.isIncludeAndroidResources = true`
+ * (AGP then generates `test_config.properties` that points the test JVM
+ * at the merged manifest + assets). The `matcherFor_returnsMatcher_whenTabIsEnabled`
+ * test would have failed with `FileNotFoundException` historically
+ * before that flag was set — it is set now, so the resolve succeeds
+ * silently and the test pins the "non-null" contract.
  *
  * Robolectric is needed so the `Application` instance returned by
  * `ApplicationProvider` is real (the unit-test stub `Application()`
@@ -333,11 +342,12 @@ class IceSpiritVisionViewModelTabTest {
     @Test
     fun matcherFor_returnsMatcher_whenTabIsEnabled() {
         // Counterpart to above: enabled tab 的 matcher 引用必须可获得。
-        // matcherFor 返回的是 lazy 委托本身(`adMatcher: RuleMatcher by lazy { ... }`),
-        // 不是 resolved 的 RuleMatcher — 所以即使 Robolectric asset shadow 不
-        // 带 `app/src/main/assets/rules/ad_signage_rules.json`,光拿这个引用也
-        // 安全(只有 .scan() 才会触发 lazy resolve)。这条 pin 的是「enabled tab
-        // → 非 null 引用」契约,真实 RuleMatcher 行为由 on-device smoke 覆盖。
+        // matcherFor 返回的是 **resolved** RuleMatcher(`adMatcher: RuleMatcher by lazy { ... }`
+        // 的静态类型是 RuleMatcher 不是 Lazy<RuleMatcher>;函数体读它 = 同步触发 lazy)。
+        // 此处只 pin「enabled tab → 非 null 引用」契约,不 pin .scan() 行为 — 真实
+        // RuleMatcher 行为由 on-device smoke 覆盖,且此测试不调 .scan()(避免走完
+        // AC build,即使 Robolectric 下 assets 可用 + JSON parse 成功)。
+        // 关于 Robolectric assets 可用性,见类 KDoc。
         val source = FakeThemeSettingsSource(MutableStateFlow(ThemeMode.SYSTEM))
         source.visibleFeaturesBacking.value = setOf(RuleTab.AdSignage)
         val vm = newViewModel(source)
@@ -346,6 +356,35 @@ class IceSpiritVisionViewModelTabTest {
         assertNotNull(
             "matcherFor(AdSignage) must return non-null reference when AdSignage is enabled",
             vm.matcherFor(RuleTab.AdSignage),
+        )
+    }
+
+    @Test
+    fun isTabEnabled_returnsTrue_whenTabVisible_returnsFalse_whenHidden() {
+        // Cheap visibility probe — UI callers should prefer this over
+        // matcherFor when they only need a boolean (e.g. TabBar grey-out).
+        // matcherFor would force-resolve the lazy matcher on every call; this
+        // is a pure Set membership check.
+        val source = FakeThemeSettingsSource(MutableStateFlow(ThemeMode.SYSTEM))
+        source.visibleFeaturesBacking.value = setOf(RuleTab.AdSignage)
+        val vm = newViewModel(source)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(
+            "isTabEnabled(AdSignage) must be true when visibleFeatures contains AdSignage",
+            vm.isTabEnabled(RuleTab.AdSignage),
+        )
+        assertFalse(
+            "isTabEnabled(FoodLabeling) must be false when visibleFeatures only contains AdSignage",
+            vm.isTabEnabled(RuleTab.FoodLabeling),
+        )
+
+        // Flip the visibility — pure probe must reflect the new state.
+        source.visibleFeaturesBacking.value = RuleTab.entries.toSet()
+        dispatcher.scheduler.advanceUntilIdle()
+        assertTrue(
+            "isTabEnabled must follow the upstream StateFlow without caching",
+            vm.isTabEnabled(RuleTab.FoodLabeling),
         )
     }
 }

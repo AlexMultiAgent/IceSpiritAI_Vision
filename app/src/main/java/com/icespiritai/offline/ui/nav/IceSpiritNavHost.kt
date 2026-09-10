@@ -121,10 +121,13 @@ fun IceSpiritNavHost(
         // `(application, settingsSource)` constructor would crash at first
         // composition with `NoSuchMethodError`. Mirrors how `SettingsScreen`
         // wires `SettingsViewModel.factory(SettingsRepository(...))`.
+        //
+        // The factory recovers the Application from CreationExtras (via
+        // APPLICATION_KEY, populated automatically by viewModel() from the
+        // enclosing Activity), so the call site doesn't need to pass it.
         val context = LocalContext.current
         val sharedVm: IceSpiritVisionViewModel = viewModel(
             factory = IceSpiritVisionViewModel.factory(
-                application = context.applicationContext as android.app.Application,
                 repository = SettingsRepository(context.applicationContext),
             ),
         )
