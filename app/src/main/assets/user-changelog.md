@@ -1,5 +1,27 @@
 # 用户更新日志
 
+## v0.1.69 — 2026-09-11
+
+**食品标签 tab 启用 + 设置层「功能可见性」开关 + food_label 规则库 v4 → v5(29 条增量)**,广告招牌 tab 仍是 UI 主焦点。规则库覆盖 8 部法规(GB 7718-2025 致敏原 / 食品标识监督管理办法 §7-§40 / 食品安全法 §69/§81/§83 / 婴幼儿配方乳粉产品配方注册管理办法 §5/§7 等)。**注意**:新增 27 条引用《食品标识监督管理办法》(SAMR令第100号)及 12 条引用《GB 7718-2025》(致敏原强制标示条款)的规则于 **2027-03-16 起施行**(届时自动转为现行法依据);本 APK 在 2026-09-11 ~ 2027-03-15 期间按"前向发版"惯例发布,APK manifest 内嵌规则已 ready,6 个月后法规生效即合规。详见 [`知识库/食品标签/食品标识监督管理办法.md`](../../知识库/食品标签/食品标识监督管理办法.md) + [`知识库/食品标签/GB_7718-2025_致敏原强制标示.md`](../../知识库/食品标签/GB_7718-2025_致敏原强制标示.md) 头部 metadata。
+
+### 变更
+
+- **食品标签 tab 默认启用(`RuleTabBar.visibleTabs` 参数化 + `RuleTab.tabIcon`)**:v0.1.10 起单焦点策略(`visibleTabs = listOf(RuleTab.AdSignage)`)改为 v0.1.69 双 tab 默认全开(`RuleTab.entries.toSet()`)。`IceSpiritVisionViewModel.visibleFeatures: StateFlow<Set<RuleTab>>` 注入 `HomeScreen` → `HomeTopBar` → `RuleTabBar`,DataStore `visible_features` 持久化。`food_gb7718_2025_sec5_allergen_*` 12 条 + `food_*` gap-fill 17 条 OCR 触发规则 ready,合规触发立刻可用。Tab 上加 `Icons.Outlined.LocalDining`(食品) + 既有 `Icons.Outlined.Verified`(广告)双图标区分。
+- **设置层「功能可见性」Card 新增(`SettingsViewModel.setFeatureVisible + SettingsSnackbar`)**:用户在 Settings 卡片勾选每个 tab 的可见性,DataStore `visible_features: Set<RuleTab>` 持久化。`SettingsViewModel` enforce 边界:`size <= 1` 时禁用最后一个 → `SettingsSnackbar.LastFeatureCannotHide`;DataStore 写入失败 → `SettingsSnackbar.PersistFailed`(带 `Log.w` 记录非 IO 异常)。`SnackbarHostState` + `LaunchedEffect(viewModel)` 消费 `SharedFlow<SettingsSnackbar>`(`extraBufferCapacity=4` + `BufferOverflow.DROP_OLDEST`)。
+- **food_label 规则库 v4 → v5:66 → 95 条,覆盖 8 部法规**:详见 commit `64095fe`(29 条增量)。`AssetRuleLoaderTest` 阈值 95 + version 5 锁版。
+- **`ad_signage_art20_breastmilk` 法规新鲜度清理(commit `b7f4f30`)**:移除已废止《母乳代用品销售管理办法》第九条(2017-12-13 国家卫生计生委令第 17 号废止)引用,纯靠《广告法》§20 + §57 覆盖。`food_gb13432_infant_breastmilk_substitute` 已正确标"2017 废止"保留作为参考。
+
+### 修复
+
+- **Phase 2 substring dedup 边界发现(`scan_art14DateZone_firesOn见包装物某部位`)**:position-based dedup 验证 — 当关键字在同一 rule 内多个 position 命中时,只有 first-encountered position 的短关键字被长关键字吸收,后续独立 position 的短关键字保留。T9.2 §14 规则第一版失败,删除冗余"见包装某部位"短关键字(由 AC 1-char-deletion 变体检测覆盖)后通过。
+
+### 验证
+
+- `./gradlew testDebugUnitTest -PmodelProfile=shell`:913 tests,2 failed(`AdSignageTextFixtureRegressionTest` + `ChangelogScreenTest`),2 skipped — 2 个失败均为跨发版号 baseline,与本次改动无关。`FoodLabelRuleMatcherTest`:120 tests 全过(原 87 + T9.1-T9.4 新增 33)。
+- `app/build.gradle.kts versionCode 68→69` + `versionName 0.1.68→0.1.69`,与 `user-changelog.md` 顶部 v0.1.69 同步。
+- `food_label_rules.json` `version: 4 → 5`,与 `AssetRuleLoaderTest.assertEquals(5, set.version)` 同步。
+- APK 体积:预估 ~75 MB(规则库 +29 条 + 2 个新 Icon Vector + TabBar 参数化 + Settings Card ≈ 食品标签 tab 实装为唯一显著增量);精确数字待 T12 assembleRelease 后回填。
+
 ## v0.1.68 — 2026-09-10
 
 规则 / TTS / UI 测试三处系统性优化收口。广告招牌 tab 仍是唯一 UI tab;规则库 / TTS 模型 / APK 体积与 v0.1.67 同量级。
