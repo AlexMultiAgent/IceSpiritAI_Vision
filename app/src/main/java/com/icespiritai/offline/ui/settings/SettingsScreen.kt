@@ -20,11 +20,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
@@ -35,8 +39,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.icespiritai.offline.BuildConfig
 import com.icespiritai.offline.R
 import com.icespiritai.offline.settings.SettingsRepository
+import com.icespiritai.offline.settings.SettingsSnackbar
 import com.icespiritai.offline.settings.SettingsViewModel
 import com.icespiritai.offline.tts.TtsState
+import com.icespiritai.offline.ui.home.RuleTab
 
 /**
  * Modernized Settings screen (Phase 3.5 Task 21).
@@ -67,6 +73,25 @@ fun SettingsScreen(
         factory = SettingsViewModel.factory(SettingsRepository(context.applicationContext)),
     )
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val visibleFeatures by viewModel.visibleFeatures.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Collect VM-emitted snackbar signals (LastFeatureCannotHide / PersistFailed)
+    // for hosting in the Material3 snackbar host. String lookup uses
+    // LocalContext (captured outside the LaunchedEffect) — SnackbarHostState
+    // does NOT expose a `.context` accessor, so the plan's
+    // `snackbarHostState.context.getString(...)` snippet is not a valid API.
+    LaunchedEffect(viewModel) {
+        viewModel.snackbar.collect { msg ->
+            val message = when (msg) {
+                SettingsSnackbar.LastFeatureCannotHide ->
+                    context.getString(R.string.settings_feature_last_cannot_hide)
+                is SettingsSnackbar.PersistFailed ->
+                    context.getString(R.string.settings_feature_persist_failed)
+            }
+            snackbarHostState.showSnackbar(message = message)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -87,6 +112,7 @@ fun SettingsScreen(
                 },
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         modifier = modifier,
     ) { padding ->
         Column(
@@ -131,6 +157,12 @@ fun SettingsScreen(
                     onSetTtsEnabled = onSetTtsEnabled,
                     currentEngineLabel = currentEngineLabel,
                     onOpenEnginePicker = onOpenEnginePicker,
+                )
+            }
+            Card(modifier = Modifier.fillMaxWidth()) {
+                FeatureVisibilitySection(
+                    visible = visibleFeatures,
+                    onToggle = viewModel::setFeatureVisible,
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
@@ -226,6 +258,86 @@ private fun TtsSection(
             text = stringResource(R.string.tts_section_footer_settings_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+        )
+    }
+}
+
+/**
+ * "功能可见性" settings card(food-labeling feature plan §3.5 / Task 6)。
+ *
+ * One Switch per [RuleTab] (广告招牌 / 食品标签). The "至少保留一个" invariant
+ * is enforced in [SettingsViewModel.setFeatureVisible] — the VM rejects the
+ * write and emits [SettingsSnackbar.LastFeatureCannotHide], which the caller
+ * surfaces as a snackbar. This composable therefore does NOT need to know
+ * about the size==1 guard; it simply forwards user intent to [onToggle].
+ *
+ * The two row labels use dedicated settings strings (`settings_feature_ad_signage_label`
+ * / `settings_feature_food_label_label`) rather than the tab bar's `tab_ad_law`
+ * / `tab_food_label`, because the settings context may want different copy in
+ * the future — keeping them separate avoids future tab-bar-style churn bleeding
+ * into this card.
+ *
+ * Pure Composable: takes primitive props ([visible] + [onToggle]) instead of
+ * the ViewModel directly, which keeps it Robolectric-test-friendly without a
+ * fake VM factory. Matches [TtsSection]'s signature shape.
+ */
+@Composable
+private fun FeatureVisibilitySection(
+    visible: Set<RuleTab>,
+    onToggle: (RuleTab, Boolean) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.settings_feature_visibility_title),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+            text = stringResource(R.string.settings_feature_visibility_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+        )
+        FeatureVisibilityRow(
+            label = stringResource(R.string.settings_feature_ad_signage_label),
+            checked = RuleTab.AdSignage in visible,
+            onCheckedChange = { onToggle(RuleTab.AdSignage, it) },
+        )
+        FeatureVisibilityRow(
+            label = stringResource(R.string.settings_feature_food_label_label),
+            checked = RuleTab.FoodLabeling in visible,
+            onCheckedChange = { onToggle(RuleTab.FoodLabeling, it) },
+        )
+    }
+}
+
+/**
+ * Single label + Switch row used inside [FeatureVisibilitySection]. Extracted
+ * so the two rows stay visually identical (label `bodyLarge` weight=1f +
+ * trailing Switch) — duplication here would silently drift if one row is
+ * later tweaked.
+ */
+@Composable
+private fun FeatureVisibilityRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f),
+        )
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
         )
     }
 }
