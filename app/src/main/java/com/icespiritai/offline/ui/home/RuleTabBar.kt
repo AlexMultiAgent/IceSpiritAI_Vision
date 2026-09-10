@@ -23,6 +23,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -36,13 +37,33 @@ import com.icespiritai.offline.R
  *
  * Per-tab icon testTags follow the codebase convention established by
  * [com.icespiritai.offline.ui.settings.AppearanceSection] (`theme_SYSTEM`,
- * `theme_DARK`, `theme_LIGHT`) — base constant + `RuleTab.name` (uppercase).
- * This keeps the tag names stable across `RuleTab` enum reorders.
+ * `theme_DARK`, `theme_LIGHT`) — a base constant +
+ * a hardcoded `SCREAMING_SNAKE_CASE` transliteration of `RuleTab.name`
+ * (`AdSignage` → `AD_SIGNAGE`). Note this is **not** `name.uppercase()`
+ * (which would yield `ADSIGNAGE`); the per-enum underscore is intentional
+ * to match the convention used elsewhere in this codebase.
+ *
+ * The constants AND the [leadingIconTag] mapping helper live in this
+ * object so adding a 3rd tab is a one-spot change: extend the constants
+ * block AND the `when` in [leadingIconTag] in the same place, and
+ * production + tests stay locked together.
  */
 object RuleTabBarTestTags {
     const val PILL_LEADING_ICON = "ruleTabBar_pill_leading_icon"
     const val PILL_LEADING_ICON_AD_SIGNAGE = "${PILL_LEADING_ICON}_AD_SIGNAGE"
     const val PILL_LEADING_ICON_FOOD_LABELING = "${PILL_LEADING_ICON}_FOOD_LABELING"
+
+    /**
+     * Production mapping from a [RuleTab] to its per-pill leading-icon
+     * testTag. Mirrors the `PILL_LEADING_ICON_*` constants above —
+     * `PillTab` calls this once instead of `when`-ing on the enum in
+     * layout code. When adding a new [RuleTab], add both the constant
+     * above AND a branch here.
+     */
+    fun leadingIconTag(tab: RuleTab): String = when (tab) {
+        RuleTab.AdSignage -> PILL_LEADING_ICON_AD_SIGNAGE
+        RuleTab.FoodLabeling -> PILL_LEADING_ICON_FOOD_LABELING
+    }
 }
 
 enum class RuleTab(val titleRes: Int, val tabIcon: ImageVector) {
@@ -53,14 +74,16 @@ enum class RuleTab(val titleRes: Int, val tabIcon: ImageVector) {
 /**
  * Soft-color chip tab bar. Each tab is a [Surface] with `RoundedCornerShape(50)`
  * (full pill), `tertiaryContainer` fill when selected and `surfaceVariant`
- * when unselected, with a per-tab leading icon (verified from [RuleTab.tabIcon])
+ * when unselected, with a per-tab leading icon (derived from [RuleTab.tabIcon])
  * and `labelLarge` Medium label text. The soft container contrasts gently with
  * the flat title above, replacing the previous "strong pill" segmented pattern
  * that looked like an isolated button on Idle.
  *
  * Each pill exposes `Role.Tab` semantics via [Modifier.clickable] so
  * [RuleTabBarTest] (which counts `Role.Tab` nodes) and screen readers both
- * keep working. Per-tab icon testTags
+ * keep working. Each pill also exposes `SemanticsProperties.Selected` so
+ * tests and a11y tooling can distinguish the active pill from its siblings
+ * without inspecting color. Per-tab icon testTags
  * ([RuleTabBarTestTags.PILL_LEADING_ICON_AD_SIGNAGE] /
  * [RuleTabBarTestTags.PILL_LEADING_ICON_FOOD_LABELING]) let tests verify the
  * icon swap (Verified for AdSignage, LocalDining for FoodLabeling).
@@ -70,11 +93,25 @@ enum class RuleTab(val titleRes: Int, val tabIcon: ImageVector) {
  *   injects which tabs to render. Iterate order = [RuleTab.entries] order
  *   (AdSignage → FoodLabeling), so the food-labeling tab always sits to the
  *   right of the ad-signage tab.
- * - Default = `setOf(RuleTab.AdSignage)` — preserves the v0.1.10 single-focus
- *   product direction for callers that haven't been wired to the VM yet.
- *   Task 5 (HomeScreen) overrides this with `vm.visibleFeatures.collectAsState().value`.
+ * - **Required, no default.** The system default everywhere else
+ *   (`SettingsRepository.visibleFeatures`, the VM's `initialValue`) is
+ *   `RuleTab.entries.toSet()` (both tabs visible). A `setOf(AdSignage)`
+ *   default here would silently disable the v0.1.69 dual-tab feature for
+ *   any caller that forgets to thread the param — `HomeTopBar` is updated
+ *   to pass it through; Task 5 (HomeScreen) will eventually wire
+ *   `vm.visibleFeatures.collectAsState().value` from the source of truth.
  * - Empty set → an empty [Row] is rendered (no crash). Callers are responsible
  *   for the "at least one visible" guard (see [com.icespiritai.offline.settings.SettingsViewModel.setFeatureVisible]).
+ *
+ * **Selection coercion invariant**: if `selected !in visibleTabs` — e.g. the
+ * user was on FoodLabeling, hid it via Settings, then returned to Home —
+ * the bar coerces `selected` to `RuleTab.entries.first { it in visibleTabs }`
+ * (the leftmost visible tab) so at least one pill is always highlighted.
+ * Callers do **not** need to coordinate `_currentTab` with `visibleFeatures`:
+ * the VM's `setTab` already rejects hidden-tab transitions
+ * ([com.icespiritai.offline.IceSpiritVisionViewModel.setTab] returns `false`),
+ * so this coercion only fires in the race where Settings hid the *current*
+ * tab between VM emission and composable recomposition.
  *
  * **Why `FoodLabeling` enum stays**: it is the canonical "add another
  * visual-discernment domain" template — `FoodLabelRuleMatcher` + domain field
@@ -84,13 +121,21 @@ enum class RuleTab(val titleRes: Int, val tabIcon: ImageVector) {
  */
 @Composable
 fun RuleTabBar(
-    visibleTabs: Set<RuleTab> = setOf(RuleTab.AdSignage),
+    visibleTabs: Set<RuleTab>,
     selected: RuleTab,
     onSelect: (RuleTab) -> Unit,
     enabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val a11y = stringResource(R.string.tab_switch_desc)
+    // Coerce `selected` against the current `visibleTabs`. If the user's
+    // current tab was just hidden via Settings, fall back to the leftmost
+    // visible tab so the bar always renders at least one highlighted pill.
+    // `firstOrNull` returns null only when `visibleTabs` is empty — in that
+    // case the forEach below iterates zero times and the row is empty,
+    // which is the documented "no crash" behaviour for an empty set.
+    val effectiveSelected = if (selected in visibleTabs) selected
+        else RuleTab.entries.firstOrNull { it in visibleTabs } ?: selected
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -100,7 +145,7 @@ fun RuleTabBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         RuleTab.entries.filter { it in visibleTabs }.forEach { tab ->
-            val isSelected = (tab == selected)
+            val isSelected = (tab == effectiveSelected)
             PillTab(
                 tab = tab,
                 isSelected = isSelected,
@@ -128,19 +173,17 @@ private fun PillTab(
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
-    val leadingIconTestTag = when (tab) {
-        RuleTab.AdSignage -> RuleTabBarTestTags.PILL_LEADING_ICON_AD_SIGNAGE
-        RuleTab.FoodLabeling -> RuleTabBarTestTags.PILL_LEADING_ICON_FOOD_LABELING
-    }
     Surface(
         color = containerColor,
         contentColor = contentColor,
         shape = RoundedCornerShape(50),
-        modifier = Modifier.clickable(
-            enabled = enabled,
-            role = Role.Tab,
-            onClick = onClick,
-        ),
+        modifier = Modifier
+            .clickable(
+                enabled = enabled,
+                role = Role.Tab,
+                onClick = onClick,
+            )
+            .semantics { selected = isSelected },
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -153,7 +196,7 @@ private fun PillTab(
                 tint = contentColor,
                 modifier = Modifier
                     .size(16.dp)
-                    .testTag(leadingIconTestTag),
+                    .testTag(RuleTabBarTestTags.leadingIconTag(tab)),
             )
             Text(
                 text = stringResource(tab.titleRes),

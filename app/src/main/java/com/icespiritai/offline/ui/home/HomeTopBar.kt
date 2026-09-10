@@ -54,6 +54,14 @@ import com.icespiritai.offline.tts.TtsState
  * Crossfade 用 220ms(Phase 3 §6.3 motion token)。
  *
  * Settings gear 仍在 CenterEnd,朗读按钮紧贴其左侧 8dp gap(共 Row 在 Box 内)。
+ *
+ * v0.1.69+: [visibleTabs] is threaded down to [RuleTabBar]. The default
+ * is `RuleTab.entries.toSet()` (the system-wide "both tabs visible"
+ * default — matches `SettingsRepository.visibleFeatures` and the VM's
+ * `initialValue`) so the v0.1.69 dual-tab feature ships **enabled by
+ * default** even before Task 5 wires the real `vm.visibleFeatures`
+ * through. Task 5 (HomeScreen) will replace this default with
+ * `vm.visibleFeatures.collectAsState().value` from the source of truth.
  */
 @Composable
 fun HomeTopBar(
@@ -64,6 +72,7 @@ fun HomeTopBar(
     ttsState: TtsState = TtsState.Disabled,
     isAnalysisComplete: Boolean = false,
     onSpeakToggle: () -> Unit = {},
+    visibleTabs: Set<RuleTab> = RuleTab.entries.toSet(),
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -107,7 +116,12 @@ fun HomeTopBar(
                     }
                 }
             }
-            RuleTabBar(selected = selectedTab, onSelect = onSelectTab, enabled = tabEnabled)
+            RuleTabBar(
+                visibleTabs = visibleTabs,
+                selected = selectedTab,
+                onSelect = onSelectTab,
+                enabled = tabEnabled,
+            )
         }
     }
 }

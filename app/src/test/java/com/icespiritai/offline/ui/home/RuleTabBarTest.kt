@@ -2,6 +2,7 @@ package com.icespiritai.offline.ui.home
 
 import androidx.compose.material3.Tab
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
@@ -27,13 +28,17 @@ import org.robolectric.annotation.Config
  * (typically [com.icespiritai.offline.IceSpiritVisionViewModel.visibleFeatures]).
  * These tests pin the visibility contract:
  *
- * - `setOf(RuleTab.AdSignage)` → renders exactly one tab (single-focus default,
- *   matches v0.1.10 product direction). FoodLabeling enum still exists but the
- *   tab is hidden.
+ * - `setOf(RuleTab.AdSignage)` → renders exactly one tab (single-focus mode,
+ *   reachable from Settings once the user disables FoodLabeling).
+ *   FoodLabeling enum still exists but the tab is hidden.
  * - `RuleTab.entries.toSet()` → renders both tabs (the dual-focus policy that
  *   takes effect once FoodLabeling is enabled in Settings).
  * - Each tab's leading icon is exposed via a per-tab testTag so callers can
- *   verify the icon swap (Verified → LocalDining).
+ *   verify the icon swap (Verified → LocalDining). The constant +
+ *   [RuleTabBarTestTags.leadingIconTag] helper live together so adding a 3rd
+ *   tab is a one-spot change.
+ * - Selected-tab coercion: `selected !in visibleTabs` → coerced to the
+ *   leftmost visible tab so at least one pill is always highlighted.
  *
  * RobolectricTestRunner + sdk=33 because targetSdk=37 > Robolectric 4.13's
  * maxSdk=34; same workaround as HomeScreenTest / ViewerScreenTest.
@@ -57,7 +62,7 @@ class RuleTabBarTest {
         // Exactly one tab node should be present. Compose's Tab composable
         // exposes a node per tab; asserting count == 1 enforces the policy.
         composeRule.onAllNodes(
-            SemanticsMatcher.expectValue(SemanticsProperties.Role, androidx.compose.ui.semantics.Role.Tab)
+            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
         ).assertCountEquals(1)
     }
 
@@ -136,11 +141,16 @@ class RuleTabBarTest {
                 )
             }
         }
-        // Per-tab testTag: base constant + RuleTab.name (uppercase), matching
-        // the existing AppearanceSection.kt convention (theme_SYSTEM, theme_DARK).
-        // The Icon sits inside a clickable Surface (Role.Tab) + Row that merge
-        // descendants by default, so we query the unmerged tree to find the
-        // leaf-level testTag.
+        // Per-tab testTag: base constant + SCREAMING_SNAKE_CASE transliteration
+        // of `RuleTab.name` (matching the existing AppearanceSection.kt
+        // convention theme_SYSTEM / theme_DARK / theme_LIGHT — note the enum
+        // names there are already single-word, so `name.uppercase()` happens
+        // to coincide with the SCREAMING_SNAKE_CASE form). The mapping is
+        // centralised in [RuleTabBarTestTags.leadingIconTag]; we assert the
+        // constant directly here to pin the public surface. The Icon sits
+        // inside a clickable Surface (Role.Tab) + Row that merge descendants
+        // by default, so we query the unmerged tree to find the leaf-level
+        // testTag.
         composeRule.onNodeWithTag(
             RuleTabBarTestTags.PILL_LEADING_ICON_AD_SIGNAGE,
             useUnmergedTree = true,
@@ -161,7 +171,7 @@ class RuleTabBarTest {
             )
         }
         composeRule.onAllNodes(
-            SemanticsMatcher.expectValue(SemanticsProperties.Role, androidx.compose.ui.semantics.Role.Tab)
+            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
         ).assertCountEquals(2)
     }
 
@@ -175,7 +185,7 @@ class RuleTabBarTest {
             )
         }
         composeRule.onAllNodes(
-            SemanticsMatcher.expectValue(SemanticsProperties.Role, androidx.compose.ui.semantics.Role.Tab)
+            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
         ).assertCountEquals(1)
         // Sanity: FoodLabeling's title is hidden when its tab is.
         composeRule.onNodeWithText("食品标识").assertDoesNotExist()
@@ -196,5 +206,51 @@ class RuleTabBarTest {
         ).assertExists()
         // Title still rendered for the active tab.
         composeRule.onNodeWithText("食品标识").assertExists()
+    }
+
+    // ---- Selection coercion + empty-set edge cases (Task 4 review) -------
+
+    /**
+     * Selected-tab coercion invariant (v0.1.69+ review fix): if the user's
+     * current tab was hidden via Settings (e.g. they were on FoodLabeling,
+     * hid it, then returned to Home), the bar must coerce to the leftmost
+     * visible tab so at least one pill is highlighted. Otherwise the
+     * capture silently does nothing against an ambiguous tab bar.
+     */
+    @Test
+    fun `coerces selected to first visible tab when selected is hidden`() {
+        composeRule.setContent {
+            RuleTabBar(
+                visibleTabs = setOf(RuleTab.AdSignage),
+                selected = RuleTab.FoodLabeling, // hidden — should coerce to AdSignage
+                onSelect = {},
+            )
+        }
+        // Only the AdSignage pill is rendered; the coercion guarantees it
+        // carries SemanticsProperties.Selected = true (otherwise no pill is
+        // highlighted — the bug we're guarding against).
+        composeRule.onAllNodes(
+            SemanticsMatcher.expectValue(SemanticsProperties.Selected, true)
+        ).assertCountEquals(1)
+    }
+
+    /**
+     * Empty `visibleTabs` must not crash — the bar renders an empty Row.
+     * The VM (`SettingsViewModel.setFeatureVisible`) is responsible for the
+     * "at least one visible" guard, but the Composable contract still has
+     * to be safe to call with `emptySet()`.
+     */
+    @Test
+    fun `empty visibleTabs renders empty Row`() {
+        composeRule.setContent {
+            RuleTabBar(
+                visibleTabs = emptySet(),
+                selected = RuleTab.AdSignage,
+                onSelect = {},
+            )
+        }
+        composeRule.onAllNodes(
+            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
+        ).assertCountEquals(0)
     }
 }

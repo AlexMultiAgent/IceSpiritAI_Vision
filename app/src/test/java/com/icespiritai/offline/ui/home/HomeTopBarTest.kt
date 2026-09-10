@@ -18,8 +18,8 @@ import org.robolectric.annotation.Config
 
 /**
  * Compose UI test for [HomeTopBar] — the centered "冰灵锐目" title
- * (single Text reading app_name, v0.1.48+) and the single-tab RuleTabBar
- * underneath, plus a settings IconButton pinned to the right.
+ * (single Text reading app_name, v0.1.48+) and the [RuleTabBar] underneath,
+ * plus a settings IconButton pinned to the right.
  *
  * Pins:
  *  - The title is a single Compose [androidx.compose.material3.Text]
@@ -28,7 +28,11 @@ import org.robolectric.annotation.Config
  *    The bolt ⚡ was removed in v0.1.48 per user feedback ("突兀"),
  *    collapsing the previous 3-Text layout (prefix + bolt + suffix)
  *    into this single Text.
- *  - The single visible tab ("广告招牌") renders, "食品标识" is hidden.
+ *  - Default `visibleTabs` (v0.1.69+) = `RuleTab.entries.toSet()` — both
+ *    "广告招牌" and "食品标识" render. This is the v0.1.69 dual-tab
+ *    product intent; pre-v0.1.69 the bar defaulted to a single-focus
+ *    `setOf(AdSignage)`. The single-tab override path is exercised by
+ *    [renders single tab when caller passes single-tab visibleTabs].
  *  - Clicking the settings IconButton (TalkBack contentDescription
  *    "设置") invokes onOpenSettings.
  *
@@ -85,13 +89,32 @@ class HomeTopBarTest {
     }
 
     @Test
-    fun `renders the single visible tab`() {
+    fun `renders both tabs by default (v0_1_69 dual-focus)`() {
         composeRule.setContent {
             HomeTopBar(
                 selectedTab = RuleTab.AdSignage,
                 onSelectTab = {},
                 tabEnabled = true,
                 onOpenSettings = {},
+            )
+        }
+        // v0.1.69 default visibleTabs = RuleTab.entries.toSet() — both
+        // tabs render. Pre-v0.1.69 the bar defaulted to setOf(AdSignage);
+        // that single-focus mode is still reachable via the explicit
+        // override below (and via Settings → hide FoodLabeling).
+        composeRule.onNodeWithText("广告招牌").assertIsDisplayed()
+        composeRule.onNodeWithText("食品标识").assertIsDisplayed()
+    }
+
+    @Test
+    fun `renders single tab when caller passes single-tab visibleTabs`() {
+        composeRule.setContent {
+            HomeTopBar(
+                selectedTab = RuleTab.AdSignage,
+                onSelectTab = {},
+                tabEnabled = true,
+                onOpenSettings = {},
+                visibleTabs = setOf(RuleTab.AdSignage),
             )
         }
         composeRule.onNodeWithText("广告招牌").assertIsDisplayed()
