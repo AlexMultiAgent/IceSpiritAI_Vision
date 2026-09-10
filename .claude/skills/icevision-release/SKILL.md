@@ -172,6 +172,48 @@ This skill **does not** bump `versionCode`, write `user-changelog.md`, or push t
 Call `project-commit` AFTER all release artifacts are verified (post-release smoke
 above), so the tag points at the exact SHA whose APK + JSON are live on Gitea.
 
+## Critical ordering: versionCode bump MUST happen BEFORE assembleRelease
+
+`versionCode` is baked into the APK binary at compile time (`BuildConfig.UPDATE_*`
++ manifest `versionCode` / `versionName` attribute). The flow is:
+
+1. `app/build.gradle.kts`: edit `versionCode = N` + `versionName = "0.1.N"`
+2. `./gradlew assembleRelease` — APK now contains N
+3. `./gradlew generateVisionLatestJson + uploadVisionReleaseToGitea` —
+   JSON's `versionCode` reads from `BuildConfig` (N), APK is the binary
+   just compiled (N), `apkSha256` matches both.
+4. `git commit` bump + `git tag v0.1.N` + push — tag points at the bump commit;
+   Triple-SHA aligns.
+
+**v0.1.68 footgun (2026-09-10)**: first pass followed the "Release 三段式打标
+in commit-time" guidance too literally — I bumped `versionCode 67→68` in
+`app/build.gradle.kts`, committed + tagged, THEN re-ran `uploadVisionReleaseToGitea`
+expecting it to upload the bumped APK. It uploaded the v0.1.67 APK (still on
+disk from the pre-bump assembleRelease) — JSON said `versionCode=68` but the
+APK manifest said `versionCode=67`. In-app update clients downloaded the
+"new" APK, the installer reported v0.1.67, and `versionCode <= current`
+silently killed future auto-checks. Symptom: user tapped "download & install"
+and the app stayed at v0.1.67.
+
+Fix: when re-running `uploadVisionReleaseToGitea` after a `versionCode` bump,
+ALWAYS first run `./gradlew assembleRelease` (4-minute rebuild) to produce
+the binary carrying the new versionCode. `uploadVisionReleaseToGitea` does
+NOT trigger a rebuild — it consumes whatever's in
+`app/build/outputs/apk/release/app-release.apk` at call time.
+
+**Defensive smoke**: every release, before tagging, read the APK manifest:
+
+```bash
+# APK manifest versionCode/Name MUST match JSON's versionCode/Name
+python3 -c "
+from androguard.core.apk import APK
+apk = APK('app/build/outputs/apk/release/app-release.apk')
+print(apk.get_androidversion_code(), apk.get_androidversion_name())
+"
+```
+
+If they don't match the JSON, the build is stale — re-run assembleRelease.
+
 ## See also
 
 - `CLAUDE.md` — Release pipeline footguns (Gitea 1.22.x APK 404, large-file POST, v1 signing)
