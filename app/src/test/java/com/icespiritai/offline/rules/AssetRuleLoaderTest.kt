@@ -95,7 +95,7 @@ class AssetRuleLoaderTest {
             "src/main/assets/rules/food_label_rules.json"
         ).readText(Charsets.UTF_8)
         val set = json.decodeFromString(FoodLabelRuleSet.serializer(), src)
-        assertEquals(4, set.version)
+        assertEquals(5, set.version)
         assertTrue(
             "shipped food_label_rules.json must carry at least one rule",
             set.rules.size >= 1,
