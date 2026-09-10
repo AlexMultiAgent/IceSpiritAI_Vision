@@ -1,5 +1,27 @@
 # 用户更新日志
 
+## v0.1.68 — 2026-09-10
+
+规则 / TTS / UI 测试三处系统性优化收口。广告招牌 tab 仍是唯一 UI tab;规则库 / TTS 模型 / APK 体积与 v0.1.67 同量级。
+
+### 修复
+
+- **TTS 引擎 speak-while-speaking 一致性(SherpaTtsEngine interrupt 语义对齐 AndroidTtsEngine)**:之前 SherpaTtsEngine 的 `lifecycleMutex.withLock` 把两次 `speak()` 串行化 — 用户在报告朗读中点重跑分析 / 点播放 FAB 两次,新朗读必须等旧朗读跑完才出声,与 Android TextToSpeech 引擎的 `QUEUE_FLUSH` 行为不一致(Android 原生引擎会中断旧朗读、立刻播新朗读)。v0.1.68 改用同步中断路径:第二次 `speak()` 进入时立即 fire 第一次的 `onDone` 回调(让 TTS controller state machine 看到 `Speaking → Idle → Speaking` 的快速迁移,而不是 stuck 在 Speaking 直到第一次协程 drain 完 withLock),同时 cancel 在飞的 Job、停止 `activePlayer`。`SherpaTtsEngineTest` 新增 `speak while speaking interrupts the previous utterance` 测试,用 `UnconfinedTestDispatcher` + 取消过的前置协程验证 (1) 第一次 `onDone` 同步触发,(2) 第二次 `playback` 走新 `play()` 调用,(3) 第二次 `speak()` 在自己的播放完成后正常 fire `onDone`。`finally` 用 `coroutineContext[Job]`(不是外层 `val job`)识别"自身"是必须的 — Kotlin 禁止 forward-reference local,且 UnconfinedTestDispatcher 上 launch body 在 `val job = launch { ... }` 赋值前就开始执行。
+- **8-bug 批量修复**(commit `4a16dec`):TTS collector 协程泄漏 / Phase 3 anchor gate 误命中 / DataStore `IOException` 崩溃 / ProGuard 误删 entry point / OcrEngineFactory SPI markers / `UpdateSection` 测试覆盖 — 一并落地为 1 个 commit,详查 commit body。
+
+### 变更 / 重构
+
+- **规则匹配器提取 `AhoCorasickMatcher<R : Rule>` 抽象基类**:AdSignageRuleMatcher 与 FoodLabelRuleMatcher 的 Phase 1(原始 AC 收集)+ Phase 2(variant dedup)+ Phase 2.5(substring dedup)三段累计算法字节级等价(855 个旧测试不动),`AdSignageRuleMatcher` 由 409 → 245 LOC,`FoodLabelRuleMatcher` 由 197 → 48 LOC,合计 ~410 LOC 重复代码下沉到基类。`Rule` interface 用 default empty 实现(`lawText / sourceMarkers / categoryAnchors / categoryAnchorsAbsent` 全部 `get() = emptyList()` / `get() = ""`),让 FoodLabelRule 这种不需要 anchor / source marker 的域规则不用逐字段 override。Phase 3 gate(sourceMarkerTrie / anchorTrie / anchorAbsentTrie)仍由 AdSignageRuleMatcher 持有,因为 FoodLabel 不走 anchor gating。零行为变化、零新增测试(全靠现有测试覆盖 dedup + gate 路径)。
+- **UI HomeScreen testTag 接通(StatusBanner / CaptureBar / ErrorPanel)**:为关键 Composable 挂上稳定 `testTag`,`HomeScreenTestTags.kt` 集中 export 常量(`STATUS_BANNER` / `KPI_VIOLATION` / `KPI_WARNING` / `KPI_INFO` / `CAPTURE_BAR_PICK` / `CAPTURE_BAR_EXPORT` / `CAPTURE_BAR_CAPTURE` / `ERROR_PANEL` / `ERROR_PANEL_RETRY` / `ERROR_PANEL_BACK`)。`ErrorPanel` 由 `private` 改为 `@VisibleForTesting internal`(测试需要从外部 compose),`HomeScreenTestTagsTest` 新增 5 个回归 pin:`assertExists()` / `assertDoesNotExist()` 覆盖每个 tag 的存活状态(包含 CaptureBar `hasHits=false` 时 export slot 不渲染的负向断言)。下游 integration 测试可用这些 tag 做稳定 selector,不必依赖文字内容。
+- **`SherpaTtsEngine.kt` 测试 seam 扩充**:`TestableSherpaTtsEngine` 暴露 `modelDir`(`val` 而非 constructor 参数,让测试文件可读取路径),`isModelInstalled()` 私有但通过 `FakeSynthesizer` + 文件 planting 模拟。
+- **`.tmp_audit/` 入 .gitignore**:批量扫描脚本与 `audit_out.json` 是纯函数式一次性产物,不应进版本库(本地留 240 KB 暂存)。
+
+### 验证
+
+- `./gradlew testDebugUnitTest -PmodelProfile=shell` 全过:Phase 1/2/2.5/3 路径全 byte-equivalent(855 旧测试)+ SherpaTtsEngine interrupt 测试 1 新增 + HomeScreenTestTagsTest 5 新增 + 8-bug batch 各 fix 自带测试,合计 861 个用例 0 fail 2 skip。
+- `app/build.gradle.kts versionCode 67→68` + `versionName 0.1.67→0.1.68`,与 `user-changelog.md` 顶部 v0.1.68 同步。
+- APK 体积:74,439,701 bytes(~71 MB,与 v0.1.67 量级同;增量来自 AhoCorasickMatcher 公共代码下沉到基类后 Kotlin compiler 视角略多的 dex 表)。
+
 ## v0.1.67 — 2026-09-09
 
 UI 严重度/字体/Info 配色/Loading skeleton 四项 P1+P2 审计收口。广告招牌 tab 仍是唯一 UI tab。
