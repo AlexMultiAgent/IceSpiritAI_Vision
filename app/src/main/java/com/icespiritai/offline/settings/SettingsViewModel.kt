@@ -9,6 +9,7 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.icespiritai.offline.BuildConfig
+import com.icespiritai.offline.ui.home.RuleTab
 import com.icespiritai.offline.updater.AppVersionInfo
 import com.icespiritai.offline.updater.UpdateCheckResult
 import com.icespiritai.offline.updater.UpdateRepository
@@ -24,6 +25,29 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
+
+/**
+ * One-shot user-facing messages emitted by [SettingsViewModel]. Surfaced
+ * to the UI via [SettingsViewModel.snackbar] for hosting in a
+ * `SnackbarHostState` (no `Toast` / context-coupled plumbing at this
+ * layer — keeps the VM pure Kotlin and JVM-test-friendly).
+ */
+sealed class SettingsSnackbar {
+    /**
+     * The user tried to hide the last visible [RuleTab], which would
+     * leave the tab bar empty. UI maps this to a "至少保留一个"
+     * toast and leaves the persisted state unchanged.
+     */
+    object LastFeatureCannotHide : SettingsSnackbar()
+
+    /**
+     * The upstream write to [ThemeSettingsSource] (DataStore under
+     * production) failed. [cause] carries the original throwable so the
+     * UI can decide whether to offer retry, log, or surface a generic
+     * "保存失败" message.
+     */
+    data class PersistFailed(val cause: Throwable) : SettingsSnackbar()
+}
 
 class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
 
@@ -47,6 +71,25 @@ class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
         // DataStore's first read lands. Factory default is SYSTEM (follow
         // the OS); the user can pin to DARK/LIGHT from settings.
         initialValue = ThemeMode.SYSTEM,
+    )
+
+    /**
+     * Currently visible [RuleTab] set, projected from [ThemeSettingsSource.visibleFeatures]
+     * via `stateIn(Eagerly)`. Initial value is [RuleTab.entries] (all tabs
+     * visible) so a brand-new install's first composition matches the
+     * production "show everything" baseline even before DataStore's first
+     * read lands — the source's own fallback (`SettingsRepository` falls
+     * back to all-tabs when the key is missing) will agree once it emits.
+     *
+     * Consumers: [com.icespiritai.offline.IceSpiritVisionViewModel] filters
+     * `matcherFor(tab)` / `setTab(tab)` against this set so a disabled
+     * tab is never rendered or selected; [com.icespiritai.offline.ui.home.RuleTabBar]
+     * reads it to decide how many pills to render.
+     */
+    val visibleFeatures: StateFlow<Set<RuleTab>> = source.visibleFeatures.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = RuleTab.entries.toSet(),
     )
 
     /**
@@ -75,6 +118,22 @@ class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
         extraBufferCapacity = 1,
     )
     val downloadStallEvents: SharedFlow<Unit> = _downloadStallEvents.asSharedFlow()
+
+    /**
+     * One-shot [SettingsSnackbar] signals surfaced to the UI for hosting
+     * in a `SnackbarHostState`. Mirrors [downloadStallEvents] in spirit
+     * (replay = 0 — past emissions are not interesting to a freshly
+     * composed screen) but uses `extraBufferCapacity = 4` to absorb a
+     * rapid back-to-back rejection (`setFeatureVisible` rejecting the
+     * last tab while a DataStore flush is still settling — up to ~3
+     * outstanding items before the buffer fills and `tryEmit` silently
+     * drops one, which is fine for a non-fatal UX hint).
+     */
+    private val _snackbar = MutableSharedFlow<SettingsSnackbar>(
+        replay = 0,
+        extraBufferCapacity = 4,
+    )
+    val snackbar: SharedFlow<SettingsSnackbar> = _snackbar.asSharedFlow()
 
     /**
      * P0-C005: stall detector. Foreground-service status alone is not
@@ -136,6 +195,41 @@ class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
         viewModelScope.launch {
             source.setThemeMode(mode)
             AppCompatDelegate.setDefaultNightMode(mode.toNightMode())
+        }
+    }
+
+    /**
+     * Toggle [tab]'s membership in the persisted visible-feature set.
+     *
+     * Enforces the "at least one tab must stay visible" invariant: if
+     * the user requests to hide the last remaining [RuleTab], the write
+     * is refused and [SettingsSnackbar.LastFeatureCannotHide] is emitted
+     * on [snackbar] so the UI can show a "至少保留一个" hint and leave the
+     * persisted state at its last-allowed value.
+     *
+     * Persistence failures (DataStore IOException, etc.) are surfaced
+     * as [SettingsSnackbar.PersistFailed] carrying the original throwable;
+     * the in-memory [visibleFeatures] StateFlow is NOT silently advanced
+     * to the would-be new value, because the write never landed —
+     * [ThemeSettingsSource.visibleFeatures] only emits when its underlying
+     * store does, and the source's [stateIn] projection reflects that.
+     *
+     * Runs on [viewModelScope] (Main dispatcher) — `source.setVisibleFeatures`
+     * is `suspend` and DataStore writes must not block the UI thread, so
+     * the launch keeps the call site non-blocking. `tryEmit` (rather than
+     * `emit`) means a buffer-full rejection is silently dropped; the
+     * snackbar is best-effort UX hint, not a correctness signal.
+     */
+    fun setFeatureVisible(tab: RuleTab, visible: Boolean) {
+        viewModelScope.launch {
+            val current = visibleFeatures.value
+            if (!visible && current.size <= 1) {
+                _snackbar.tryEmit(SettingsSnackbar.LastFeatureCannotHide)
+                return@launch
+            }
+            val next = if (visible) current + tab else current - tab
+            runCatching { source.setVisibleFeatures(next) }
+                .onFailure { _snackbar.tryEmit(SettingsSnackbar.PersistFailed(it)) }
         }
     }
 

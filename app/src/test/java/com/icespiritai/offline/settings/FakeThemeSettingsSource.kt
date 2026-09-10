@@ -18,11 +18,16 @@ import kotlinx.coroutines.flow.StateFlow
  * "show everything" baseline; tests that need a narrower set can swap
  * [visibleFeaturesBacking] for a tighter MutableStateFlow before passing
  * the fake to the ViewModel.
+ *
+ * `visibleFeaturesBacking` is `internal` (not `private`) so tests in
+ * the same module can assert the persisted value after `setFeatureVisible`
+ * without needing to subscribe to the upstream Flow (which is how
+ * `SettingsViewModel` verifies the write actually landed).
  */
 internal class FakeThemeSettingsSource(
     private val backing: MutableStateFlow<ThemeMode>,
 ) : ThemeSettingsSource {
-    private val visibleFeaturesBacking = MutableStateFlow<Set<RuleTab>>(RuleTab.entries.toSet())
+    internal val visibleFeaturesBacking = MutableStateFlow<Set<RuleTab>>(RuleTab.entries.toSet())
 
     override val themeMode: StateFlow<ThemeMode> = backing
     override suspend fun setThemeMode(mode: ThemeMode) {
