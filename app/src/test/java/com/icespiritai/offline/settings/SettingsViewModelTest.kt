@@ -14,7 +14,6 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.io.IOException
@@ -55,6 +54,11 @@ class SettingsViewModelTest {
     }
 
     @Test fun `setFeatureVisible enable writes via source`() = runTest(dispatcher) {
+        // Narrow the fake's set below `RuleTab.entries` so the enable path
+        // actually adds FoodLabeling, rather than collapsing to
+        // `current + tab == current` (the no-op case wouldn't exercise the
+        // "actually adding" branch).
+        fakeSource.visibleFeaturesBacking.value = setOf(RuleTab.AdSignage)
         vm.setFeatureVisible(RuleTab.FoodLabeling, true)
 
         assertEquals(
@@ -98,9 +102,10 @@ class SettingsViewModelTest {
         advanceUntilIdle()
 
         job.cancel()
-        assertTrue(
-            "Expected LastFeatureCannotHide in collected snackbars, got $collected",
-            collected.any { it is SettingsSnackbar.LastFeatureCannotHide },
+        assertEquals(
+            "Expected exactly one LastFeatureCannotHide in collected snackbars, got $collected",
+            1,
+            collected.filterIsInstance<SettingsSnackbar.LastFeatureCannotHide>().size,
         )
         // Persisted state must NOT have moved — the rejected write must
         // not flip the upstream to an empty set.
