@@ -119,6 +119,11 @@ fun HomeScreen(
     val noGalleryAppMsg = stringResource(R.string.error_no_gallery_app)
 
     val selectedTab by viewModel.currentTab.collectAsState()
+    // visibleFeatures is the persisted "which tabs are user-enabled" set from
+    // SettingsRepository. Threaded into HomeTopBar → RuleTabBar so the top bar
+    // hides tabs the user has switched off in Settings. Empty-set rendering
+    // is handled inside RuleTabBar (renders nothing) — production-safe here.
+    val visibleTabs by viewModel.visibleFeatures.collectAsState()
     // pendingUri persists across Loading→Complete so the image stays visible
     // before the analyzer finishes (AnalysisState.Loading has no URI field).
     // Lives on the ViewModel (not `remember` here) so the Viewer composable
@@ -273,6 +278,7 @@ fun HomeScreen(
             ttsState = ttsState,
             isAnalysisComplete = isAnalysisComplete,
             onSpeakToggle = onSpeakToggle,
+            visibleTabs = visibleTabs,
         )
 
         StatusBannerFor(state = state)
