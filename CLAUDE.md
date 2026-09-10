@@ -2,6 +2,15 @@
 
 本项目独有的协作约定:命名规范、构建系统(modelProfile / sourceSet 拆分 / AGP 9 限制)、模型路线、命令与文档索引。
 
+## 每次发版 / 每次 commit 必跑 (Trip Sequence)
+
+1. `export JAVA_HOME="/c/Users/37311/.gradle/jdks/jdk-17.0.18+8"`(否则 AGP 9.3 toolchain 解析崩)
+2. 作者 = `AlexMultiAgent`,**绝不**加任何 `Co-Authored-By:` trailer(显性 + 隐性 `AlexMultiAgent <noreply@anthropic.com>` 都拒,3 层 hook + hookify 拦截)
+3. `git add` 用具体路径,**绝不** `git add -A` / `git add .`(PreToolUse hook 直接拒)
+4. 发版前 `source ~/.gradle/release-env.sh`(release 凭据在 `/d/keystores/icespiritai-release.keystore`,由 `ICESPIRITAI_RELEASE_*` env 指向,不是 `~/.gradle/gradle.properties`)
+5. 发版前 `grep -n "enableV1Signing" app/build.gradle.kts` 必须 `true`(AGP 默认 v2-only,in-app update verifier 拒签)
+6. 发版后 Triple-SHA 对齐:`git rev-parse v0.1.X^{}` = HEAD = `sha256sum app/build/generated/release-staging/icespiritai-vision.apk` = JSON `apkSha256`
+
 ## 命名一致性(三项目统一)
 
 | 项 | 值 |
@@ -19,20 +28,22 @@
 - 冰灵智译 `com.icespiritai.translate`
 - 冰灵锐目 `com.icespiritai.vision`
 
-## 产品方向(v0.1.10 起):广告招牌 单一焦点
+## 产品方向:广告招牌 + 食品标签 双域(v0.1.69 起双 tab 默认全开)
 
-**v0.1.10 起,UI 层只暴露「广告招牌」tab;「食品标识」tab 入口暂时对用户隐藏**。原因与可复制模式边界:
+**v0.1.69 起**:`RuleTabBar.visibleTabs` 由硬编码 `listOf(RuleTab.AdSignage)` 改为参数化 `Set<RuleTab>`,由 [`IceSpiritVisionViewModel.visibleFeatures`](app/src/main/java/com/icespiritai/offline/IceSpiritVisionViewModel.kt) 注入(默认 `{AdSignage, FoodLabeling}` **全开**,持久化在 DataStore `visible_features` key,见 [`SettingsRepository.kt`](app/src/main/java/com/icespiritai/offline/settings/SettingsRepository.kt))。用户可在设置层「功能可见性」Card 里单独禁用食品标签;`FoodLabeling` enum 项 / `FoodLabelRule*` / `matcherFor` 路由 / `CategoryDisplay.FoodLabelCategory` 完整保留。
+
+**历史背景(v0.1.10 – v0.1.68)**:UI 层只暴露「广告招牌」tab,「食品标识」入口对用户隐藏,先把单域打磨到「可复制到下一个视觉判别域」的标尺。当时的分层状态(**代码路径至今保留,只是可见性不再硬编码**):
 
 | 维度 | 状态 |
 |---|---|
-| UI tab 渲染 | [RuleTabBar.kt](app/src/main/java/com/icespiritai/offline/ui/home/RuleTabBar.kt) 内部 `visibleTabs = listOf(RuleTab.AdSignage)`,`TabRow` 只渲染一项;`RuleTab.FoodLabeling` enum 项保留 |
-| ViewModel 路由 | [IceSpiritVisionViewModel.kt](app/src/main/java/com/icespiritai/offline/IceSpiritVisionViewModel.kt) `matcherFor(tab)` 双分支保留,`FoodLabelRuleMatcher` 仍可路由;UI 不暴露入口即可 |
-| 规则 + 加载器 | `AdSignageRuleLoader` + `FoodLabelRuleLoader` 双装载入口保留;`food_label_rules.json`(66 条 / v4)+ `ad_signage_rules.json`(129 条 / v10,14 个类别:absolute / agricultural / cosmetic / education / finance / internet_ad / medical / minor / outdoor / pesticide / realestate / restricted / signage / veterinary)均随 APK 出 |
-| 知识库 | [知识库/](知识库/) 双域 markdown 完整保留;`广告业务/` 是当前打磨中的成熟参考,`食品标识/` 是待后续套用的对象 |
+| UI tab 渲染 | [RuleTabBar.kt](app/src/main/java/com/icespiritai/offline/ui/home/RuleTabBar.kt) `visibleTabs: Set<RuleTab>` 为**必填参数**(无默认值),`TabRow` 按 `RuleTab.entries.filter { it in visibleTabs }` 渲染;`selected !in visibleTabs` 时自动 coerce 到首个可见 tab |
+| ViewModel 路由 | [IceSpiritVisionViewModel.kt](app/src/main/java/com/icespiritai/offline/IceSpiritVisionViewModel.kt) `matcherFor(tab)` 双分支保留,`FoodLabelRuleMatcher` 已可路由;`setTab` / `startAnalysis` 对 `tab !in visibleFeatures` 走拒绝分支 |
+| 规则 + 加载器 | `AdSignageRuleLoader` + `FoodLabelRuleLoader` 双装载入口保留;`food_label_rules.json`(66 条 / v4)+ `ad_signage_rules.json`(189 条 / v20,14 个类别:absolute / agricultural / cosmetic / education / finance / internet_ad / medical / minor / outdoor / pesticide / realestate / restricted / signage / veterinary)均随 APK 出 |
+| 知识库 | [知识库/](知识库/) 双域 markdown 完整保留(`广告业务/` + `食品标签/`);`广告业务/` 是成熟参考,`食品标签/` 按同一模式跟进 |
 | 测试 | [FoodLabelRuleMatcherTest.kt](app/src/test/java/com/icespiritai/offline/rules/FoodLabelRuleMatcherTest.kt) + [IceSpiritVisionViewModelTabTest.kt](app/src/test/java/com/icespiritai/offline/IceSpiritVisionViewModelTabTest.kt) 双 tab 路由断言保留 |
-| 打磨策略 | ad_signage_rules.json 关键词命中 / 严重度分级 / category 显示 / 证据包导出全部以"可复制到下一个视觉判别域"为标尺优化,达标后再以同样模式启用 FoodLabeling tab |
+| 打磨策略 | ad_signage_rules.json 关键词命中 / 严重度分级 / category 显示 / 证据包导出全部以"可复制到下一个视觉判别域"为标尺优化 —— 该标尺达标后,v0.1.69 以同样模式启用 FoodLabeling tab |
 
-**为什么保留 FoodLabeling 代码路径不删**:FoodLabeling 是「广告招牌模式 → 其他视觉判别域」的可复制模板,把 `FoodLabelRuleMatcher` + domain 字段 + 知识库 + 类别显示一并删除等于砍掉这条扩展路。`RuleTabBar.kt` 顶部注释明示"恢复时把 `visibleTabs` 改回 `RuleTab.entries.toList()` 即可"。
+**为什么保留 FoodLabeling 代码路径不删**:FoodLabeling 是「广告招牌模式 → 其他视觉判别域」的可复制模板,把 `FoodLabelRuleMatcher` + domain 字段 + 知识库 + 类别显示一并删除等于砍掉这条扩展路。v0.1.69 双 tab 上线正是这条路径没被删的直接收益。
 
 ### Tab → 初始页功能规范(✅ 已实现,7d5485c,2026-08-29)
 
@@ -42,7 +53,7 @@
 
 - 当 `selectedTab == tab` **且** `state !is Loading` 时,`setTab` 视为「回到初始」调用 `reset()`(等于把 selectedTab 复位不变,但 state 走回 Idle)
 - 当 `selectedTab == tab` **且** `state is Loading` 时,保持原 no-op(防误触打断正在跑的 OCR / 规则扫描)
-- 当 `selectedTab != tab` 时(等 FoodLabeling 解锁后才有意义),维持现状的"切换 matcher,保留 state"
+- 当 `selectedTab != tab` 时(v0.1.69 双 tab 全开后已是常规路径),维持现状的"切换 matcher,保留 state"
 
 **为什么不绑去拍照/相册按钮**:相机/相册按钮本身有"开始新一次分析"的语义(自动调 `setPendingUri + startAnalysis`),不适合复用为"回到初始"。Tab 点击是更纯净的「清空」入口。
 
@@ -85,7 +96,7 @@ Gradle property `modelProfile` 控制当前构建启用哪个模型配置:
 | Profile | 状态 | 含义 |
 | --- | --- | --- |
 | `shell` | **默认 / 首版** | 仅展示骨架;UI 可跑,Fake OCR + slim rules,APK 不带模型 |
-| `ice_ocr_rules` | Phase 1(shipped) | **PP-OCRv6_small**(2026-08-20 升级,rec dict 18708 条)经 PaddleOCR v3.7.0 SDK(走 ONNX Runtime + OpenCV)+ AdSignageRuleMatcher + FoodLabelRuleMatcher 已接入;rules JSON 从 `assets/rules/ad_signage_rules.json`(广告招牌 129 条 / v10 / 14 类,含 2026-08-27 新增 `ad_signage_signage_food_safety_implication` 暗示安全性规则)与 `assets/rules/food_label_rules.json`(食品标识 66 条 / v4)出;ONNX 模型(bundled in APK)在 `assets/models/{det,rec}/inference.onnx` + `inference.yml` |
+| `ice_ocr_rules` | Phase 1(shipped) | **PP-OCRv6_small**(2026-08-20 升级,rec dict 18708 条)经 PaddleOCR v3.7.0 SDK(走 ONNX Runtime + OpenCV)+ AdSignageRuleMatcher + FoodLabelRuleMatcher 已接入;rules JSON 从 `assets/rules/ad_signage_rules.json`(广告招牌 189 条 / v20 / 14 类,含 2026-08-27 新增 `ad_signage_signage_food_safety_implication` 暗示安全性规则)与 `assets/rules/food_label_rules.json`(食品标识 66 条 / v4)出;ONNX 模型(bundled in APK)在 `assets/models/{det,rec}/inference.onnx` + `inference.yml` |
 | `ice_vision` | 未来 | 多标签 + 法规依据的端侧 VLM |
 
 切换方式:`./gradlew assembleDebug -PmodelProfile=<name>`
@@ -115,7 +126,8 @@ Gradle property `modelProfile` 控制当前构建启用哪个模型配置:
 
 - `知识库/<域>/*.md` = **现行有效**的法规,规则 JSON 引用走这里
 - `知识库/已废止/*.md` = 已废止 / 被上位法替代 / 过渡期已结束的法规,仅作历史溯源用
-- 政策:新增规则或扩规则时,先用 WebSearch 确认 `regulation` 字段所引法规仍现行(2026-08-27 已完成批量清理:户外广告登记规定、母乳代用品销售管理办法、烟草广告管理暂行办法 → 已废止 / 实质替代;GB 7718-2011 / GB 28050-2011 / 食品标识管理规定 → 已废止并替换为 2025/2027 新版)
+- 政策:新增规则或扩规则时,先用 WebSearch 确认 `regulation` 字段所引法规仍现行(2026-08-27 已完成批量清理:户外广告登记规定、母乳代用品销售管理办法、烟草广告管理暂行办法 → 已废止 / 实质替代)
+- **食品标签 KB 过渡期例外(v0.1.69)**:三份 KB(`GB 7718-2011` / `GB 28050-2011` / `食品标识管理规定`)**未** `git mv` 到 `知识库/已废止/`,而是在主目录 `知识库/食品标签/` 以 `_2027-03-16废止.md` 后缀存在 —— 它们**在过渡期内仍属现行**(2027-03-16 起才失效),`food_label_rules.json` 引用它们合规。过渡期满(2027-03-16)时再统一迁移到 `知识库/已废止/`,并把 `regulation` 字段切到 2025 新版(`GB 7718-2025` / `食品标识监督管理办法`)
 
 ### 规则库时效性更新(v0.1.58,2026-09-04)
 
@@ -161,7 +173,7 @@ Phase 1 走 OCR + 规则库路线(**PP-OCRv6_small** + PaddleOCR 官方 SDK v3.7
 # 默认(骨架 APK,Fake OCR + slim rules)
 ./gradlew.bat assembleDebug -PmodelProfile=shell
 
-# Phase 1 shipped(PP-OCRv6_small + PaddleOCR v3.7.0 + 广告招牌 129 条 / 食品标识 66 条 + ONNX 模型)
+# Phase 1 shipped(PP-OCRv6_small + PaddleOCR v3.7.0 + 广告招牌 189 条 / 食品标识 66 条 + ONNX 模型)
 ./gradlew.bat assembleDebug -PmodelProfile=ice_ocr_rules
 
 # 单元测试 / Lint
@@ -295,7 +307,7 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 - **2026-08-21 v0.1.14 — `uploadVisionReleaseToGitea` 大文件 POST 卡住(HTTP 100)**:`POST .../assets` 上传 APK 一直返回 HTTP 100,`--max-time 600` 触发超时。**不要回滚代码**,纯 Gitea 端瞬时问题。**当前 APK-first 顺序**(v0.1.42 起):先 POST APK(`--max-time 900`)抓 response `uuid`,把 staged `vision-latest.json` 的 `apkUrl` 改写为 `http://125.211.45.14:3000/attachments/<uuid>`(task-local 临时文件,不 mutate staging),再 POST 改写后的 JSON(~1.4 KB,瞬时完成)。详 → `icevision-release` "大文件 POST 超时恢复"段
 - **2026-08-26 v0.1.31 — Gitea 1.22.x `releases/download/latest/<file>.apk` 返 404**:JSON 200 但 APK URL 404,改名也不解决。workaround:从 POST response 抓 `uuid`,把 `apkUrl` 改成 `http://125.211.45.14:3000/attachments/<uuid>`,cert-pin gate 不变。详 → `icevision-release` "Gitea 1.22.x APK 404 workaround"段
 - **2026-09-10 v0.1.68 — APK manifest versionCode 落后 JSON**(Reverse v0.1.14 drift):先 bump `versionCode 67→68` + commit + tag,再重跑 `uploadVisionReleaseToGitea`,期望它把新 APK 也传上去 — 不会。`uploadVisionReleaseToGitea` 不会触发 rebuild,只 consume `app/build/outputs/apk/release/app-release.apk` 现状(还是 bump 前那版 = v0.1.67 的 APK)。结果:JSON 说 versionCode=68,APK manifest 说 versionCode=67,客户端下载"新 APK"安装还是 v0.1.67,**后续 in-app update 永远走 `versionCode <= current → UpToDate` 分支**,用户看到"装完还是 0.1.67"永久卡住。**修复**:每次 bump `versionCode` 后,先重跑 `./gradlew assembleRelease`(~4 分钟)再 `uploadVisionReleaseToGitea`;**防御**:打 tag 前必须用 `androguard` 或 aapt 读 APK manifest 确认 `versionCode == JSON.versionCode`。完整根因 + 解法在 [`icevision-release`](.claude/skills/icevision-release/SKILL.md) "Critical ordering"段。
-- **Cert-pin 锚点**:`signerCertSha256` 必须 = `4a21f4...3043`。release 凭据在 `~/.gradle/gradle.properties`(gitignored),Gitea PAT 在 `gradle.token.properties`(gitignored,见 `gradle.token.properties.example` 模板)。stage 路径:`build/generated/release-staging/`(per memory `feedback-no-release-history-archive.md`,已不再写 `发布版历史存档/`)
+- **Cert-pin 锚点**:`signerCertSha256` 必须 = `4a21f4...3043`。**发版前必须** `source ~/.gradle/release-env.sh` 导出 `ICESPIRITAI_RELEASE_{STORE_FILE,STORE_PASSWORD,KEY_ALIAS,KEY_PASSWORD,CERT_SHA256}` + `JAVA_HOME`(JDK 17)。**不要**手动 `~/.gradle/release.jks` 试 keytool —— 实际 keystore 在 `/d/keystores/icespiritai-release.keystore`,由 `ICESPIRITAI_RELEASE_STORE_FILE` 指向(`.claude/skills/icevision-release/SKILL.md` Pre-flight 5 示例路径是过时的)。Gitea PAT 在 `gradle.token.properties`(gitignored,见 `gradle.token.properties.example` 模板)。stage 路径:`build/generated/release-staging/`(per memory `feedback-no-release-history-archive.md`,已不再写 `发布版历史存档/`)
 
 - **Cert-pin /凭据 sourcing(v0.1.53)**:发版前 `source ~/.gradle/release-env.sh` 导出 `ICESPIRITAI_RELEASE_{STORE_FILE,STORE_PASSWORD,KEY_ALIAS,KEY_PASSWORD,CERT_SHA256}` + `JAVA_HOME`(绑定 JDK 17),**不可**手动 `~/.gradle/release.jks` 试 keytool ——实际 keystore 在 `/d/keystores/icespiritai-release.keystore`,由 `ICESPIRITAI_RELEASE_STORE_FILE` 指向(`.claude/skills/icevision-release/SKILL.md` Pre-flight 5 示例路径是过时的)。
 
