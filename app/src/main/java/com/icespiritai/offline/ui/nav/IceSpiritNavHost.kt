@@ -8,12 +8,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.icespiritai.offline.IceSpiritVisionViewModel
 import com.icespiritai.offline.domain.AnalysisState
+import com.icespiritai.offline.settings.SettingsRepository
 import com.icespiritai.offline.tts.EngineInfo
 import com.icespiritai.offline.tts.TtsController
 import com.icespiritai.offline.tts.TtsState
@@ -111,7 +113,21 @@ fun IceSpiritNavHost(
         // Activity-scoped (LocalViewModelStoreOwner above the NavHost
         // is the Activity, not a per-route NavBackStackEntry). Shared
         // with both HomeScreen and the Viewer composable.
-        val sharedVm: IceSpiritVisionViewModel = viewModel()
+        //
+        // v0.1.69: wire `IceSpiritVisionViewModel.factory(...)` so the VM
+        // receives the DataStore-backed [SettingsRepository]. The default
+        // `viewModel()` factory only knows the no-arg `AndroidViewModel`
+        // constructor — without this override the new
+        // `(application, settingsSource)` constructor would crash at first
+        // composition with `NoSuchMethodError`. Mirrors how `SettingsScreen`
+        // wires `SettingsViewModel.factory(SettingsRepository(...))`.
+        val context = LocalContext.current
+        val sharedVm: IceSpiritVisionViewModel = viewModel(
+            factory = IceSpiritVisionViewModel.factory(
+                application = context.applicationContext as android.app.Application,
+                repository = SettingsRepository(context.applicationContext),
+            ),
+        )
         // Bug 1 fix (v0.1.60): hoist `state` and `pendingUri` collection
         // to NavHost level so HomeScreen can read `isAnalysisComplete`
         // (state is AnalysisState.Complete) for the top-bar 朗读 button.

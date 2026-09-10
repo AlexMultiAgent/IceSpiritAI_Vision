@@ -5,7 +5,9 @@ import android.net.Uri
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import androidx.test.core.app.ApplicationProvider
 import com.icespiritai.offline.domain.AnalysisState
+import com.icespiritai.offline.settings.FakeThemeSettingsSource
 import com.icespiritai.offline.ui.home.RuleTab
+import com.icespiritai.offline.ui.theme.ThemeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -17,6 +19,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -70,9 +73,11 @@ class IceSpiritVisionViewModelTabTest {
         Dispatchers.resetMain()
     }
 
-    private fun newViewModel(): IceSpiritVisionViewModel {
+    private fun newViewModel(
+        source: FakeThemeSettingsSource = FakeThemeSettingsSource(MutableStateFlow(ThemeMode.SYSTEM)),
+    ): IceSpiritVisionViewModel {
         val app = ApplicationProvider.getApplicationContext<Application>()
-        return IceSpiritVisionViewModel(app)
+        return IceSpiritVisionViewModel(app, source)
     }
 
     private fun currentJob(vm: IceSpiritVisionViewModel): Job? {
@@ -236,6 +241,111 @@ class IceSpiritVisionViewModelTabTest {
         assertEquals(
             "tab 切换 must update _currentTab.value",
             RuleTab.FoodLabeling, vm.currentTab.value,
+        )
+    }
+
+    // ---- §3.3 visibleFeatures 接入 + setTab/matcherFor disabled-tab 防御
+    //      (spec docs/superpowers/specs/2026-09-10-food-labeling-feature-design.md §3.3
+    //       + 计划 Task 3)。
+    //
+    // VM 现已持有 `ThemeSettingsSource.visibleFeatures` 的 StateFlow 投影。
+    // 设置页隐藏某个 tab 后,VM 必须:
+    //   (a) setTab(被隐藏 tab) → return false 且不改 _currentTab(spec §6 race 行)
+    //   (b) matcherFor(被隐藏 tab) → null(spec §3.3 "VM 兜底 — UI 永不触发")
+    //   (c) enabled tab 的 3-state setTab 契约不能 regress(本节 happy path)
+    //   (d) enabled tab 的 matcherFor 返回非 null 引用
+    //
+    // 用 FakeThemeSettingsSource 注入 MutableStateFlow<Set<RuleTab>> —
+    // visibleFeaturesBacking 在构造后即可赋值,stateIn(Eagerly) + advanceUntilIdle()
+    // 后同步到 vm.visibleFeatures.value。
+
+    @Test
+    fun setTab_ignoresSwitchToDisabledTab_returnsFalse() {
+        // Spec §6 race: 用户在设置里隐藏了 FoodLabeling,再点选「食品标签」tab
+        // (UI 层因为 stale 渲染露出入口) — VM 必须 return false 且 _currentTab
+        // 保持原值,不触发 foodMatcher 的 lazy 加载。
+        val source = FakeThemeSettingsSource(MutableStateFlow(ThemeMode.SYSTEM))
+        source.visibleFeaturesBacking.value = setOf(RuleTab.AdSignage)
+        val vm = newViewModel(source)
+        // stateIn(Eagerly) 在 viewModelScope(=Main=testDispatcher)上启动收集,
+        // StandardTestDispatcher 需要 advanceUntilIdle 让上游值(AdSignage-only)
+        // 同步到 vm.visibleFeatures.value。
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(
+            "visibleFeatures must reflect injected upstream value",
+            setOf(RuleTab.AdSignage),
+            vm.visibleFeatures.value,
+        )
+
+        assertFalse(
+            "setTab(FoodLabeling) must return false when FoodLabeling is disabled",
+            vm.setTab(RuleTab.FoodLabeling),
+        )
+        assertEquals(
+            "currentTab must remain AdSignage (disabled tab must NOT advance _currentTab)",
+            RuleTab.AdSignage, vm.currentTab.value,
+        )
+    }
+
+    @Test
+    fun setTab_sameAsEnabledTab_resetsToIdle_whenNotLoading() {
+        // Spec §Tab → 初始页 + §3.3 happy path: 当 tab 是 enabled 且同当前 tab,
+        // 既有 3-state 契约必须保持(non-Loading → reset 回 Idle)。这一条不是
+        // 新行为 — 是确认 disabled-tab guard 没有 regress 既有 happy path。
+        val source = FakeThemeSettingsSource(MutableStateFlow(ThemeMode.SYSTEM))
+        source.visibleFeaturesBacking.value = RuleTab.entries.toSet()
+        val vm = newViewModel(source)
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.setPendingUri(Uri.parse("content://stuck-report"))
+        assertNotNull("precondition: pendingUri must be non-null before setTab", vm.pendingUri.value)
+
+        assertFalse(
+            "setTab(AdSignage) when already on AdSignage (enabled) must return false",
+            vm.setTab(RuleTab.AdSignage),
+        )
+        assertEquals(
+            "enabled same-tab setTab must still clear pendingUri via internal reset()",
+            null, vm.pendingUri.value,
+        )
+        assertEquals(
+            "enabled same-tab setTab must still set state=Idle via internal reset()",
+            AnalysisState.Idle, vm.state.value,
+        )
+    }
+
+    @Test
+    fun matcherFor_returnsNull_whenTabIsDisabled() {
+        // Spec §3.3 VM 兜底 + §6 "VM 兜底破缺 UI 永不触发": 当 tab 被设置层
+        // 隐藏,matcherFor 必须返回 null — 这样 startAnalysis / 任何 future
+        // consumer 都能安全地 null-check,不会触发 disabled matcher 的 lazy
+        // asset load。
+        val source = FakeThemeSettingsSource(MutableStateFlow(ThemeMode.SYSTEM))
+        source.visibleFeaturesBacking.value = setOf(RuleTab.AdSignage)
+        val vm = newViewModel(source)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertNull(
+            "matcherFor(FoodLabeling) must return null when FoodLabeling is disabled",
+            vm.matcherFor(RuleTab.FoodLabeling),
+        )
+    }
+
+    @Test
+    fun matcherFor_returnsMatcher_whenTabIsEnabled() {
+        // Counterpart to above: enabled tab 的 matcher 引用必须可获得。
+        // matcherFor 返回的是 lazy 委托本身(`adMatcher: RuleMatcher by lazy { ... }`),
+        // 不是 resolved 的 RuleMatcher — 所以即使 Robolectric asset shadow 不
+        // 带 `app/src/main/assets/rules/ad_signage_rules.json`,光拿这个引用也
+        // 安全(只有 .scan() 才会触发 lazy resolve)。这条 pin 的是「enabled tab
+        // → 非 null 引用」契约,真实 RuleMatcher 行为由 on-device smoke 覆盖。
+        val source = FakeThemeSettingsSource(MutableStateFlow(ThemeMode.SYSTEM))
+        source.visibleFeaturesBacking.value = setOf(RuleTab.AdSignage)
+        val vm = newViewModel(source)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertNotNull(
+            "matcherFor(AdSignage) must return non-null reference when AdSignage is enabled",
+            vm.matcherFor(RuleTab.AdSignage),
         )
     }
 }

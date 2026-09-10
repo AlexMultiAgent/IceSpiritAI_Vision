@@ -2,7 +2,9 @@ package com.icespiritai.offline
 
 import android.app.Application
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.icespiritai.offline.analysis.ImageAnalyzerRepository
 import com.icespiritai.offline.domain.AnalysisState
@@ -15,12 +17,16 @@ import com.icespiritai.offline.rules.AdSignageRuleMatcher
 import com.icespiritai.offline.rules.FoodLabelRuleLoader
 import com.icespiritai.offline.rules.FoodLabelRuleMatcher
 import com.icespiritai.offline.rules.RuleMatcher
+import com.icespiritai.offline.settings.SettingsRepository
+import com.icespiritai.offline.settings.ThemeSettingsSource
 import com.icespiritai.offline.ui.home.RuleTab
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -45,6 +51,15 @@ import kotlinx.coroutines.withTimeoutOrNull
  * a UI message — instead of throwing out of this ViewModel's constructor
  * where no UI state exists to display it.
  *
+ * [visibleFeatures] mirrors the persisted `visible_features: Set<RuleTab>`
+ * from [ThemeSettingsSource] (DataStore-backed via [SettingsRepository] in
+ * production). The user toggles each tab's visibility in Settings —
+ * [matcherFor] / [setTab] consult this set so a disabled tab's matcher is
+ * never loaded and a disabled tab click is a no-op. Initial value is
+ * [RuleTab.entries] (all tabs visible) so a fresh install's first
+ * composition matches the production "show everything" baseline even
+ * before DataStore's first read lands.
+ *
  * [onCleared] deliberately does **not** release [ocrEngine]: the underlying
  * PaddleOCR instance holds process-wide native resources (ONNX sessions,
  * native Mat arenas) whose teardown belongs to a process-scoped owner, not a
@@ -52,7 +67,10 @@ import kotlinx.coroutines.withTimeoutOrNull
  * instantiation would be wasteful; subsequent ViewModels would otherwise
  * re-init. Eager teardown is out of scope for Phase 1.
  */
-class IceSpiritVisionViewModel(application: Application) : AndroidViewModel(application) {
+class IceSpiritVisionViewModel(
+    application: Application,
+    settingsSource: ThemeSettingsSource,
+) : AndroidViewModel(application) {
 
     // Lazy to match the rule-loader pattern below: a missing
     // `OcrEngineFactory` on the classpath (e.g. a packaging defect that
@@ -74,9 +92,53 @@ class IceSpiritVisionViewModel(application: Application) : AndroidViewModel(appl
         FoodLabelRuleMatcher(FoodLabelRuleLoader(app).load())
     }
 
-    private fun matcherFor(tab: RuleTab): RuleMatcher = when (tab) {
-        RuleTab.AdSignage -> adMatcher
-        RuleTab.FoodLabeling -> foodMatcher
+    /**
+     * Spec §3.3 race 校验: 用户在设置层隐藏某个 tab 后,VM 必须把该 tab
+     * 过滤掉 — `matcherFor` 拒绝返回 matcher,`setTab` 拒绝切换。Production
+     * binding 由 [Companion.factory] 提供 [SettingsRepository];测试用
+     * `FakeThemeSettingsSource` 注入任意 Flow 值。
+     *
+     * `internal` 是为了让测试访问(同 module)又不污染 production 公开 API
+     * — 真实 UI 消费走 [setTab] / [matcherFor] 这两个公开/可见 entry,不再
+     * 直接读 `settingsSource`。
+     */
+    val visibleFeatures: StateFlow<Set<RuleTab>> = settingsSource.visibleFeatures.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = RuleTab.entries.toSet(),
+    )
+
+    /**
+     * Resolve the [RuleMatcher] for [tab], or `null` if [tab] is not in
+     * [visibleFeatures].
+     *
+     * **Visible to tests** (`internal`, not `private`) so the disabled-tab
+     * contract can be pinned from the JVM unit test class
+     * [com.icespiritai.offline.IceSpiritVisionViewModelTabTest] without
+     * reflection. Production callers (currently [startAnalysis]) check the
+     * null result and skip the analyze pipeline if the requested tab is
+     * disabled.
+     *
+     * Returns the lazy delegate itself when [tab] is enabled — does NOT
+     * force-resolve the asset loader. The lazy resolves on first
+     * [RuleMatcher.scan] call inside the analyze pipeline, which is what
+     * we want: a disabled tab never triggers asset load, and an enabled
+     * tab's load is deferred to the moment the user actually analyzes
+     * (see [AdSignageRuleMatcher] / [FoodLabelRuleMatcher] lazy docs).
+     */
+    internal fun matcherFor(tab: RuleTab): RuleMatcher? {
+        val enabledTabs = visibleFeatures.value
+        if (tab !in enabledTabs) {
+            Log.w(
+                TAG,
+                "matcherFor($tab) requested but tab is disabled (visible=$enabledTabs)",
+            )
+            return null
+        }
+        return when (tab) {
+            RuleTab.AdSignage -> adMatcher
+            RuleTab.FoodLabeling -> foodMatcher
+        }
     }
 
     private val repository = ImageAnalyzerRepository(ocrEngine)
@@ -106,34 +168,20 @@ class IceSpiritVisionViewModel(application: Application) : AndroidViewModel(appl
 
     private var currentJob: Job? = null
 
-    private companion object {
-        /**
-         * P0-C002: outer analyze-pipeline watchdog. Caps the worst-case
-         * hang of the full `BitmapLoader.decode + OCR + RuleMatcher.scan`
-         * pipeline at 30 s before surfacing a recoverable Error state.
-         *
-         * Rationale for 30 s vs the audit's 10 s recommendation: the
-         * full pipeline routinely exceeds 10 s on slower devices without
-         * any system freeze (cold OCR first-touch, large rule sets, big
-         * images). 30 s gives the legitimate slow path 6-12× headroom
-         * against the documented 2.6 s warm / 5 s cold OCR SLA
-         * (`docs/smoke/2026-08-20-icevision-v0.1.12-real-device.md`) while
-         * still bounding user-perceived stall. The inner
-         * [com.icespiritai.offline.ocr.PaddleOcrEngine] mutex timeout
-         * (also 30 s) covers the OCR-specific deadlock independently;
-         * this outer watchdog catches hangs in `BitmapLoader` or
-         * `RuleMatcher.scan` that the inner timeout can't see.
-         *
-         * Together they cap worst-case hang at 30 s on either layer.
-         */
-        const val ANALYZE_WATCHDOG_TIMEOUT_MS = 30_000L
-    }
-
     /**
      * Switch the active tab. Returns `true` when the call actually changed
-     * the selected tab.
+     * the selected tab; `false` when the request was rejected (tab disabled
+     * in settings) or fell into a no-op clause.
      *
-     * Tab-routing contract (CLAUDE.md §Tab → 初始页, 2026-08-26):
+     * Two-layer contract:
+     *
+     * **Spec §3.3 race (settings hide)**: if [tab] is not in [visibleFeatures],
+     * the call is rejected — `false` returned, no state change. This guards
+     * against a settings-driven hide racing with a stale TabBar render that
+     * still shows the disabled tab.
+     *
+     * **Tab-routing contract (CLAUDE.md §Tab → 初始页, 2026-08-26)** when
+     * [tab] is enabled:
      *   - tab 切换 → 老路径:切换 matcher,保留 state (no reset)
      *   - tab 不变 + `state is Loading` → no-op(防误触打断正在跑的 OCR / 规则扫描)
      *   - tab 不变 + `state !is Loading` → 「回到初始」调 reset()(清 pendingUri +
@@ -145,6 +193,13 @@ class IceSpiritVisionViewModel(application: Application) : AndroidViewModel(appl
      * button, and the tab is the cleanest "clear" affordance.
      */
     fun setTab(tab: RuleTab): Boolean {
+        if (tab !in visibleFeatures.value) {
+            Log.w(
+                TAG,
+                "setTab($tab) ignored: tab is disabled (visible=${visibleFeatures.value})",
+            )
+            return false
+        }
         val isTabSwitch = _currentTab.value != tab
         if (isTabSwitch) {
             _currentTab.value = tab
@@ -159,21 +214,33 @@ class IceSpiritVisionViewModel(application: Application) : AndroidViewModel(appl
     /**
      * Start analysis for [uri]. Atomic w.r.t. any in-flight job:
      *
-     * 1. Capture the currently-running job into [prior] and replace
+     * 1. Resolve the matcher for the current tab via [matcherFor]; if it
+     *    returns `null` (the tab was just disabled in settings), bail out
+     *    without touching [currentJob] — disabling the tab should not cancel
+     *    a healthy in-flight analysis that was started while the tab was
+     *    still enabled.
+     * 2. Capture the currently-running job into [prior] and replace
      *    [currentJob] with the new launch synchronously (the UI can see the
      *    new Job the instant `startAnalysis` returns).
-     * 2. Inside the new coroutine, `cancelAndJoin` on [prior] so the old job
+     * 3. Inside the new coroutine, `cancelAndJoin` on [prior] so the old job
      *    fully unwinds before we touch any state — preventing a brief window
      *    where the old job is still emitting a `Loading` state with the old
      *    `_pendingUri`, while the UI already sees a different
      *    `_pendingUri` from a rapid double-tap.
-     * 3. Set `_pendingUri`, clear `_state` to [Idle], then start collecting.
+     * 4. Set `_pendingUri`, clear `_state` to [Idle], then start collecting.
      *
      * Callers do not need to wrap this in a coroutine; [viewModelScope] is
      * the parent scope.
      */
     fun startAnalysis(uri: Uri) {
         val matcher = matcherFor(_currentTab.value)
+        if (matcher == null) {
+            Log.w(
+                TAG,
+                "startAnalysis: currentTab=${_currentTab.value} is disabled (visible=${visibleFeatures.value}); skip analyze",
+            )
+            return
+        }
         val prior = currentJob
         prior?.cancel()
         currentJob = viewModelScope.launch {
@@ -249,5 +316,59 @@ class IceSpiritVisionViewModel(application: Application) : AndroidViewModel(appl
         currentJob?.cancel()
         // Intentionally no ocrEngine.release() — see KDoc above.
         super.onCleared()
+    }
+
+    companion object {
+        /**
+         * Logcat tag for disabled-tab guards in [matcherFor] / [setTab] /
+         * [startAnalysis]. Keeps the spec §3.3 race rejections grep-able.
+         */
+        private const val TAG = "IceSpiritVisionVM"
+
+        /**
+         * P0-C002: outer analyze-pipeline watchdog. Caps the worst-case
+         * hang of the full `BitmapLoader.decode + OCR + RuleMatcher.scan`
+         * pipeline at 30 s before surfacing a recoverable Error state.
+         *
+         * Rationale for 30 s vs the audit's 10 s recommendation: the
+         * full pipeline routinely exceeds 10 s on slower devices without
+         * any system freeze (cold OCR first-touch, large rule sets, big
+         * images). 30 s gives the legitimate slow path 6-12× headroom
+         * against the documented 2.6 s warm / 5 s cold OCR SLA
+         * (`docs/smoke/2026-08-20-icevision-v0.1.12-real-device.md`) while
+         * still bounding user-perceived stall. The inner
+         * [com.icespiritai.offline.ocr.PaddleOcrEngine] mutex timeout
+         * (also 30 s) covers the OCR-specific deadlock independently;
+         * this outer watchdog catches hangs in `BitmapLoader` or
+         * `RuleMatcher.scan` that the inner timeout can't see.
+         *
+         * Together they cap worst-case hang at 30 s on either layer.
+         */
+        const val ANALYZE_WATCHDOG_TIMEOUT_MS = 30_000L
+
+        /**
+         * Mirror of [com.icespiritai.offline.settings.SettingsViewModel.factory]:
+         * a [ViewModelProvider.Factory] that wires a real DataStore-backed
+         * [SettingsRepository] into the VM. Required because this VM is an
+         * [AndroidViewModel] and now needs both the [Application] (for asset
+         * loading / `OcrEngineFactoryLocator`) and the settings source (for
+         * [visibleFeatures]) — the default `viewModel()` factory can only
+         * construct the no-arg `AndroidViewModel(application)`.
+         *
+         * Used by [com.icespiritai.offline.ui.nav.IceSpiritNavHost] via
+         * `viewModel(factory = IceSpiritVisionViewModel.factory(application, repo))`.
+         * Tests use a `FakeThemeSettingsSource` directly via the public
+         * constructor.
+         */
+        fun factory(
+            application: Application,
+            repository: SettingsRepository,
+        ): androidx.lifecycle.ViewModelProvider.Factory =
+            object : androidx.lifecycle.ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    return IceSpiritVisionViewModel(application, repository) as T
+                }
+            }
     }
 }

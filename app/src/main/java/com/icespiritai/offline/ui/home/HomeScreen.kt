@@ -47,6 +47,7 @@ import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.domain.ViolationReport
 import com.icespiritai.offline.domain.severityRank
 import com.icespiritai.offline.export.ExportAction
+import com.icespiritai.offline.settings.SettingsRepository
 import com.icespiritai.offline.tts.TtsState
 import java.io.File
 
@@ -64,12 +65,21 @@ fun HomeScreen(
      * Injectable ViewModel. `IceSpiritNavHost` passes a single
      * Activity-scoped instance so the Viewer route (a sibling destination
      * in the NavHost) can read the same `state` + `pendingUri` flows that
-     * HomeScreen writes. The default `viewModel()` keeps the existing
-     * Robolectric tests (`HomeScreenTest`, `HomeScreenScreenshotTest`)
-     * working — those tests don't stand up a NavHost, so they get a
-     * fresh ViewModel via `LocalViewModelStoreOwner.current`.
+     * HomeScreen writes. The default wires `IceSpiritVisionViewModel.factory(...)`
+     * with a real [SettingsRepository] — the bare `viewModel()` factory only
+     * knows the no-arg `AndroidViewModel(application)` constructor and would
+     * crash with `NoSuchMethodException` now that the VM requires
+     * `(application, settingsSource)`. Robolectric tests that invoke
+     * `HomeScreen` directly (`HomeScreenTest`, `HomeScreenScreenshotTest`)
+     * also hit this default path; they run in a Robolectric-shaded context
+     * so the DataStore-backed SettingsRepository is safe to construct.
      */
-    viewModel: IceSpiritVisionViewModel = viewModel(),
+    viewModel: IceSpiritVisionViewModel = viewModel(
+        factory = IceSpiritVisionViewModel.factory(
+            application = LocalContext.current.applicationContext as android.app.Application,
+            repository = SettingsRepository(LocalContext.current.applicationContext),
+        ),
+    ),
     /**
      * TTS controller state machine (spec §5.1). Threaded from
      * `IceSpiritNavHost` so the top-bar speaker icon can flip between

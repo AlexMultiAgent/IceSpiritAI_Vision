@@ -4,9 +4,12 @@ import android.app.Application
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import androidx.test.core.app.ApplicationProvider
 import com.icespiritai.offline.domain.AnalysisState
+import com.icespiritai.offline.settings.FakeThemeSettingsSource
+import com.icespiritai.offline.ui.theme.ThemeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -61,7 +64,13 @@ class IceSpiritVisionViewModelTest {
 
     private fun newViewModel(): IceSpiritVisionViewModel {
         val app = ApplicationProvider.getApplicationContext<Application>()
-        return IceSpiritVisionViewModel(app)
+        // v0.1.69: VM constructor now requires a ThemeSettingsSource. Tests
+        // use FakeThemeSettingsSource (all-tabs-visible default) — matches
+        // the pattern in `SettingsViewModelTest`. Real SettingsRepository
+        // would require a Robolectric DataStore round-trip just to flip a
+        // single flag, which adds seconds to every test for no coverage.
+        val source = FakeThemeSettingsSource(MutableStateFlow(ThemeMode.SYSTEM))
+        return IceSpiritVisionViewModel(app, source)
     }
 
     private fun currentJob(vm: IceSpiritVisionViewModel): Job? {
