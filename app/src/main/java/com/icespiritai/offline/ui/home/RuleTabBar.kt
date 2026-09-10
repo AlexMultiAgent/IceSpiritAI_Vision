@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.LocalDining
 import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -16,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -31,44 +33,58 @@ import com.icespiritai.offline.R
  * source (not test source) because production composables in this file
  * need to attach `Modifier.testTag(...)` directly — test sources are not
  * visible from main in Gradle's source-set split.
+ *
+ * Per-tab icon testTags follow the codebase convention established by
+ * [com.icespiritai.offline.ui.settings.AppearanceSection] (`theme_SYSTEM`,
+ * `theme_DARK`, `theme_LIGHT`) — base constant + `RuleTab.name` (uppercase).
+ * This keeps the tag names stable across `RuleTab` enum reorders.
  */
 object RuleTabBarTestTags {
     const val PILL_LEADING_ICON = "ruleTabBar_pill_leading_icon"
+    const val PILL_LEADING_ICON_AD_SIGNAGE = "${PILL_LEADING_ICON}_AD_SIGNAGE"
+    const val PILL_LEADING_ICON_FOOD_LABELING = "${PILL_LEADING_ICON}_FOOD_LABELING"
 }
 
-enum class RuleTab(val titleRes: Int) {
-    AdSignage(R.string.tab_ad_law),
-    FoodLabeling(R.string.tab_food_label),
+enum class RuleTab(val titleRes: Int, val tabIcon: ImageVector) {
+    AdSignage(R.string.tab_ad_law, Icons.Outlined.Verified),
+    FoodLabeling(R.string.tab_food_label, Icons.Outlined.LocalDining),
 }
-
-/**
- * 食品标识 tab 入口当前**不向用户暴露**,仅保留 [RuleTab.FoodLabeling] enum
- * 项 + 完整代码路径(规则 / 加载器 / ViewModel 路由 / 测试 / KB markdown),以
- * 保持"广告招牌模式 → 食品标识模式"的可复制性。当前 `visibleTabs` 列表
- * 只渲染 [RuleTab.AdSignage],后续打磨 ad_signage 域规则成熟后,需启用
- * 食品标识时改回 `RuleTab.entries.toList()` 即可。
- *
- * 不要删除 `FoodLabeling` enum 项:那会让整套可复用模板(双 matcher /
- * domain 字段 / 知识库 / 类别显示 / 证据包导出)一并丢失,等于砍掉了
- * "成熟后可最大限度能套用扩展到食品标识 等其他视觉判别功能"这条路。
- */
-private val visibleTabs: List<RuleTab> = listOf(RuleTab.AdSignage)
 
 /**
  * Soft-color chip tab bar. Each tab is a [Surface] with `RoundedCornerShape(50)`
  * (full pill), `tertiaryContainer` fill when selected and `surfaceVariant`
- * when unselected, with a leading [Icons.Outlined.Verified] icon and
- * `labelLarge` Medium label text. The soft container contrasts gently with
- * the flat title above, replacing the previous "strong pill" segmented
- * pattern that looked like an isolated button on Idle.
+ * when unselected, with a per-tab leading icon (verified from [RuleTab.tabIcon])
+ * and `labelLarge` Medium label text. The soft container contrasts gently with
+ * the flat title above, replacing the previous "strong pill" segmented pattern
+ * that looked like an isolated button on Idle.
  *
  * Each pill exposes `Role.Tab` semantics via [Modifier.clickable] so
- * [RuleTabBarTest] (which counts `Role.Tab` nodes) and screen readers
- * both keep working. The [RuleTabBarTestTags.PILL_LEADING_ICON] testTag
- * lets tests verify the Verified icon renders.
+ * [RuleTabBarTest] (which counts `Role.Tab` nodes) and screen readers both
+ * keep working. Per-tab icon testTags
+ * ([RuleTabBarTestTags.PILL_LEADING_ICON_AD_SIGNAGE] /
+ * [RuleTabBarTestTags.PILL_LEADING_ICON_FOOD_LABELING]) let tests verify the
+ * icon swap (Verified for AdSignage, LocalDining for FoodLabeling).
+ *
+ * **Visibility contract** ([visibleTabs]):
+ * - The caller (typically the ViewModel's `visibleFeatures: StateFlow<Set<RuleTab>>`)
+ *   injects which tabs to render. Iterate order = [RuleTab.entries] order
+ *   (AdSignage → FoodLabeling), so the food-labeling tab always sits to the
+ *   right of the ad-signage tab.
+ * - Default = `setOf(RuleTab.AdSignage)` — preserves the v0.1.10 single-focus
+ *   product direction for callers that haven't been wired to the VM yet.
+ *   Task 5 (HomeScreen) overrides this with `vm.visibleFeatures.collectAsState().value`.
+ * - Empty set → an empty [Row] is rendered (no crash). Callers are responsible
+ *   for the "at least one visible" guard (see [com.icespiritai.offline.settings.SettingsViewModel.setFeatureVisible]).
+ *
+ * **Why `FoodLabeling` enum stays**: it is the canonical "add another
+ * visual-discernment domain" template — `FoodLabelRuleMatcher` + domain field
+ * + knowledge base + category display all live alongside `AdSignage`. Dropping
+ * the enum would erase the v0.1.10 commitment to keep the door open for
+ * "广告招牌模式 → 其他视觉判别域" replication (CLAUDE.md §产品方向).
  */
 @Composable
 fun RuleTabBar(
+    visibleTabs: Set<RuleTab> = setOf(RuleTab.AdSignage),
     selected: RuleTab,
     onSelect: (RuleTab) -> Unit,
     enabled: Boolean = true,
@@ -83,7 +99,7 @@ fun RuleTabBar(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        visibleTabs.forEach { tab ->
+        RuleTab.entries.filter { it in visibleTabs }.forEach { tab ->
             val isSelected = (tab == selected)
             PillTab(
                 tab = tab,
@@ -112,6 +128,10 @@ private fun PillTab(
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
+    val leadingIconTestTag = when (tab) {
+        RuleTab.AdSignage -> RuleTabBarTestTags.PILL_LEADING_ICON_AD_SIGNAGE
+        RuleTab.FoodLabeling -> RuleTabBarTestTags.PILL_LEADING_ICON_FOOD_LABELING
+    }
     Surface(
         color = containerColor,
         contentColor = contentColor,
@@ -128,12 +148,12 @@ private fun PillTab(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
         ) {
             Icon(
-                imageVector = Icons.Outlined.Verified,
+                imageVector = tab.tabIcon,
                 contentDescription = null,
                 tint = contentColor,
                 modifier = Modifier
                     .size(16.dp)
-                    .testTag(RuleTabBarTestTags.PILL_LEADING_ICON),
+                    .testTag(leadingIconTestTag),
             )
             Text(
                 text = stringResource(tab.titleRes),
