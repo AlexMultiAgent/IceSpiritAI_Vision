@@ -1,33 +1,20 @@
 package com.icespiritai.offline.tts
 
 import com.icespiritai.offline.domain.ViolationReport
-import com.icespiritai.offline.domain.severityRank
 
 /**
- * 把 [ViolationReport] 转成单段朗读脚本。
+ * 单段朗读脚本(向后兼容 shim)— 新代码请用 [buildSegments]。
  *
- * - 空 hits:返 fallback 文案(显式传递"AI 仅供参考"不确定性,见 spec §3.4)
- * - 有 hits:按 [severityRank] 降序(违规→警告→信息)拼接 matchedText,前后包裹
- *   「命中违规:」前缀 + 句号分隔,便于听者快速识别严重度梯度。
- *
- * 纯函数、无副作用、不依赖 Android Context,可在 JVM 单测里全覆盖。
+ * @deprecated since v0.3.0 — 脚本已升级为多段结构(严重度分组 + 计数 + 法条 +
+ *     免责声明),`build()` 折叠为单字符串会丢失 segment 边界,无法驱动 UI
+ *     scroll-to-hit。保留本函数仅为不在 Phase A 引入 TtsController / UI
+ *     改动(Phase B 单独落)。将在 v0.3.1 删除。
  */
+@Deprecated("use buildSegments() — see SegmentedScript for the new contract")
 object ScriptBuilder {
-
-    private const val FALLBACK_TEXT = "未筛查出违规事项,AI识别仅供参考"
-    private const val PREFIX = "命中违规:"
-    private const val SEPARATOR = "。"
-    private const val END_PUNCT = "。"
-
     fun build(report: ViolationReport): String =
-        if (report.hits.isEmpty()) {
-            FALLBACK_TEXT
-        } else {
-            report.hits
-                .sortedByDescending { severityRank(it.severity) }
-                .joinToString(separator = SEPARATOR, prefix = PREFIX) {
-                    it.matchedText.trim()
-                }
-                .plus(END_PUNCT)
-        }
+        buildSegments(report, BuildOptions.Default).joinToString("") { it.text }
+
+    fun buildSegments(report: ViolationReport, options: BuildOptions = BuildOptions.Default): List<HitSegment> =
+        SegmentedScript.build(report, options)
 }
