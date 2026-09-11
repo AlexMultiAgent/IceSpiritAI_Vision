@@ -19,11 +19,15 @@ import com.icespiritai.offline.domain.severityRank
  */
 object SegmentedScript {
 
-    private const val FALLBACK_TEXT = "未筛查出违规事项,AI识别仅供参考"
+    private const val FALLBACK_TEXT = "未筛查出违规事项"
     private const val DISCLAIMER = "AI识别仅供参考,合规判断以现场检查为准"
 
     fun build(report: ViolationReport, options: BuildOptions = BuildOptions.Default): List<HitSegment> {
-        if (report.hits.isEmpty()) return listOf(metaSegment(FALLBACK_TEXT))
+        if (report.hits.isEmpty()) {
+            val out = mutableListOf<HitSegment>(metaSegment(FALLBACK_TEXT))
+            if (options.trailingDisclaimer) out.add(metaSegment(DISCLAIMER))
+            return out
+        }
 
         val sorted = report.hits.sortedByDescending { severityRank(it.severity) }
         val truncated = options.topN?.let { sorted.take(it) } ?: sorted
@@ -31,11 +35,13 @@ object SegmentedScript {
 
         val out = mutableListOf<HitSegment>()
         out.add(metaSegment(buildCountPrefix(report.hits, options.domainPrefix)))
-        val buckets = truncated.groupBy { it.severity }.toSortedMap(
+        val hitsWithIdx = truncated.mapIndexed { i, h -> i to h }
+        val buckets = hitsWithIdx.groupBy { it.second.severity }.toSortedMap(
             compareByDescending { severityRank(it) }
         )
-        buckets.forEach { (sev, hits) ->
-            out.add(buildBucketSegment(sev, hits, options))
+        buckets.forEach { (sev, indexed) ->
+            val firstIdx = indexed.first().first
+            out.add(buildBucketSegment(sev, indexed.map { it.second }, options, firstIdx))
         }
         if (omitted > 0) {
             out.add(metaSegment("其余 $omitted 项详见屏幕"))
@@ -63,7 +69,12 @@ object SegmentedScript {
         return "${prefix}共 ${v} 条违规,${w} 条警告,${i} 条信息${if (p > 0) ",${p} 条合规" else ""}"
     }
 
-    private fun buildBucketSegment(sev: Severity, hits: List<RuleHit>, options: BuildOptions): HitSegment {
+    private fun buildBucketSegment(
+        sev: Severity,
+        hits: List<RuleHit>,
+        options: BuildOptions,
+        firstIndexInTruncated: Int,
+    ): HitSegment {
         val label = when (sev) {
             Severity.Violation -> "违规"
             Severity.Warning -> "警告"
@@ -73,13 +84,11 @@ object SegmentedScript {
         val body = hits.joinToString("、") { hit ->
             val text = hit.matchedText.trim()
             val citation = if (options.includeLawCitation && hit.regulation.isNotBlank()) {
-                ",依据 ${hit.regulation}${if (hit.lawText.isNotBlank()) " ${hit.lawText.take(20)}" else ""}"
+                val truncated = if (hit.lawText.length > 20) hit.lawText.take(20) + "等" else hit.lawText
+                ",依据 ${hit.regulation}${if (truncated.isNotBlank()) " $truncated" else ""}"
             } else ""
             "$text$citation"
         }
-        return HitSegment(
-            text = "$label:$body",
-            severity = sev,
-        )
+        return HitSegment(text = "$label:$body", severity = sev, hitIndex = firstIndexInTruncated)
     }
 }

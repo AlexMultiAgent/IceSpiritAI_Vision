@@ -4,8 +4,6 @@ package com.icespiritai.offline.tts
  * 朗读脚本构建选项。所有选项都是非必填的,`Default` 即"适合大多数用户"。
  */
 data class BuildOptions(
-    /** 严重度桶同时出现时,桶之间的停顿文案。"。" = 句号分隔。 */
-    val bucketSeparator: String = "。",
     /** 命中总数 > topN 时,只朗读最严重的 N 条,后接"其余 X 项详见屏幕"。null = 不截断。 */
     val topN: Int? = null,
     /** 是否在脚本末尾追加 "AI识别仅供参考" 免责声明。 */
