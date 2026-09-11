@@ -49,4 +49,20 @@ interface TtsEngine {
     fun supportedChineseEngines(): List<EngineInfo>
     fun setEngine(pkg: String?)
     fun release()
+
+    /**
+     * v0.3.0: per-utterance onStart callback. TtsController multi-segment
+     * speak uses this to broadcast which utterance is starting so the UI
+     * can scroll to the corresponding hit card.
+     *
+     * Default null implementation — [AndroidTtsEngine] overrides and
+     * forwards [android.speech.tts.UtteranceProgressListener.onStart].
+     * [com.icespiritai.offline.tts.sherpa.SherpaTtsEngine] does NOT
+     * override; cross-engine onStart parity is deferred to v0.3.1+
+     * (Phase B Task 5) where the local engine gets a proper
+     * Synthesizer.onStart hook.
+     */
+    var onUtteranceStart: ((utteranceId: String) -> Unit)?
+        get() = null
+        set(_) {}
 }

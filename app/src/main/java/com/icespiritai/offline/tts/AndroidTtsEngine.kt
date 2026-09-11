@@ -30,6 +30,16 @@ class AndroidTtsEngine(private val context: Context) : TtsEngine {
     private var primaryEnginePackage: String? = null
     private var primarySupportsChinese: Boolean = false
 
+    // v0.3.0: per-utterance onStart forwarder. TtsController multi-segment
+    // speak hooks this so the UI can scroll to the matching hit card when
+    // the engine actually starts playing that segment.
+    override var onUtteranceStart: ((String) -> Unit)? = null
+
+    // v0.3.0: single field → Map keyed by utteranceId. Multi-segment
+    // speak() calls no longer overwrite each other's callbacks; each
+    // segment's onDone fires on its own onStart/onDone cycle.
+    private val pendingOnDone = mutableMapOf<String, (String) -> Unit>()
+
     override fun init(onDone: (Boolean) -> Unit) {
         tts = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
@@ -41,15 +51,17 @@ class AndroidTtsEngine(private val context: Context) : TtsEngine {
                 primarySupportsChinese = localeOk
                 if (localeOk) {
                     tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                        override fun onStart(utteranceId: String?) {}
+                        override fun onStart(utteranceId: String?) {
+                            utteranceId?.let { uid -> onUtteranceStart?.invoke(uid) }
+                        }
                         override fun onDone(utteranceId: String?) {
-                            pendingOnDone?.invoke(utteranceId ?: "")
-                            pendingOnDone = null
+                            val uid = utteranceId ?: ""
+                            pendingOnDone.remove(uid)?.invoke(uid)
                         }
                         @Deprecated("required override")
                         override fun onError(utteranceId: String?) {
-                            pendingOnDone?.invoke(utteranceId ?: "")
-                            pendingOnDone = null
+                            val uid = utteranceId ?: ""
+                            pendingOnDone.remove(uid)?.invoke(uid)
                         }
                     })
                     onDone(true)
@@ -62,17 +74,25 @@ class AndroidTtsEngine(private val context: Context) : TtsEngine {
         }
     }
 
-    private var pendingOnDone: ((String) -> Unit)? = null
-
     override fun speak(text: String, utteranceId: String, onDone: (String) -> Unit) {
         val engine = tts ?: return
-        pendingOnDone = onDone
-        engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+        // v0.3.0: register under utteranceId so concurrent/queued segments
+        // don't clobber each other's onDone. QUEUE_ADD lets segments pile
+        // up; the controller's first speak() pre-calls stop() if a flush
+        // is desired, so we don't need QUEUE_FLUSH here.
+        pendingOnDone[utteranceId] = onDone
+        engine.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
     }
 
     override fun stop() {
         tts?.stop()
-        pendingOnDone = null
+        // v0.3.0: clearing the Map also fires no callbacks — Android's
+        // tts.stop() invokes onError for in-flight utterances, but the
+        // controller's state machine treats stop() as a synchronous
+        // Idle transition and doesn't expect onDone callbacks after
+        // stop() (matches AndroidTtsEngine v0.1.x semantics + Bug 3
+        // pivot sherpa interrupt semantics).
+        pendingOnDone.clear()
     }
 
     override fun isSpeaking(): Boolean = tts?.isSpeaking == true

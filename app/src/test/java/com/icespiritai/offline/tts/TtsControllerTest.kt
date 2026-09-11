@@ -393,7 +393,22 @@ class FakeTtsEngine(
     var stopCallCount = 0
     var initCallCount = 0
     var lastSpokenText: String? = null
-    private var pendingOnDone: ((String) -> Unit)? = null
+    var lastUtteranceId: String? = null
+
+    /**
+     * v0.3.0 mirror of [AndroidTtsEngine.pendingOnDone]: Map keyed by
+     * utteranceId so multi-segment speak() doesn't clobber concurrent
+     * onDone callbacks. Cleared by [stop] to match production semantics.
+     */
+    private val pendingOnDone = mutableMapOf<String, (String) -> Unit>()
+
+    /**
+     * v0.3.0 mirror of [AndroidTtsEngine.onUtteranceStart]. Tests that
+     * want to assert the controller wires onStart can set this and observe
+     * invocations.
+     */
+    override var onUtteranceStart: ((String) -> Unit)? = null
+
     private var failInitNext = false
 
     override fun init(onDone: (Boolean) -> Unit) {
@@ -409,20 +424,37 @@ class FakeTtsEngine(
     override fun speak(text: String, utteranceId: String, onDone: (String) -> Unit) {
         speakCallCount++
         lastSpokenText = text
-        pendingOnDone = onDone
+        lastUtteranceId = utteranceId
+        pendingOnDone[utteranceId] = onDone
     }
 
+    /**
+     * Complete the most recent utterance. Convenience overload for tests
+     * that speak exactly one segment and don't care about its id — pulls
+     * the most recent entry from [pendingOnDone]. Tests that speak
+     * multiple segments should call [completeUtterance] explicitly.
+     */
     fun completeLastUtterance() {
-        val cb = pendingOnDone ?: error("no pending utterance")
-        pendingOnDone = null
-        cb("last")
+        val uid = pendingOnDone.keys.lastOrNull()
+            ?: error("no pending utterance")
+        completeUtterance(uid)
+    }
+
+    /** Complete the pending utterance for [uid] (no-op if absent). */
+    fun completeUtterance(uid: String) {
+        val cb = pendingOnDone.remove(uid) ?: return
+        cb(uid)
     }
 
     override fun stop() {
         stopCallCount++
+        // Mirror AndroidTtsEngine.stop: clear pending callbacks without
+        // invoking them. The controller treats stop() as a synchronous
+        // Idle transition and doesn't expect onDone after stop().
+        pendingOnDone.clear()
     }
 
-    override fun isSpeaking(): Boolean = pendingOnDone != null
+    override fun isSpeaking(): Boolean = pendingOnDone.isNotEmpty()
 
     override fun supportedChineseEngines(): List<EngineInfo> = enginesAfterInstall
 
