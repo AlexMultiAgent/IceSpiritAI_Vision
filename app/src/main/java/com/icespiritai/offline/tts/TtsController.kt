@@ -121,6 +121,9 @@ class TtsController(
         val current = _state.value
         if (current is TtsState.Disabled || current is TtsState.InitFailed) return
         latestReport = report
+        // DEPRECATION: legacy single-string path. Phase B Task 4 will migrate
+        // TtsController to ScriptBuilder.buildSegments() + multi-segment speak.
+        @Suppress("DEPRECATION")
         val text = ScriptBuilder.build(report)
         currentEngine().speak(text, utteranceId = "report") { _state.value = TtsState.Idle }
         _state.value = TtsState.Speaking
