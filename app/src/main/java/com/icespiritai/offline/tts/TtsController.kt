@@ -1,5 +1,6 @@
 package com.icespiritai.offline.tts
 
+import com.icespiritai.offline.domain.AnalysisState
 import com.icespiritai.offline.domain.ViolationReport
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -57,6 +58,17 @@ class TtsController(
 
     private val _engines = MutableStateFlow<List<EngineInfo>>(emptyList())
     val engines: StateFlow<List<EngineInfo>> = _engines.asStateFlow()
+
+    /**
+     * v0.3.0: index of the currently-playing hit segment, or null when
+     * idle. UI collects this to drive scroll-to-current-hit on multi-
+     * segment playback. Mapped from utteranceId "report-$idx" via the
+     * [dispatchSegments] onStart hook — meta segments ("meta-$idx",
+     * prefix / suffix / disclaimer) do NOT update this since they
+     * aren't bound to a specific hit card.
+     */
+    private val _currentHitIndex = MutableStateFlow<Int?>(null)
+    val currentHitIndex: StateFlow<Int?> = _currentHitIndex.asStateFlow()
 
     val setting get() = settings.setting
 
@@ -117,15 +129,76 @@ class TtsController(
         }
     }
 
-    fun speak(report: ViolationReport) {
+    /**
+     * Legacy single-string speak. Kept as a thin shim so the 17 pre-v0.3.0
+     * tests and external callers (e.g. [toggle]) don't need to be rewritten
+     * when the controller migrated to multi-segment speak. Internally just
+     * delegates to [speakSegments] with default options.
+     *
+     * @deprecated since v0.3.0 — use [speakSegments] (multi-segment speak
+     *     is the new contract; per-utterance scroll-to-current-hit requires
+     *     segment boundaries).
+     */
+    @Deprecated("use speakSegments() — multi-segment speak is the new contract")
+    fun speak(report: ViolationReport) = speakSegments(report)
+
+    /**
+     * v0.3.0: multi-segment speak. Splits [report] via
+     * [ScriptBuilder.buildSegments] and dispatches each segment as its
+     * own TTS utterance. Per-utterance onStart updates
+     * [currentHitIndex] so the UI can scroll-to-current-hit as each
+     * segment plays.
+     */
+    fun speakSegments(report: ViolationReport, options: BuildOptions = BuildOptions.Default) {
         val current = _state.value
         if (current is TtsState.Disabled || current is TtsState.InitFailed) return
         latestReport = report
-        // DEPRECATION: legacy single-string path. Phase B Task 4 will migrate
-        // TtsController to ScriptBuilder.buildSegments() + multi-segment speak.
-        @Suppress("DEPRECATION")
-        val text = ScriptBuilder.build(report)
-        currentEngine().speak(text, utteranceId = "report") { _state.value = TtsState.Idle }
+        val segments = ScriptBuilder.buildSegments(report, options)
+        dispatchSegments(segments)
+    }
+
+    /**
+     * v0.3.0: speak an [AnalysisState.Error] as a single-segment TTS
+     * utterance ("<message>。AI识别仅供参考..."). Wired from the
+     * ViewModel when state transitions to Error so the user hears the
+     * failure reason through the same audio path as a normal report.
+     */
+    fun speakError(error: AnalysisState.Error) {
+        val current = _state.value
+        if (current is TtsState.Disabled || current is TtsState.InitFailed) return
+        val segments = SegmentedScript.buildError(error)
+        dispatchSegments(segments)
+    }
+
+    /**
+     * Dispatch each segment to the active engine as a separate utterance.
+     * Pre-calls [engine.stop] so any in-flight queue is flushed
+     * (replaces the old QUEUE_FLUSH semantics — [AndroidTtsEngine] now
+     * uses QUEUE_ADD so the controller owns flush responsibility).
+     *
+     * Hooks [TtsEngine.onUtteranceStart] unconditionally — AndroidTtsEngine
+     * honors it via its override; sherpa's default interface setter is a
+     * no-op so cross-engine onStart parity is naturally deferred (the
+     * hook simply never fires on sherpa today; v0.3.1+ will add a proper
+     * Synthesizer.onStart bridge).
+     */
+    private fun dispatchSegments(segments: List<HitSegment>) {
+        val engine = currentEngine()
+        engine.stop()
+        _currentHitIndex.value = null
+        val lastIdx = segments.lastIndex
+        segments.forEachIndexed { idx, seg ->
+            engine.speak(
+                text = seg.text,
+                utteranceId = if (seg.isMeta) "meta-$idx" else "report-$idx",
+                onDone = { if (idx == lastIdx) _state.value = TtsState.Idle },
+            )
+        }
+        engine.onUtteranceStart = { uid ->
+            if (uid.startsWith("report-")) {
+                _currentHitIndex.value = uid.removePrefix("report-").toIntOrNull()
+            }
+        }
         _state.value = TtsState.Speaking
     }
 
@@ -136,6 +209,9 @@ class TtsController(
     fun stop() {
         currentEngine().stop()
         _state.value = TtsState.Idle
+        // v0.3.0: drop the scroll cursor so the UI doesn't leave
+        // HighlightOverlay pinned to a hit that's no longer playing.
+        _currentHitIndex.value = null
     }
 
     fun toggle() {

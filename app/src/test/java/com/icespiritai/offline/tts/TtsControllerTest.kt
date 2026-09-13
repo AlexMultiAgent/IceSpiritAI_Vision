@@ -19,6 +19,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -93,9 +94,13 @@ class TtsControllerTest {
     @Test fun `stop during Speaking returns to Idle`() = runTest {
         fakeSettings.emit(TtsSetting(enabled = true))
         controller.speak(reportWith("x"))
+        // v0.3.0: dispatchSegments now pre-calls engine.stop() to flush
+        // any in-flight QUEUE_ADD queue before re-speak, so the count
+        // includes the dispatchSegments internal stop PLUS the user-
+        // initiated stop().
         controller.stop()
         assertEquals(TtsState.Idle, controller.state.first())
-        assertEquals(1, fakeEngine.stopCallCount)
+        assertEquals(2, fakeEngine.stopCallCount)
     }
 
     @Test fun `speak when Disabled is no-op`() = runTest {
@@ -126,9 +131,12 @@ class TtsControllerTest {
         fakeSettings.emit(TtsSetting(enabled = true))
         controller.setLatestReport(reportWith("hello"))
         controller.toggle()
+        // v0.3.0: first toggle() -> speak() -> dispatchSegments pre-
+        // calls engine.stop() (count=1). Second toggle() -> stop()
+        // (count=2).
         controller.toggle()
         assertEquals(TtsState.Idle, controller.state.first())
-        assertEquals(1, fakeEngine.stopCallCount)
+        assertEquals(2, fakeEngine.stopCallCount)
     }
 
     // --- Bug 3 pivot: multi-engine routing + installer wiring ---
@@ -148,7 +156,12 @@ class TtsControllerTest {
         advanceUntilIdle()
         ctrl.speak(reportWith("你好"))
         assertEquals(TtsState.Speaking, ctrl.state.first())
-        assertEquals(1, sherpaEngine.speakCallCount)
+        // v0.3.0: reportWith("你好") = 1 Violation hit → SegmentedScript
+        // emits 3 segments (prefix + 1 violation bucket + disclaimer),
+        // so speak() is called 3 times on the routed engine. Routing
+        // assertion is "system engine NOT called" — the exact count on
+        // sherpa follows multi-segment semantics.
+        assertEquals(3, sherpaEngine.speakCallCount)
         assertEquals(0, fakeEngine.speakCallCount)  // system engine NOT called
         sherpaEngine.completeLastUtterance()
     }
@@ -169,7 +182,9 @@ class TtsControllerTest {
         ctrl.setEnginePackage(null)
         advanceUntilIdle()
         ctrl.speak(reportWith("hi"))
-        assertEquals(1, fakeEngine.speakCallCount)
+        // v0.3.0: multi-segment speak → 3 speak() calls per reportWith
+        // helper (1 Violation hit → prefix + violation bucket + disclaimer).
+        assertEquals(3, fakeEngine.speakCallCount)
         assertEquals(0, sherpaEngine.speakCallCount)
     }
 
@@ -282,7 +297,9 @@ class TtsControllerTest {
         // controller from setUp() has sherpaEngine = null
         ctrl_pickLocalPackage()
         controller.speak(reportWith("hi"))
-        assertEquals(1, fakeEngine.speakCallCount)
+        // v0.3.0: multi-segment speak → 3 speak() calls per reportWith
+        // helper (1 Violation hit → prefix + violation bucket + disclaimer).
+        assertEquals(3, fakeEngine.speakCallCount)
     }
 
     // --- Bug 4 fix (v0.1.61): picker row click routing ---
@@ -368,6 +385,105 @@ class TtsControllerTest {
         controller.setEnginePackage(com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE)
     }
 
+    // --- v0.3.0 multi-segment speak / currentHitIndex / speakError ---
+
+    @Test fun `speakSegments calls speak once per segment in order`() = runTest {
+        fakeSettings.emit(TtsSetting(enabled = true))
+        controller.speakSegments(reportWithMultiHits(), BuildOptions.Default)
+        // 5 segments: prefix + violation bucket + warning bucket + info bucket + disclaimer
+        val utterances = fakeEngine.lastUtterances.map { it.first }
+        assertTrue(
+            "first utterance should be count prefix: ${utterances.first()}",
+            utterances.first().startsWith("共 1 条违规"),
+        )
+        assertEquals(5, utterances.size)
+    }
+
+    @Test fun `currentHitIndex updates as each utterance starts`() = runTest {
+        fakeSettings.emit(TtsSetting(enabled = true))
+        controller.speakSegments(reportWithMultiHits(), BuildOptions.Default)
+        // After dispatch, simulate onStart for each segment. Meta
+        // segments must NOT touch currentHitIndex; "report-$idx" should
+        // broadcast idx.
+        fakeEngine.utteranceStartHook?.invoke("meta-0")
+        advanceUntilIdle()
+        assertNull(
+            "meta segments should NOT update currentHitIndex",
+            controller.currentHitIndex.value,
+        )
+        fakeEngine.utteranceStartHook?.invoke("report-1")
+        advanceUntilIdle()
+        assertEquals(
+            "first hit (Violation bucket) -> idx 1",
+            1,
+            controller.currentHitIndex.value,
+        )
+        fakeEngine.utteranceStartHook?.invoke("report-2")
+        advanceUntilIdle()
+        assertEquals("warning bucket -> idx 2", 2, controller.currentHitIndex.value)
+    }
+
+    @Test fun `speakError emits error segment with disclaimer`() = runTest {
+        fakeSettings.emit(TtsSetting(enabled = true))
+        val error = com.icespiritai.offline.domain.AnalysisState.Error(
+            message = "OCR 引擎未初始化",
+            errorCode = com.icespiritai.offline.domain.ErrorCode.OCR_UNAVAILABLE,
+        )
+        controller.speakError(error)
+        // SegmentedScript.buildError produces exactly one metaSegment
+        // "<message>。<DISCLAIMER>".
+        val firstText = fakeEngine.lastUtterances.first().first
+        assertTrue(
+            "error segment should contain OCR message: $firstText",
+            firstText.contains("OCR 引擎未初始化"),
+        )
+        assertTrue(
+            "error segment should contain disclaimer: $firstText",
+            firstText.contains("AI识别仅供参考"),
+        )
+    }
+
+    @Test fun `speakSegments respects topN truncation`() = runTest {
+        fakeSettings.emit(TtsSetting(enabled = true))
+        val many = (1..12).map {
+            RuleHit(
+                "r$it", "无麸质 $it", "allergen", "GB 7718-2025 §5.1",
+                Severity.Violation, "ad", "致敏原强制标示",
+            )
+        }
+        val report = ViolationReport(StubUri(), "", many, 0)
+        controller.speakSegments(report, BuildOptions.Default.copy(topN = 5))
+        // Verify all text concatenated contains both the bucket AND the
+        // 其余 7 项 suffix (12 - 5 = 7 omitted).
+        val allText = fakeEngine.lastUtterances.joinToString("") { it.first }
+        assertTrue(
+            "topN should emit 其余 7 项: $allText",
+            allText.contains("其余 7 项"),
+        )
+        // Also verify only 5 hits made it into the Violation bucket.
+        val bucketText = fakeEngine.lastUtterances.first { it.first.startsWith("违规:") }.first
+        val hitCountInBucket = ("无麸质".toRegex()).findAll(bucketText).count()
+        assertEquals("bucket should contain 5 hits", 5, hitCountInBucket)
+    }
+
+    @Test fun `stop clears currentHitIndex`() = runTest {
+        fakeSettings.emit(TtsSetting(enabled = true))
+        controller.speakSegments(reportWithMultiHits(), BuildOptions.Default)
+        fakeEngine.utteranceStartHook?.invoke("report-1")
+        advanceUntilIdle()
+        assertEquals(
+            "setup: currentHitIndex = 1 before stop",
+            1,
+            controller.currentHitIndex.value,
+        )
+        controller.stop()
+        advanceUntilIdle()
+        assertNull(
+            "stop should clear currentHitIndex",
+            controller.currentHitIndex.value,
+        )
+    }
+
     // --- helpers ---
 
     private fun reportWith(text: String): ViolationReport = ViolationReport(
@@ -384,6 +500,30 @@ class TtsControllerTest {
         ),
         timestampMs = 0,
     )
+
+    /**
+     * v0.3.0 helper: 3-hit report spanning Violation / Warning / Info
+     * buckets. Drives multi-segment speak tests that need to verify
+     * per-segment order, per-bucket utteranceId routing, and
+     * currentHitIndex broadcasts across multiple buckets.
+     */
+    private fun reportWithMultiHits(): ViolationReport {
+        val hits = listOf(
+            RuleHit(
+                "r1", "100% 中国第一", "absolute", "广告法 §9",
+                Severity.Violation, "ad", "绝对化用语",
+            ),
+            RuleHit(
+                "r2", "国家级 特供", "absolute", "广告法 §9",
+                Severity.Warning, "ad", "绝对化用语",
+            ),
+            RuleHit(
+                "r3", "维生素A", "info", "广告法 §28",
+                Severity.Info, "ad", "",
+            ),
+        )
+        return ViolationReport(StubUri(), "", hits, 0)
+    }
 }
 
 class FakeTtsEngine(
@@ -396,6 +536,15 @@ class FakeTtsEngine(
     var lastUtteranceId: String? = null
 
     /**
+     * v0.3.0: every speak() records a (text, utteranceId) tuple so
+     * tests can assert segment order + count + identity without going
+     * through pendingOnDone. Cleared by [stop] to mirror production
+     * semantics (next dispatch starts a fresh list).
+     */
+    private val _lastUtterances = mutableListOf<Pair<String, String>>()
+    val lastUtterances: List<Pair<String, String>> get() = _lastUtterances.toList()
+
+    /**
      * v0.3.0 mirror of [AndroidTtsEngine.pendingOnDone]: Map keyed by
      * utteranceId so multi-segment speak() doesn't clobber concurrent
      * onDone callbacks. Cleared by [stop] to match production semantics.
@@ -403,11 +552,20 @@ class FakeTtsEngine(
     private val pendingOnDone = mutableMapOf<String, (String) -> Unit>()
 
     /**
-     * v0.3.0 mirror of [AndroidTtsEngine.onUtteranceStart]. Tests that
-     * want to assert the controller wires onStart can set this and observe
-     * invocations.
+     * v0.3.0 test seam — same backing as [onUtteranceStart] but named
+     * as a verb so tests can simulate Android's
+     * UtteranceProgressListener.onStart by calling
+     * `fakeEngine.utteranceStartHook?.invoke("report-1")`. The
+     * controller installs its onStart handler via
+     * `engine.onUtteranceStart = ...`, which writes through to this
+     * field, so test invocations actually fire the controller's
+     * installed handler.
      */
-    override var onUtteranceStart: ((String) -> Unit)? = null
+    var utteranceStartHook: ((String) -> Unit)? = null
+
+    override var onUtteranceStart: ((String) -> Unit)?
+        get() = utteranceStartHook
+        set(value) { utteranceStartHook = value }
 
     private var failInitNext = false
 
@@ -425,6 +583,7 @@ class FakeTtsEngine(
         speakCallCount++
         lastSpokenText = text
         lastUtteranceId = utteranceId
+        _lastUtterances.add(text to utteranceId)
         pendingOnDone[utteranceId] = onDone
     }
 
@@ -452,6 +611,10 @@ class FakeTtsEngine(
         // invoking them. The controller treats stop() as a synchronous
         // Idle transition and doesn't expect onDone after stop().
         pendingOnDone.clear()
+        // New dispatch starts with a clean segment list — same
+        // semantics as AndroidTtsEngine.speak() starting a fresh
+        // QUEUE_ADD sequence after a stop().
+        _lastUtterances.clear()
     }
 
     override fun isSpeaking(): Boolean = pendingOnDone.isNotEmpty()
