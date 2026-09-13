@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -46,11 +48,17 @@ import com.icespiritai.offline.ui.theme.iceSpiritSeverityColors
  *  - **Sections that have zero hits are skipped entirely** — no "信息 (0)"
  *    placeholders. Keeps the scroll compact for the common case (most
  *    ads have only 1 or 2 severity buckets).
+ *
+ * v0.3.0: [listState] hoisted so callers (HomeScreen) can scroll-to-current-hit
+ * when the TTS engine reports a per-utterance onStart. Defaulted to
+ * `rememberLazyListState()` so unit tests that call `ResultPanel` directly
+ * (without external scroll coordination) keep working.
  */
 @Composable
 fun ResultPanel(
     report: ViolationReport,
     modifier: Modifier = Modifier,
+    listState: LazyListState = rememberLazyListState(),
 ) {
     // No text at all (portrait / landscape / textless screenshot): report the
     // absence of content instead of claiming "no violation found", which would
@@ -111,6 +119,7 @@ fun ResultPanel(
     // Phase 3.5 dropped the OCR-text header — the actionable signal is here.
     LazyColumn(
         modifier = modifier.fillMaxSize(),
+        state = listState,
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {

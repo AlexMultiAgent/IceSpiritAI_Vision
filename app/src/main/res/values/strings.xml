@@ -179,4 +179,14 @@
     <string name="settings_feature_persist_failed">设置保存失败</string>
     <string name="settings_feature_ad_signage_label">广告招牌</string>
     <string name="settings_feature_food_label_label">食品标签</string>
+
+    <!-- TTS content enhancement (v0.3.0) — UI fallback strings -->
+    <string name="tts_segment_count_prefix">共 %1$d 条违规,%2$d 条警告,%3$d 条信息</string>
+    <string name="tts_segment_bucket_violation">违规:%1$s</string>
+    <string name="tts_segment_bucket_warning">警告:%1$s</string>
+    <string name="tts_segment_bucket_info">信息:%1$s</string>
+    <string name="tts_segment_bucket_positive">合规:%1$s</string>
+    <string name="tts_segment_truncated_suffix">其余 %1$d 项详见屏幕</string>
+    <string name="tts_segment_trailing_disclaimer">AI识别仅供参考,合规判断以现场检查为准</string>
+    <string name="tts_hit_citation_separator">,依据</string>
 </resources>

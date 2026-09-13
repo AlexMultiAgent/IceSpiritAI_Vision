@@ -17,11 +17,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.annotation.VisibleForTesting
@@ -50,6 +52,8 @@ import com.icespiritai.offline.export.ExportAction
 import com.icespiritai.offline.settings.SettingsRepository
 import com.icespiritai.offline.tts.TtsState
 import java.io.File
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 @Composable
 fun HomeScreen(
@@ -111,6 +115,16 @@ fun HomeScreen(
      * state). Full OCR→rules→speak end-to-end is the Task 16 follow-up.
      */
     onSpeakToggle: () -> Unit = {},
+    /**
+     * v0.3.0: Per-utterance current hit index from [com.icespiritai.offline.tts.TtsController.currentHitIndex].
+     * HomeScreen watches this and scrolls the ResultPanel's LazyListState so the
+     * hit card currently being read scrolls into view.
+     *
+     * Defaulted to `MutableStateFlow<Int?>(null)` so unit tests / previews that
+     * don't stand up a TTS controller keep working — the LaunchedEffect below
+     * simply no-ops when the value is null.
+     */
+    currentHitIndex: StateFlow<Int?> = MutableStateFlow<Int?>(null),
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
@@ -246,6 +260,24 @@ fun HomeScreen(
     val ocrResult = (state as? AnalysisState.OcrDone)
     val lineBoxes = ocrResult?.lineBoxes ?: completeReport?.lineBoxes ?: emptyList()
     val hits = completeReport?.hits ?: emptyList()
+
+    // v0.3.0: TTS scroll-to-current-hit coordination. The TTS controller
+    // broadcasts `currentHitIndex` (1-based across multi-segment utterances;
+    // null = no playback). When it changes to a non-null value in range, we
+    // animate the LazyListState to the corresponding card.
+    val listState = rememberLazyListState()
+    val ttsCurrentHit by currentHitIndex.collectAsState()
+    LaunchedEffect(ttsCurrentHit, hits.size) {
+        val idx = ttsCurrentHit ?: return@LaunchedEffect
+        // currentHitIndex is 1-based from TtsController (segment index across
+        // the multi-segment script). The ResultPanel renders the violation
+        // section first; we map "report-$idx" position to a flat hit index.
+        // Conservative: just scroll to position idx (capped) — UI perfection
+        // across severity buckets is not required for v0.3.0 ship.
+        val safe = idx.coerceIn(0, (hits.size - 1).coerceAtLeast(0))
+        if (safe != idx) return@LaunchedEffect
+        listState.animateScrollToItem(safe)
+    }
     val showLineBoxes = (state is AnalysisState.OcrDone) || completeReport != null
     val imageSize: IntSize? = imageSizeForState(ocrResult, completeReport)
     // v0.1.41: export is gated on (Complete + hasHits). The CaptureBar
@@ -318,6 +350,7 @@ fun HomeScreen(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
+                    listState = listState,
                 )
             }
             is AnalysisState.Error -> {
