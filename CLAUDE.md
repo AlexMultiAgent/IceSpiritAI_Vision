@@ -300,6 +300,28 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 
 **关键边界**:`icevision-release` 发版后 smoke 校验通过 → 才调用 `project-commit` 走 Release 三段式(确保 tag SHA = APK SHA = JSON SHA,避免 v0.1.14 那种 APK live 但 JSON 旧版本的 drift)。
 
+## TTS 内容增强(v0.3.0)
+
+`ScriptBuilder` 升级为多段结构化脚本(`SegmentedScript` 纯函数 + `BuildOptions`):
+
+- **严重度分组**:违规/警告/信息分桶朗读(不再平铺)
+- **命中计数**:开头 "共 X 条违规,Y 条警告,Z 条信息"
+- **法条引用**:每 hit 朗读 "依据 GB 7718-2025 §5.1 致敏原强制"(per memory `feedback-category-specific-rules-anchors`)
+- **Top-N 截断**:超过 N 条时朗读最严重 N 条 + "其余 X 项详见屏幕"
+- **AI 免责声明**:positive case 也朗读 "AI识别仅供参考"(per memory `feedback-ad-law-no-gray-area`)
+
+`TtsController.speakSegments + currentHitIndex` 驱动 HomeScreen `LazyListState.animateScrollToItem(idx)` 把对应 hit card 滚到视口。`TtsEngine` interface 加 `var onUtteranceStart: ((String) -> Unit)?` 默认 null(AndroidTtsEngine 覆盖转发 `UtteranceProgressListener.onStart`);AndroidTtsEngine 单字段 `pendingOnDone` → `Map<utteranceId, callback>`(多段互不覆盖,fix G13);`QUEUE_FLUSH` → `QUEUE_ADD`(多段排队,TtsController 第一段前 stop() 替代 flush 行为)。
+
+Settings 新增「长报告摘要」Switch(默认 OFF):`TtsSetting.longReportSummaryEnabled: Boolean = false` + DataStore `KEY_LONG_REPORT_SUMMARY`。TtsController.speakSegments 读 `latestSetting.longReportSummaryEnabled` 决定 `topN=3`(caller 显式传 topN 时优先,test path 兼容)。
+
+**不做** v0.3.0(用户 2026-09-11 决定,留 v0.3.1+):
+- **G6 语速 / 音调** — `setSpeechRate` / `setPitch` 留 v0.3.1+(SherpaTtsEngine ONNX Runtime ABI 修复后一起实现)
+- **Phase D actionableAdvice + domainPrefix UI** — 留 v0.3.1+ 真机 e2e 通过后再开
+- **跨引擎 `onUtteranceStart` parity(SherpaTtsEngine Synthesizer.onStart)** — 留 v0.3.1+
+- **TTS 进度条(朗读 N/M 进度)+ 按钮禁用** — 留 v0.3.1+
+- **导出取证包 + TTS 一键播放整段报告(archive mode)** — 留 v0.3.1+
+- **Word-level 高亮(`SynthesisCallback.onRangeStart`)** — Android `TextToSpeech` API 不支持端侧 word-level 回调(只到 sentence-level `UtteranceProgressListener`),UI 同步走 hit 级而非 word 级
+
 ## 发布流水线踩坑
 
 完整恢复步骤(curl 级)与 Gitea 1.22.x 404 绕路在 [.claude/skills/icevision-release/SKILL.md](.claude/skills/icevision-release/SKILL.md),这里只保留症状 + 修复指针,避免 CLAUDE.md 与 skill 内容漂移。

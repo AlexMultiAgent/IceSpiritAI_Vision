@@ -1,5 +1,35 @@
 # 用户更新日志
 
+## v0.3.0 — 2026-09-14
+
+**TTS 朗读内容结构化升级 + 多段 UI 滚动同步 + 长报告摘要开关**。规则库 / OCR 模型 / 食品标签 tab 等与 v0.2.0 同量级。**G6 语速 / 音调 / Phase D(可执行建议 + 域前缀)显式延后 v0.3.1+**(用户 2026-09-11 决定)。
+
+### 变更
+
+- **TTS 朗读结构化(SegmentedScript 多段纯函数)**:把 `ScriptBuilder.build(report): String` 单字符串平铺(命中违规:a;b;c。)升级为 `SegmentedScript.build(report, options): List<HitSegment>` 多段结构:
+  1. **prefix**:「共 X 条违规,Y 条警告,Z 条信息」+ 可选域前缀
+  2. **严重度桶**:违规→警告→信息→合规(Positive),每桶内部 `joinToString("、")` + 法条引用(`依据 GB 7718-2025 §5.1 致敏原强制`,per memory `feedback-category-specific-rules-anchors`)
+  3. **topN 截断**:超过 topN 时朗读最严重 N 条 + 「其余 X 项详见屏幕」suffix
+  4. **末尾 AI 免责声明**:`AI识别仅供参考,合规判断以现场检查为准`,positive case 也强制朗读(per memory `feedback-ad-law-no-gray-area`)
+
+- **多段 speak + UI 滚动同步(TtsController.speakSegments + currentHitIndex)**:把单 utteranceId `QUEUE_FLUSH` 升级为多 utteranceId `QUEUE_ADD`,每段独立 `onStart` 回调 → `currentHitIndex: StateFlow<Int?>` 广播当前朗读 hit 序号 → `HomeScreen` 收 + `listState.animateScrollToItem(idx)` 把对应 hit card 滚到视口。AndroidTtsEngine 单字段 `pendingOnDone` → `Map<utteranceId, callback>`(多段互不覆盖,fix G13)。`TtsEngine` interface 加 `var onUtteranceStart: ((String) -> Unit)?` 默认 null — AndroidTtsEngine 覆盖,`SherpaTtsEngine` parity 留 v0.3.1+(ONNX Runtime ABI 修复后一起实现)。`ResultPanel` 暴露 `LazyListState` 给外层 HomeScreen 持有。
+
+- **Settings「长报告摘要」Switch(默认 OFF)**:Settings → 语音播报 Card 内新 Switch + 描述(`超过 3 条命中时只朗读最严重 3 条,其余显示在屏幕`)。`TtsSetting.longReportSummaryEnabled: Boolean = false` + DataStore `KEY_LONG_REPORT_SUMMARY` + `TtsSettingRepository.setLongReportSummaryEnabled(b)` + `TtsController.setLongReportSummaryEnabled(enabled)` 委托。`TtsController.speakSegments` 读 `latestSetting.longReportSummaryEnabled` 决定 `topN=3`(caller 显式传 topN 时优先,test path 兼容)。
+
+- **Error 态朗读兜底**:`TtsController.speakError(error)` 走 `SegmentedScript.buildError(error)` 单段 + 免责声明。`AnalysisState.Error` 态 message 字段直接朗读给用户听,无需查屏幕。
+
+### 修复
+
+- **AndroidTtsEngine 多段 onDone 互覆盖(G13)**:之前 `pendingOnDone` 单字段,多段 speak 时后段覆盖前段 → 第一段完成时调用回调已被第二段覆盖,UI 状态机拿到的是错位的 onDone。改为 `Map<utteranceId, callback>`,每段独立 onStart/onDone 周期。
+
+### 验证
+
+- `./gradlew testDebugUnitTest -PmodelProfile=shell`:TTS 包内 81 tests, 9 classes 全过。`SegmentedScriptTest` 7 用例(空 / 严重度分组 / 计数 / 法条 / 截断 / 免责声明 / Error 态)+ `TtsControllerTest` 24 用例(17 legacy + 5 多段 + 2 long-report-summary toggle/caller-wins)+ `TtsSettingTest` 5 用例(default / 跨实例持久化 × 2 fields)+ `ScriptBuilderTest` 6 既有全过(向后兼容,旧 expect 已对齐新 `buildSegments` API)。
+- 2 个 pre-existing failures (`ChangelogScreenTest` + `AdSignageTextFixtureRegressionTest`) 与本次改动无关,跨发版号 baseline,已记入 v0.2.0 验证段。
+- 7 commits: `dd6bca6`(SegmentedScript 落地)+ `b3b1c8e`(Task 1 code review 修)+ `9f7d83a`(ScriptBuilder 委托)+ `489c532`(deprecated 范围 narrow)+ `72cebab`(TtsEngine 多段 onStart)+ `eac9567`(TtsController 多段 speak)+ `ae96a26`(HomeScreen scroll-to-current)+ `d170a23`(longReportSummaryEnabled 开关)+ `6df949e`(Settings Switch + speakSegments 接 setting)。
+- `app/build.gradle.kts versionCode 69→70` + `versionName 0.2.0→0.3.0`,与本条目同步。
+- 跨引擎 `onUtteranceStart`(SherpaTtsEngine Synthesizer.onStart)留 v0.3.1+;Phase D(actionableAdvice + domainPrefix)留 v0.3.1+;TTS 进度条 + 导出取证包 TTS 一键播放 + word-level 高亮 全部 v0.3.1+。
+
 ## v0.2.0 — 2026-09-11
 
 **食品标签 tab 启用 + 设置层「功能可见性」开关 + food_label 规则库 v4 → v5(29 条增量)**,广告招牌 tab 仍是 UI 主焦点。规则库覆盖 8 部法规(GB 7718-2025 致敏原 / 食品标识监督管理办法 §7-§40 / 食品安全法 §69/§81/§83 / 婴幼儿配方乳粉产品配方注册管理办法 §5/§7 等)。**注意**:新增 27 条引用《食品标识监督管理办法》(SAMR令第100号)及 12 条引用《GB 7718-2025》(致敏原强制标示条款)的规则于 **2027-03-16 起施行**(届时自动转为现行法依据);本 APK 在 2026-09-11 ~ 2027-03-15 期间按"前向发版"惯例发布,APK manifest 内嵌规则已 ready,6 个月后法规生效即合规。详见 [`知识库/食品标签/食品标识监督管理办法.md`](../../知识库/食品标签/食品标识监督管理办法.md) + [`知识库/食品标签/GB_7718-2025_致敏原强制标示.md`](../../知识库/食品标签/GB_7718-2025_致敏原强制标示.md) 头部 metadata。
