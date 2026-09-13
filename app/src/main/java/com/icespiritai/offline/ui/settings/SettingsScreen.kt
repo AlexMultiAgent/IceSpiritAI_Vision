@@ -66,6 +66,12 @@ fun SettingsScreen(
     onSetTtsEnabled: (Boolean) -> Unit = {},
     currentEngineLabel: String = "跟随系统默认",
     onOpenEnginePicker: () -> Unit = {},
+    /**
+     * v0.3.0 Phase C: 长报告摘要 switch state. When true, TTS only reads top 3
+     * hits per report (default OFF per user decision 2026-09-11).
+     */
+    longReportSummaryEnabled: Boolean = false,
+    onSetLongReportSummaryEnabled: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -157,6 +163,8 @@ fun SettingsScreen(
                     onSetTtsEnabled = onSetTtsEnabled,
                     currentEngineLabel = currentEngineLabel,
                     onOpenEnginePicker = onOpenEnginePicker,
+                    longReportSummaryEnabled = longReportSummaryEnabled,
+                    onSetLongReportSummaryEnabled = onSetLongReportSummaryEnabled,
                 )
             }
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -196,6 +204,8 @@ private fun TtsSection(
     onSetTtsEnabled: (Boolean) -> Unit,
     currentEngineLabel: String,
     onOpenEnginePicker: () -> Unit,
+    longReportSummaryEnabled: Boolean = false,
+    onSetLongReportSummaryEnabled: (Boolean) -> Unit = {},
 ) {
     Column(
         modifier = Modifier
@@ -245,6 +255,32 @@ private fun TtsSection(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = null,
+                )
+            }
+            // v0.3.0 Phase C — long report Top-N summary. Hidden when TTS is disabled
+            // (consistent with engine picker gating: both are sub-options of the
+            // ttsEnabled parent switch).
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSetLongReportSummaryEnabled(!longReportSummaryEnabled) },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.tts_settings_long_report_summary),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(
+                        text = stringResource(R.string.tts_settings_long_report_summary_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    )
+                }
+                Switch(
+                    checked = longReportSummaryEnabled,
+                    onCheckedChange = onSetLongReportSummaryEnabled,
                 )
             }
         }

@@ -19,6 +19,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -484,6 +485,39 @@ class TtsControllerTest {
         )
     }
 
+    // --- v0.3.0 Phase C: longReportSummaryEnabled setting → topN override ---
+
+    @Test fun `speakSegments truncates when longReportSummaryEnabled is true`() = runTest {
+        // Emit setting with toggle ON (default OFF in other tests).
+        // Caller does NOT pass an explicit topN, so the setting wins.
+        fakeSettings.emit(TtsSetting(enabled = true, longReportSummaryEnabled = true))
+        // Drain the controller's init collector so latestSetting picks up
+        // the new flow value (StandardTestDispatcher only runs launched
+        // coroutines under advanceUntilIdle).
+        advanceUntilIdle()
+        val many = (1..12).map {
+            RuleHit("r$it", "无麸质 $it", "allergen", "GB 7718-2025 §5.1", Severity.Violation, "ad", "致敏原强制标示")
+        }
+        val report = ViolationReport(StubUri(), "", many, 0)
+        controller.speakSegments(report, BuildOptions.Default)
+        val allText = fakeEngine.lastUtterances.joinToString("") { it.first }
+        assertTrue("expected 其余 9 项 in script: $allText", allText.contains("其余 9 项"))
+    }
+
+    @Test fun `speakSegments ignores longReportSummaryEnabled when caller passes explicit topN`() = runTest {
+        // Caller wins: explicit topN=5 overrides setting.longReportSummaryEnabled=true
+        fakeSettings.emit(TtsSetting(enabled = true, longReportSummaryEnabled = true))
+        advanceUntilIdle()
+        val many = (1..12).map {
+            RuleHit("r$it", "无麸质 $it", "allergen", "GB 7718-2025 §5.1", Severity.Violation, "ad", "致敏原强制标示")
+        }
+        val report = ViolationReport(StubUri(), "", many, 0)
+        controller.speakSegments(report, BuildOptions.Default.copy(topN = 5))
+        val allText = fakeEngine.lastUtterances.joinToString("") { it.first }
+        assertTrue("explicit topN=5 should produce 其余 7: $allText", allText.contains("其余 7 项"))
+        assertFalse("explicit topN=5 should NOT use setting default of 3", allText.contains("其余 9 项"))
+    }
+
     // --- helpers ---
 
     private fun reportWith(text: String): ViolationReport = ViolationReport(
@@ -690,6 +724,16 @@ class FakeTtsSettingRepository : TtsSettingRepositoryLike {
     override suspend fun setEnginePackage(pkg: String?) {
         setEnginePackageCallCount++
         flow.value = flow.value.copy(enginePackage = pkg)
+    }
+
+    /**
+     * v0.3.0 Phase C: Long-report summary switch. Test path uses [emit]
+     * to drive state directly, so this is a no-op pass-through — it
+     * exists only to satisfy the interface after Task 7 added the
+     * method to [TtsSettingRepositoryLike].
+     */
+    override suspend fun setLongReportSummaryEnabled(enabled: Boolean) {
+        flow.value = flow.value.copy(longReportSummaryEnabled = enabled)
     }
 
     suspend fun emit(s: TtsSetting) {

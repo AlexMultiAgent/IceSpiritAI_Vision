@@ -160,6 +160,11 @@
     <string name="tts_section_footer_disclaimer">ℹ 朗读内容仅供参考,实际合规判断请以现场检查为准。</string>
     <string name="tts_section_footer_settings_hint">语速 / 音调请在系统「文本转语音」设置中调整。</string>
 
+    <!-- v0.3.0 Phase C: long report Top-N summary switch (default OFF).
+         Gated on ttsEnabled = true (settings layer hides the row when TTS is off). -->
+    <string name="tts_settings_long_report_summary">长报告摘要</string>
+    <string name="tts_settings_long_report_summary_desc">超过 3 条命中时只朗读最严重 3 条,其余显示在屏幕(默认关闭)</string>
+
     <!-- First-launch disclaimer dialog (§6.4) -->
     <string name="tts_disclaimer_title">使用提示</string>
     <string name="tts_disclaimer_body_1">本应用通过 OCR 与规则匹配辅助识别广告招牌违规情形,识别结果仅供参考,实际合规判断请以现场检查为准。</string>

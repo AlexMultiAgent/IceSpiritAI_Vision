@@ -153,7 +153,13 @@ class TtsController(
         val current = _state.value
         if (current is TtsState.Disabled || current is TtsState.InitFailed) return
         latestReport = report
-        val segments = ScriptBuilder.buildSegments(report, options)
+        // v0.3.0 Phase C: Settings → longReportSummaryEnabled overrides options.topN.
+        // Caller-passed topN (test path) wins; otherwise, when the toggle is on,
+        // topN=3 means "read the 3 most-severe hits + 其余 N 项详见屏幕".
+        val effectiveOptions = if (options.topN == null && latestSetting.longReportSummaryEnabled) {
+            options.copy(topN = 3)
+        } else options
+        val segments = ScriptBuilder.buildSegments(report, effectiveOptions)
         dispatchSegments(segments)
     }
 
@@ -228,6 +234,15 @@ class TtsController(
 
     suspend fun setEnabled(b: Boolean) = settings.setEnabled(b)
     suspend fun setEnginePackage(pkg: String?) = settings.setEnginePackage(pkg)
+
+    /**
+     * v0.3.0 Phase C: Toggle the "长报告摘要" feature. When enabled, the
+     * controller's [speakSegments] will only read the top 3 most-severe hits
+     * (instead of every hit). Default OFF per user decision 2026-09-11.
+     */
+    suspend fun setLongReportSummaryEnabled(enabled: Boolean) {
+        settings.setLongReportSummaryEnabled(enabled)
+    }
 
     fun refreshEngineStatus() {
         val list = mergedEngines()
@@ -365,10 +380,14 @@ interface TtsSettingRepositoryLike {
     val setting: kotlinx.coroutines.flow.Flow<TtsSetting>
     suspend fun setEnabled(b: Boolean)
     suspend fun setEnginePackage(pkg: String?)
+    /** v0.3.0 Phase C — long report summary switch. */
+    suspend fun setLongReportSummaryEnabled(enabled: Boolean)
 }
 
 class TtsSettingRepositoryAdapter(private val real: TtsSettingRepository) : TtsSettingRepositoryLike {
     override val setting = real.setting
     override suspend fun setEnabled(b: Boolean) = real.setEnabled(b)
     override suspend fun setEnginePackage(pkg: String?) = real.setEnginePackage(pkg)
+    override suspend fun setLongReportSummaryEnabled(enabled: Boolean) =
+        real.setLongReportSummaryEnabled(enabled)
 }
