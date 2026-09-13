@@ -46,12 +46,14 @@ class TtsSettingRepository(private val context: Context) {
 
     private val enabledKey = booleanPreferencesKey("tts_enabled")
     private val enginePackageKey = stringPreferencesKey("tts_engine_package")
+    private val longReportSummaryKey = booleanPreferencesKey("tts_long_report_summary")
 
     val setting: Flow<TtsSetting> =
         context.ttsDataStore.data.map { prefs ->
             TtsSetting(
                 enabled = prefs[enabledKey] ?: true,
                 enginePackage = prefs[enginePackageKey],
+                longReportSummaryEnabled = prefs[longReportSummaryKey] ?: false,
             )
         }
 
@@ -68,6 +70,18 @@ class TtsSettingRepository(private val context: Context) {
             } else {
                 prefs[enginePackageKey] = pkg
             }
+        }
+    }
+
+    /**
+     * v0.3.0: Toggle the "long report summary" feature. When true, the TTS
+     * controller will only read the top 3 most-severe hits when a report
+     * exceeds that threshold (instead of reading every hit). UI exposes
+     * this as a Settings switch, default OFF.
+     */
+    suspend fun setLongReportSummaryEnabled(b: Boolean) {
+        context.ttsDataStore.edit { prefs ->
+            prefs[longReportSummaryKey] = b
         }
     }
 }

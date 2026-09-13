@@ -17,4 +17,11 @@ package com.icespiritai.offline.tts
 data class TtsSetting(
     val enabled: Boolean = true,
     val enginePackage: String? = null,
+    /**
+     * v0.3.0: 长报告 Top-N 摘要开关。默认 OFF — 维持当前行为(读全部命中)。
+     * 开启后:当 hits.size > 3 时只读前 3 条最严重命中,结尾追加
+     * "其余 N 条详见屏幕"。
+     * 用户 2026-09-11 决定:默认 OFF,放在 Settings 让用户自行启用。
+     */
+    val longReportSummaryEnabled: Boolean = false,
 )

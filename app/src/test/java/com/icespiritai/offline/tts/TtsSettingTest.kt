@@ -7,7 +7,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -77,5 +79,24 @@ class TtsSettingTest {
         // null 写回:清空,读回 null
         repo.setEnginePackage(null)
         assertNull(repo.setting.first().enginePackage)
+    }
+
+    @Test
+    fun `longReportSummaryEnabled defaults to false`() = runTest {
+        val repo = TtsSettingRepository(ApplicationProvider.getApplicationContext())
+        val setting = repo.setting.first()
+        assertFalse("v0.3.0 default OFF per user decision 2026-09-11", setting.longReportSummaryEnabled)
+    }
+
+    @Test
+    fun `setLongReportSummaryEnabled persists across repository instances`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repo = TtsSettingRepository(context)
+        repo.setLongReportSummaryEnabled(true)
+        val read = TtsSettingRepository(context).setting.first()
+        assertTrue("toggle should persist", read.longReportSummaryEnabled)
+        // Toggle back to false also persists
+        repo.setLongReportSummaryEnabled(false)
+        assertFalse(TtsSettingRepository(context).setting.first().longReportSummaryEnabled)
     }
 }
