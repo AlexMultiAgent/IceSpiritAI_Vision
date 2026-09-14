@@ -59,6 +59,7 @@ fun GlassesCaptureOverlay(
 ) {
     val state by repository.state.collectAsState()
 
+    val context = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) {
         // Auto-reconnect to the last-paired device. If none exists,
         // the overlay will surface that as a Failed state.
@@ -66,9 +67,21 @@ fun GlassesCaptureOverlay(
             repository.reset()
             return@LaunchedEffect
         }
+        // Resolve the actual advertised name from OS BondedDevices
+        // instead of hardcoding "Glass-D15" — the firmware spec doc
+        // (`docs/glasses/AI识图传图提速_App连接参数配合.md`) uses that
+        // ID as an EXAMPLE, not a fixed product name. Real devices may
+        // advertise as "Glasses-A88" / "Glass-XYZ" / anything matching
+        // the NAME_PREFIX. Fall back to the prefix as a generic label
+        // when the OS can't resolve the name (shouldn't normally happen).
+        val resolvedName = com.icespiritai.offline.glasses.GlassesDevice
+            .findBondedDevice(context)
+            ?.takeIf { it.address == lastPaired }
+            ?.name
+            ?: com.icespiritai.offline.glasses.GlassesDevice.NAME_PREFIX
         val device = com.icespiritai.offline.glasses.GlassesDevice(
             address = lastPaired,
-            name = "Glass-D15",
+            name = resolvedName,
             lastSeenMs = System.currentTimeMillis(),
         )
         try {
@@ -160,7 +173,7 @@ fun GlassesCaptureOverlay(
                                         val lastPaired = deviceStore.loadLastPaired() ?: return@launch
                                         val device = com.icespiritai.offline.glasses.GlassesDevice(
                                             address = lastPaired,
-                                            name = "Glass-D15",
+                                            name = com.icespiritai.offline.glasses.GlassesDevice.NAME_PREFIX,
                                             lastSeenMs = System.currentTimeMillis(),
                                         )
                                         repository.reset()

@@ -226,7 +226,19 @@ class BluetoothController(
         _connectionState.value = ConnectionState.Connecting(device)
         currentDevice = device
         val btDevice: BluetoothDevice = a.getRemoteDevice(device.address)
-        gatt = btDevice.connectGatt(context, /* autoConnect = */ false, callback)
+        // Force LE transport. The deprecated 3-arg connectGatt overload
+        // defaults to BR/EDR (Classic BT), which causes PAGE_TIMEOUT
+        // failures on LE-only peripherals like Glass-D15 / Glasses-A88 —
+        // real-device smoke test on 2026-09-14 (nova 6) caught this:
+        // 8-second PAGE_TIMEOUT → GATT_CONN_L2C_FAILURE → BLE pipeline
+        // never reached. The 4-arg overload with TRANSPORT_LE is the
+        // correct call for a BLE-only smart-glasses peripheral.
+        gatt = btDevice.connectGatt(
+            context,
+            /* autoConnect = */ false,
+            callback,
+            BluetoothDevice.TRANSPORT_LE,
+        )
     }
 
     /**

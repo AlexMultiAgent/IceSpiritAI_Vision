@@ -267,17 +267,31 @@ fun HomeScreen(
         // button when this is false, but a deep-link / replay could still
         // route here. Silently no-op rather than surface an error.
         if (!glassesEnabled) return
-        // Defensive guard 2: switch on but no paired glasses. The user
-        // must complete pairing in system Bluetooth settings before
-        // capture can succeed; we toast and let the user choose where to
-        // go (Settings tab has the same hint + a deep-link button).
-        if (glassesDeviceStore.loadLastPaired() == null) {
+        // Resolve the target device in priority order:
+        //   1. App's own store (happy path — captures user-overridden
+        //      address across launches)
+        //   2. OS BondedDevices list with NAME_PREFIX match (first-launch
+        //      bootstrap; survives `pm clear` and app uninstall)
+        //   3. Bail with a Toast pointing at system Settings
+        val resolvedDevice = glassesDeviceStore.loadLastPaired()?.let { addr ->
+            com.icespiritai.offline.glasses.GlassesDevice(
+                address = addr,
+                name = com.icespiritai.offline.glasses.GlassesDevice.NAME_PREFIX,
+                lastSeenMs = System.currentTimeMillis(),
+            )
+        } ?: com.icespiritai.offline.glasses.GlassesDevice.findBondedDevice(context)
+        if (resolvedDevice == null) {
             Toast.makeText(
                 context,
                 R.string.settings_glasses_not_paired,
                 Toast.LENGTH_LONG,
             ).show()
             return
+        }
+        // Persist the bootstrap-resolved address so the next launch can
+        // skip the OS lookup.
+        if (glassesDeviceStore.loadLastPaired() == null) {
+            glassesDeviceStore.saveLastPaired(resolvedDevice.address)
         }
         glassesOverlayVisible = true
     }
