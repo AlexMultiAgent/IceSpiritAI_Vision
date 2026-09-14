@@ -1,5 +1,24 @@
 # 用户更新日志
 
+## v0.3.3 — 2026-09-14
+
+**修正 v0.3.2 误删:TTS 朗读重新带法规依据(去掉 truncated 法条原文,只念「依据 X §Y」)+ 0 命中完全沉默**。v0.3.2 把"具体条文"误读成"依据"一起删了 —— 实际"条文"是 truncated 的 20 字 + "等"(听感断章),依据是「广告法 §9」这种条款引用,跟命中正文一样属于"内容"的一部分,应保留。0 命中走完全沉默(连"未筛查出违规事项"也不念)。
+
+### 修正
+
+- **重新带法规依据引用**:`BuildOptions.Default.includeLawCitation` 由 v0.3.2 误设的 `false` 改回 `true`,TTS 桶每条命中后接 `,依据 <regulation>`(例:"100% 中国第一,依据 广告法 §9")。v0.3.2 误以为"用户不想要依据"而全删 —— 实际用户是不要 truncated 的 `lawText`(20 字摘要,听起来支离破碎)。现在只去掉 truncated 那段,依据本段保留。
+- **不朗读 truncated 法条原文**:`SegmentedScript.buildBucketSegment` 不再拼接 `lawText`(`<20 字>等`),只剩 `依据 <regulation>`。完整法条原文仍由屏 UI(`HitCard.kt` 的折叠 "法条原文" 面板)和证据包导出(`EvidencePackageBuilder.kt`)展示,这两个 surface 走的是 `hit.lawText` 全文字段,不受 TTS 这一刀影响。
+- **0 命中完全沉默**:`SegmentedScript.build(0 hits)` 现在 `return emptyList()`(原来是返回 "未筛查出违规事项" + 免责声明)。用户原话"如果为0就不播"。`trailingDisclaimer` 在 0 命中时是 no-op(门在 flag 之前)。
+
+### 验证
+
+- 1 个 fix commit: `90a9b95`(revert `includeLawCitation` default + 改 `buildBucketSegment` 不拼 truncated + 改 `build` 0 命中返 empty + 6 个 test 更新)。
+- `SegmentedScriptTest`:`empty hits returns empty list` + `empty hits with trailingDisclaimer false still returns empty list`(两个新契约 pin);`severity grouping` 改回验正例 + 加 `!contains("致敏原强制标示")` 防 truncated 漏回;`law citation per hit includes regulation but not truncated lawText`(新名,直接用 Default);v0.3.2 引入的 `default omits regulation section` test 删(契约反了);`blank regulation omits citation` 改回用 Default。
+- `ScriptBuilderTest`:`empty hits returns single fallback segment` 改名为 `empty hits returns empty list (no TTS, no disclaimer)`,期望 `emptyList<HitSegment>()`。
+- `TtsControllerTest` 不变 —— 控制器不读 `SegmentedScript` 输出。
+- `./gradlew testDebugUnitTest -PmodelProfile=shell` TTS 包全过,无回归。
+- `app/build.gradle.kts versionCode 72→73` + `versionName 0.3.2→0.3.3`,与本条目同步。
+
 ## v0.3.2 — 2026-09-14
 
 **修复:语音朗读 2 个 UX 问题**。TTS 内容结构 / 严重度桶 / 计数 / 免责声明 / 长报告摘要开关 等与 v0.3.0 同量级。v0.3.0 公告里 v0.3.1+ 计划项(G6 语速 / 音调 / Phase D 可执行建议 / 跨引擎 `onUtteranceStart` parity / TTS 进度条 / 导出取证包 TTS 一键播放 / word-level 高亮)全部继续 v0.3.3+。
