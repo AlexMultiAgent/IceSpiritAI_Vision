@@ -92,6 +92,28 @@ class TtsControllerTest {
         assertEquals(TtsState.Idle, controller.state.first())
     }
 
+    /**
+     * v0.3.4 regression: [TtsController.dispatchSegments] must pass
+     * `interrupt = false` to [TtsEngine.speak] for every segment in the
+     * multi-segment batch. SherpaTtsEngine's per-call cancel logic
+     * (Opt-7, v0.1.68) would otherwise drop every segment except the
+     * last one — only the disclaimer ended up playing. This test
+     * pins the contract: the controller's batch path is non-interrupting.
+     */
+    @Test fun `dispatchSegments passes interrupt false to every segment`() = runTest {
+        fakeSettings.emit(TtsSetting(enabled = true))
+        controller.speak(reportWith("100% 中国第一"))
+        // Multi-segment: prefix + 违规 bucket + disclaimer = 3 segments
+        // (no 其他 suffix, no 合规 bucket for a single Violation hit).
+        assertTrue("expected multi-segment speak: ${fakeEngine.speakCallCount}", fakeEngine.speakCallCount >= 3)
+        assertEquals(
+            "every segment in a multi-segment batch must use interrupt=false " +
+                "(so SherpaTtsEngine's per-call cancel doesn't drop earlier segments)",
+            List(fakeEngine.speakCallCount) { false },
+            fakeEngine.lastInterrupts,
+        )
+    }
+
     @Test fun `stop during Speaking returns to Idle`() = runTest {
         fakeSettings.emit(TtsSetting(enabled = true))
         controller.speak(reportWith("x"))
@@ -664,13 +686,30 @@ class FakeTtsEngine(
         }
     }
 
-    override fun speak(text: String, utteranceId: String, onDone: (String) -> Unit) {
+    override fun speak(
+        text: String,
+        utteranceId: String,
+        interrupt: Boolean,
+        onDone: (String) -> Unit,
+    ) {
         speakCallCount++
         lastSpokenText = text
         lastUtteranceId = utteranceId
         _lastUtterances.add(text to utteranceId)
         pendingOnDone[utteranceId] = onDone
+        // v0.3.4: track interrupt flag for the regression test that
+        // verifies the multi-segment batch passes interrupt=false so
+        // SherpaTtsEngine's per-call cancel doesn't drop earlier
+        // segments. Tests that don't care just ignore this list.
+        _lastInterrupts.add(interrupt)
     }
+
+    /**
+     * v0.3.4: list of [interrupt] values passed to each [speak] call
+     * in order. Used by the multi-segment regression test.
+     */
+    private val _lastInterrupts = mutableListOf<Boolean>()
+    val lastInterrupts: List<Boolean> get() = _lastInterrupts.toList()
 
     /**
      * Complete the most recent utterance. Convenience overload for tests
@@ -700,6 +739,7 @@ class FakeTtsEngine(
         // semantics as AndroidTtsEngine.speak() starting a fresh
         // QUEUE_ADD sequence after a stop().
         _lastUtterances.clear()
+        _lastInterrupts.clear()
     }
 
     override fun isSpeaking(): Boolean = pendingOnDone.isNotEmpty()

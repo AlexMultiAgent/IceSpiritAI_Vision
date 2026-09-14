@@ -43,7 +43,29 @@ data class EngineInfo(
  */
 interface TtsEngine {
     fun init(onDone: (Boolean) -> Unit)
-    fun speak(text: String, utteranceId: String, onDone: (String) -> Unit)
+
+    /**
+     * Speak [text] as a separate utterance identified by [utteranceId].
+     *
+     * v0.3.4: added [interrupt] flag for multi-segment batching. When
+     * [TtsController.dispatchSegments] loops over segments and calls
+     * [speak] in a tight sequence, the per-call interrupt logic in
+     * [com.icespiritai.offline.tts.sherpa.SherpaTtsEngine] would
+     * cancel the previous in-flight utterance and only the LAST
+     * segment (the disclaimer) actually plays. Pass `interrupt = false`
+     * in the multi-segment batch to let the engine serialize all
+     * segments via its own queue (mutex on sherpa, QUEUE_ADD on
+     * Android). Default `true` preserves the historical "user re-tapped
+     * Play" cancel-the-old behavior (which the controller also handles
+     * via an explicit [stop] call at the start of [dispatchSegments]).
+     */
+    fun speak(
+        text: String,
+        utteranceId: String,
+        interrupt: Boolean = true,
+        onDone: (String) -> Unit,
+    )
+
     fun stop()
     fun isSpeaking(): Boolean
     fun supportedChineseEngines(): List<EngineInfo>

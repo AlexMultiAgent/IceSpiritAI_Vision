@@ -74,12 +74,24 @@ class AndroidTtsEngine(private val context: Context) : TtsEngine {
         }
     }
 
-    override fun speak(text: String, utteranceId: String, onDone: (String) -> Unit) {
+    override fun speak(
+        text: String,
+        utteranceId: String,
+        interrupt: Boolean,
+        onDone: (String) -> Unit,
+    ) {
         val engine = tts ?: return
         // v0.3.0: register under utteranceId so concurrent/queued segments
         // don't clobber each other's onDone. QUEUE_ADD lets segments pile
         // up; the controller's first speak() pre-calls stop() if a flush
         // is desired, so we don't need QUEUE_FLUSH here.
+        //
+        // v0.3.4: [interrupt] is intentionally ignored. Android's
+        // TextToSpeech.speak with QUEUE_ADD never interrupts previous
+        // utterances regardless of any flag we set — that's the
+        // platform behavior. The parameter exists for interface symmetry
+        // with SherpaTtsEngine (which has per-call cancel logic that
+        // the controller opts out of during multi-segment batches).
         pendingOnDone[utteranceId] = onDone
         engine.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
     }

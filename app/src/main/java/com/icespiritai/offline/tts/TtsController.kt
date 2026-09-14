@@ -194,9 +194,22 @@ class TtsController(
         _currentHitIndex.value = null
         val lastIdx = segments.lastIndex
         segments.forEachIndexed { idx, seg ->
+            // v0.3.4: interrupt = false so SherpaTtsEngine's per-call
+            // cancel logic doesn't drop every segment except the last.
+            // See SherpaTtsEngine.speak for the matching gate. AndroidTtsEngine
+            // ignores the flag (its TextToSpeech QUEUE_ADD never interrupts
+            // regardless). The first segment doesn't need interrupt = false
+            // for safety but we use it uniformly for clarity.
+            //
+            // onDone is the LAST param (not interrupt) so callers using
+            // trailing-lambda syntax `speak(...) { onDone }` keep binding
+            // the lambda to onDone — the previous v0.3.4-draft order
+            // (onDone before interrupt) broke trailing-lambda calls because
+            // the lambda ended up at the 4th position bound to a Boolean.
             engine.speak(
                 text = seg.text,
                 utteranceId = if (seg.isMeta) "meta-$idx" else "report-$idx",
+                interrupt = false,
                 onDone = { if (idx == lastIdx) _state.value = TtsState.Idle },
             )
         }

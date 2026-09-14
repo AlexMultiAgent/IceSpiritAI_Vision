@@ -88,7 +88,7 @@ class SherpaTtsEngineTest {
         fakeSynth.nextSampleRate = 22050
 
         var doneCalled = false
-        engine.speak("你好", "u1") { doneCalled = true }
+        engine.speak("你好", "u1", interrupt = true) { doneCalled = true }
         advanceUntilIdle()
 
         assertEquals(1, fakeSynth.generateCallCount)
@@ -102,7 +102,7 @@ class SherpaTtsEngineTest {
     @Test fun `speak invokes onDone even when model not installed`() = runTest(testDispatcher) {
         // Don't create the ONNX files — model is "missing".
         var doneCalled = false
-        engine.speak("hi", "u1") { doneCalled = true }
+        engine.speak("hi", "u1", interrupt = true) { doneCalled = true }
         advanceUntilIdle()
 
         assertEquals(0, fakeSynth.generateCallCount)
@@ -128,7 +128,7 @@ class SherpaTtsEngineTest {
         fakeSynth.nextSampleRate = 22050
 
         var doneCalled = false
-        engine.speak("测试", "u1") { doneCalled = true }
+        engine.speak("测试", "u1", interrupt = true) { doneCalled = true }
         advanceUntilIdle()
 
         assertEquals("synthesizer must not be created when espeak files missing",
@@ -188,7 +188,7 @@ class SherpaTtsEngineTest {
         fakeSynth.nextSamples = expected
         fakeSynth.nextSampleRate = 44100
 
-        engine.speak("测试", "u2") {}
+        engine.speak("测试", "u2", interrupt = true) {}
         advanceUntilIdle()
 
         assertEquals(7, fakePlayer.lastSamples.size)
@@ -201,7 +201,7 @@ class SherpaTtsEngineTest {
         fakeSynth.nextSamples = floatArrayOf(0.1f, 0.2f, 0.3f)
         fakeSynth.nextSampleRate = 22050
 
-        engine.speak("x", "u1") {}
+        engine.speak("x", "u1", interrupt = true) {}
         advanceUntilIdle()
         // The engine's activePlayer is a real PcmAudioPlayer (we
         // override playSamples to redirect samples, but the player
@@ -266,12 +266,12 @@ class SherpaTtsEngineTest {
 
         var firstDone = false
         var secondDone = false
-        eagerEngine.speak("first", "u1") { firstDone = true }
+        eagerEngine.speak("first", "u1", interrupt = true) { firstDone = true }
         // Second speak() arrives BEFORE advanceUntilIdle — interrupts
         // the in-flight first speak(). With UnconfinedTestDispatcher
         // the first speak()'s launched coroutine is partway through
         // playSamples() when this second speak() runs.
-        eagerEngine.speak("second", "u2") { secondDone = true }
+        eagerEngine.speak("second", "u2", interrupt = true) { secondDone = true }
 
         // The interrupt path fires the first onDone synchronously inside
         // speak() — firstDone must be true immediately, not waiting for
@@ -295,9 +295,9 @@ class SherpaTtsEngineTest {
         fakeSynth.nextSamples = floatArrayOf(0.1f, 0.2f, 0.3f)
         fakeSynth.nextSampleRate = 22050
 
-        engine.speak("first", "u1") {}
+        engine.speak("first", "u1", interrupt = true) {}
         advanceUntilIdle()
-        engine.speak("second", "u2") {}
+        engine.speak("second", "u2", interrupt = true) {}
         advanceUntilIdle()
 
         // Synthesizer is built lazily on first speak; second speak reuses.

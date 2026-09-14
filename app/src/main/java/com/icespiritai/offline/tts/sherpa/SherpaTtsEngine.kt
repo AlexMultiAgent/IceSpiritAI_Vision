@@ -108,7 +108,12 @@ open class SherpaTtsEngine(
         onDone(true)
     }
 
-    override fun speak(text: String, utteranceId: String, onDone: (String) -> Unit) {
+    override fun speak(
+        text: String,
+        utteranceId: String,
+        interrupt: Boolean,
+        onDone: (String) -> Unit,
+    ) {
         if (closed) {
             onDone(utteranceId)
             return
@@ -139,8 +144,17 @@ open class SherpaTtsEngine(
         //   3. Cancelling the in-flight coroutine's Job if we still hold
         //      a reference — the coroutine is on internalScope so we can
         //      cancel without affecting the controller's appScope.
+        //
+        // v0.3.4: gated by [interrupt] = true (default). When the controller
+        // is in a multi-segment batch (TtsController.dispatchSegments),
+        // it passes `interrupt = false` so the second-and-later segment
+        // calls don't drop the first-and-earlier ones. Without this gate,
+        // the TTS would only ever speak the LAST segment of a multi-
+        // segment script (the disclaimer). When `interrupt = false`,
+        // the new coroutine simply waits for the in-flight one's mutex
+        // to release — they naturally serialize.
         val inFlight = activeSpeakJob
-        if (inFlight != null && !inFlight.isCompleted) {
+        if (interrupt && inFlight != null && !inFlight.isCompleted) {
             // Fire the in-flight's onDone synchronously BEFORE we overwrite
             // pendingInterruptOnDone below — this is the callback captured
             // by the previous speak()'s launch block. The closure variable
