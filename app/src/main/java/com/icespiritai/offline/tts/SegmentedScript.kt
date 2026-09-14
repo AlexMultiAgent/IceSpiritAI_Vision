@@ -19,15 +19,13 @@ import com.icespiritai.offline.domain.severityRank
  */
 object SegmentedScript {
 
-    private const val FALLBACK_TEXT = "未筛查出违规事项"
     private const val DISCLAIMER = "AI识别仅供参考,合规判断以现场检查为准"
 
     fun build(report: ViolationReport, options: BuildOptions = BuildOptions.Default): List<HitSegment> {
-        if (report.hits.isEmpty()) {
-            val out = mutableListOf<HitSegment>(metaSegment(FALLBACK_TEXT))
-            if (options.trailingDisclaimer) out.add(metaSegment(DISCLAIMER))
-            return out
-        }
+        // v0.3.3 (post v0.3.2 correction): 0 hits -> completely silent.
+        // User 原话 "如果为0就不播" — no fallback, no disclaimer, nothing.
+        // `trailingDisclaimer` is a no-op for empty inputs.
+        if (report.hits.isEmpty()) return emptyList()
 
         val sorted = report.hits.sortedByDescending { severityRank(it.severity) }
         val truncated = options.topN?.let { sorted.take(it) } ?: sorted
@@ -83,9 +81,14 @@ object SegmentedScript {
         }
         val body = hits.joinToString("、") { hit ->
             val text = hit.matchedText.trim()
+            // v0.3.3 (post v0.3.2 correction): include the regulation
+            // citation "依据 <regulation>" (用户原话 "没说命中内容及依据
+            // 不播" — 依据是 evidence,跟 matchedText 同属内容), but
+            // NOT the truncated `lawText` ("<20 chars>等" 听起来断章取
+            // 义、支离破碎,用户原话 "条文不全,误导")。 屏 UI 和证据包
+            // 导出走 `hit.lawText` 全文字段,不受 TTS 这一刀影响。
             val citation = if (options.includeLawCitation && hit.regulation.isNotBlank()) {
-                val truncated = if (hit.lawText.length > 20) hit.lawText.take(20) + "等" else hit.lawText
-                ",依据 ${hit.regulation}${if (truncated.isNotBlank()) " $truncated" else ""}"
+                ",依据 ${hit.regulation}"
             } else ""
             "$text$citation"
         }

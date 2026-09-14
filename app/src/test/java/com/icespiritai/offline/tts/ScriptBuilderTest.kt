@@ -16,15 +16,15 @@ class ScriptBuilderTest {
         regulation = "广告法 §9", severity = sev,
     )
 
-    @Test fun `empty hits returns single fallback segment`() {
+    @Test fun `empty hits returns empty list (no TTS, no disclaimer)`() {
+        // v0.3.3 (post v0.3.2 correction): 0 hits -> completely silent.
+        // User 原话 "如果为0就不播" — no FALLBACK_TEXT, no disclaimer,
+        // nothing. This is the v0.3.2 behavior inverted: v0.3.2 emitted
+        // "未筛查出违规事项" + disclaimer; user feedback clarified that
+        // 0 hits should produce no audio at all.
         val report = ViolationReport(StubUri(), "", emptyList(), 0)
         val segs = ScriptBuilder.buildSegments(report)
-        // 2 segments: FALLBACK_TEXT + DISCLAIMER (BuildOptions.Default.trailingDisclaimer = true)
-        assertEquals(2, segs.size)
-        assertEquals("未筛查出违规事项", segs[0].text)
-        assertEquals("AI识别仅供参考,合规判断以现场检查为准", segs[1].text)
-        assertTrue(segs[0].isMeta)
-        assertTrue(segs[1].isMeta)
+        assertEquals(emptyList<HitSegment>(), segs)
     }
 
     @Test fun `single Violation hit emits prefix + bucket + disclaimer`() {

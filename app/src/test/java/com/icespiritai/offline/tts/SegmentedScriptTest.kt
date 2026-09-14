@@ -22,10 +22,25 @@ class SegmentedScriptTest {
         regulation = reg, severity = sev, domain = domain, lawText = lawText,
     )
 
-    @Test fun `empty hits returns fallback then disclaimer`() {
+    @Test fun `empty hits returns empty list (no TTS, no disclaimer)`() {
+        // v0.3.3 (post v0.3.2 correction): 0 hits -> completely silent.
+        // No "未筛查出违规事项" fallback, no disclaimer — 用户原话
+        // "如果为0就不播"。`trailingDisclaimer` flag must not leak a
+        // segment when there are no hits.
         val report = ViolationReport(StubUri(), "", emptyList(), 0)
         val segs = SegmentedScript.build(report, BuildOptions.Default)
-        assertEquals(listOf("未筛查出违规事项", "AI识别仅供参考,合规判断以现场检查为准"), segs.map { it.text })
+        assertEquals(emptyList<HitSegment>(), segs)
+    }
+
+    @Test fun `empty hits with trailingDisclaimer false still returns empty list`() {
+        // Defense: even with trailingDisclaimer = false the contract is
+        // "no hits = no segments" — the flag is a no-op for empty inputs.
+        val report = ViolationReport(StubUri(), "", emptyList(), 0)
+        val segs = SegmentedScript.build(
+            report,
+            BuildOptions.Default.copy(trailingDisclaimer = false),
+        )
+        assertEquals(emptyList<HitSegment>(), segs)
     }
 
     @Test fun `severity grouping emits prefix + buckets + disclaimer`() {
@@ -41,14 +56,25 @@ class SegmentedScriptTest {
         assertTrue("prefix should start with 共 X 条违规: ${segs[0].text}", segs[0].text.startsWith("共 1 条违规"))
         assertTrue("violation bucket label", segs[1].text.startsWith("违规:"))
         assertTrue("violation bucket content", segs[1].text.contains("100% 中国第一"))
-        // v0.3.2: by default the TTS bucket does NOT include the regulation
-        // citation (用户反馈 truncated 20 字 + "等" 念出来割裂;屏 UI 仍
-        // 显示依据 + 法条原文,跟 TTS 是独立路径)。Opt-in via
-        // `BuildOptions.Default.copy(includeLawCitation = true)` is tested
-        // separately in `law citation opt-in includes regulation` below.
+        // v0.3.3 (post v0.3.2 correction): default keeps the regulation
+        // citation "依据 <regulation>" per hit (用户原话 "没说命中内容
+        // 及依据不播" — citation 是命中的依据,是内容的一部分)。
         assertTrue(
-            "violation bucket should NOT contain 依据 by default: ${segs[1].text}",
-            !segs[1].text.contains("依据"),
+            "violation bucket should contain 依据 by default: ${segs[1].text}",
+            segs[1].text.contains("依据"),
+        )
+        assertTrue(
+            "violation bucket should contain the regulation section: ${segs[1].text}",
+            segs[1].text.contains("GB 7718-2025 §5.1"),
+        )
+        // The truncated `lawText` (e.g. "致敏原强制标示") is intentionally
+        // NOT included in the TTS — truncated mid-section sounds like
+        // gibberish and isn't authoritative. Screen UI (HitCard.kt)
+        // and evidence ZIP export (EvidencePackageBuilder.kt) show the
+        // full lawText unchanged; only the TTS bucket drops it.
+        assertTrue(
+            "violation bucket should NOT include truncated lawText: ${segs[1].text}",
+            !segs[1].text.contains("致敏原强制标示"),
         )
         assertTrue("warning bucket label", segs[2].text.startsWith("警告:"))
         assertTrue("info bucket label", segs[3].text.startsWith("信息:"))
@@ -72,19 +98,23 @@ class SegmentedScriptTest {
     }
 
     /**
-     * v0.3.2: explicit opt-in for the law-citation suffix. The default
-     * (`BuildOptions.Default.includeLawCitation = false`) omits the
-     * citation because truncated 20-char + "等" reads poorly in audio.
-     * Callers that still want the citation (e.g. a future settings
-     * toggle) can pass `includeLawCitation = true` explicitly.
+     * v0.3.3 (post v0.3.2 correction): per default the TTS bucket includes
+     * `依据 <regulation>` per hit, but does NOT include the truncated
+     * `lawText` ("<20 chars>等" — sounds like gibberish in audio). The
+     * citation is the evidence the hit fired; the truncated article text
+     * is what the user complained about.
      */
-    @Test fun `law citation opt-in includes regulation section name when lawText present`() {
+    @Test fun `law citation per hit includes regulation but not truncated lawText`() {
         val hits = listOf(hit("无麸质", Severity.Violation, "GB 7718-2025 §5.1", "致敏原强制标示"))
-        val segs = SegmentedScript.build(
-            ViolationReport(StubUri(), "", hits, 0),
-            BuildOptions.Default.copy(includeLawCitation = true),
+        val segs = SegmentedScript.build(ViolationReport(StubUri(), "", hits, 0), BuildOptions.Default)
+        assertTrue(
+            "expected regulation in citation: ${segs[1].text}",
+            segs[1].text.contains("依据 GB 7718-2025 §5.1"),
         )
-        assertTrue("expected law section name in citation: ${segs[1].text}", segs[1].text.contains("GB 7718-2025 §5.1 致敏原强制标示"))
+        assertTrue(
+            "truncated lawText must NOT be in TTS: ${segs[1].text}",
+            !segs[1].text.contains("致敏原强制标示"),
+        )
     }
 
     @Test fun `topN truncation marks suffix with omitted count`() {
@@ -113,18 +143,6 @@ class SegmentedScriptTest {
         assertEquals(1, segs.size)
         assertTrue(segs[0].text.contains("OCR 引擎未初始化"))
         assertTrue(segs[0].text.contains("AI识别仅供参考"))
-    }
-
-    @Test fun `default omits regulation section in TTS bucket`() {
-        // v0.3.2: BuildOptions.Default.includeLawCitation = false — the
-        // truncated 20-char + "等" citation reads poorly in audio and
-        // 误导. The bucket should contain only the matched text.
-        val hits = listOf(hit("100% 中国第一", Severity.Violation))
-        val segs = SegmentedScript.build(
-            ViolationReport(StubUri(), "", hits, 0),
-            BuildOptions.Default,
-        )
-        assertTrue("violation bucket should NOT contain 依据 by default: ${segs[1].text}", !segs[1].text.contains("依据"))
     }
 
     @Test fun `trailingDisclaimer false drops last disclaimer segment`() {
@@ -156,20 +174,17 @@ class SegmentedScriptTest {
         assertTrue("no 其余 suffix expected", segs.none { it.text.startsWith("其余") })
     }
 
-    @Test fun `blank regulation omits citation even with opt-in`() {
-        // v0.3.2 boundary: even when includeLawCitation is on, a hit
-        // with empty `regulation` field must NOT emit a stray `,依据`.
-        // Guards against future re-enablement of the citation feature
-        // regressing on the blank-regulation case.
+    @Test fun `blank regulation omits citation entirely`() {
+        // Boundary: a hit with empty `regulation` field must NOT emit a
+        // stray `,依据` even when includeLawCitation is on (default).
+        // The check guards both the includeLawCitation flag and the
+        // regulation.isNotBlank() guard together.
         val hits = listOf(RuleHit(
             ruleId = "r_no_reg", matchedText = "100% 中国第一", category = "absolute",
             regulation = "", severity = Severity.Violation, domain = "ad",
             lawText = "致敏原强制标示",
         ))
-        val segs = SegmentedScript.build(
-            ViolationReport(StubUri(), "", hits, 0),
-            BuildOptions.Default.copy(includeLawCitation = true),
-        )
+        val segs = SegmentedScript.build(ViolationReport(StubUri(), "", hits, 0), BuildOptions.Default)
         assertTrue("bucket should NOT contain 依据 when regulation blank: ${segs[1].text}", !segs[1].text.contains("依据"))
     }
 
