@@ -28,6 +28,7 @@ internal class FakeThemeSettingsSource(
     private val backing: MutableStateFlow<ThemeMode>,
 ) : ThemeSettingsSource {
     internal val visibleFeaturesBacking = MutableStateFlow<Set<RuleTab>>(RuleTab.entries.toSet())
+    internal val enableGlassesCaptureBacking = MutableStateFlow(false)
 
     override val themeMode: StateFlow<ThemeMode> = backing
     override suspend fun setThemeMode(mode: ThemeMode) {
@@ -37,5 +38,10 @@ internal class FakeThemeSettingsSource(
     override val visibleFeatures: Flow<Set<RuleTab>> = visibleFeaturesBacking
     override suspend fun setVisibleFeatures(value: Set<RuleTab>) {
         visibleFeaturesBacking.value = value
+    }
+
+    override val enableGlassesCapture: Flow<Boolean> = enableGlassesCaptureBacking
+    override suspend fun setGlassesCaptureEnabled(enabled: Boolean) {
+        enableGlassesCaptureBacking.value = enabled
     }
 }

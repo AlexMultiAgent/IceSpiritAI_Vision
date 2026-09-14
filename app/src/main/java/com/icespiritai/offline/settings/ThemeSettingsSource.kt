@@ -33,4 +33,22 @@ interface ThemeSettingsSource {
      */
     val visibleFeatures: Flow<Set<RuleTab>>
     suspend fun setVisibleFeatures(value: Set<RuleTab>)
+
+    /**
+     * Whether the user has opted in to smart-glasses BLE capture.
+     *
+     * **Default `false`** — the app's core flow (gallery pick + phone
+     * camera capture → OCR + rule scan → TTS) works without any glasses
+     * hardware, so the BLE capture path is opt-in. The CaptureBar hides
+     * its "眼镜拍照" button when this is `false`; [SettingsScreen]
+     * exposes the toggle.
+     *
+     * Pairing status is **separate** from this flag: a user can have
+     * `enableGlassesCapture = true` but no paired device in system
+     * Bluetooth settings, in which case the glasses button shows but the
+     * capture flow surfaces a "未配对" hint pointing at the system
+     * Bluetooth settings deep-link.
+     */
+    val enableGlassesCapture: Flow<Boolean>
+    suspend fun setGlassesCaptureEnabled(enabled: Boolean)
 }

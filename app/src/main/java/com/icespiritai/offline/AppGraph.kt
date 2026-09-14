@@ -5,11 +5,18 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
+import com.icespiritai.offline.glasses.BluetoothController
+import com.icespiritai.offline.glasses.GlassesDeviceStore
+import com.icespiritai.offline.glasses.GlassesPhotoCaptureRepository
 import com.icespiritai.offline.updater.DownloadStateStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Dispatchers
 
 /**
- * Process-wide singleton for shared DataStore-backed stores. Keeps the DataStore
- * instance alive across Activity recreation and Service / Worker processes.
+ * Process-wide singleton for shared DataStore-backed stores and the
+ * glasses BLE pipeline. Keeps long-lived instances alive across Activity
+ * recreation and Service / Worker processes.
  *
  * File `update_state.preferences_pb` lives in the app's `datastore/` dir.
  */
@@ -25,4 +32,53 @@ object AppGraph {
 
     fun downloadStateStore(context: Context): DownloadStateStore =
         DownloadStateStore(dataStore(context))
+
+    // ────────────────────────────────────────────────────────────────────
+    // Smart-glasses pipeline (Glass-D15 V2.4.5+)
+    //
+    // Process-scoped singleton per the same precedent as the update
+    // DataStore: the GATT handle, BLE state flows, and capture coroutine
+    // scope outlive Activity recreation. The PaddleOCR engine is held by
+    // `IceSpiritVisionViewModel`'s lazy; the BLE controller + capture
+    // repository are held here.
+    // ────────────────────────────────────────────────────────────────────
+
+    @Volatile private var glassesDeviceStoreInstance: GlassesDeviceStore? = null
+    @Volatile private var glassesScope: CoroutineScope? = null
+    @Volatile private var bluetoothControllerInstance: BluetoothController? = null
+    @Volatile private var glassesCaptureRepositoryInstance: GlassesPhotoCaptureRepository? = null
+
+    @Synchronized
+    fun glassesDeviceStore(context: Context): GlassesDeviceStore {
+        return glassesDeviceStoreInstance ?: GlassesDeviceStore(context.applicationContext)
+            .also { glassesDeviceStoreInstance = it }
+    }
+
+    /**
+     * Process-lifetime [CoroutineScope] for glasses pipeline work. Uses
+     * a [SupervisorJob] so a failure in one capture doesn't poison the
+     * scope (the next capture still launches).
+     */
+    private fun glassesScope(): CoroutineScope =
+        glassesScope ?: CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            .also { glassesScope = it }
+
+    @Synchronized
+    fun bluetoothController(context: Context): BluetoothController {
+        return bluetoothControllerInstance ?: BluetoothController(
+            context = context.applicationContext,
+            scope = glassesScope(),
+            deviceStore = glassesDeviceStore(context.applicationContext),
+        ).also { bluetoothControllerInstance = it }
+    }
+
+    @Synchronized
+    fun glassesPhotoCaptureRepository(context: Context): GlassesPhotoCaptureRepository {
+        return glassesCaptureRepositoryInstance ?: GlassesPhotoCaptureRepository(
+            context = context.applicationContext,
+            bluetoothController = bluetoothController(context.applicationContext),
+            scope = glassesScope(),
+        ).also { glassesCaptureRepositoryInstance = it }
+    }
 }
+

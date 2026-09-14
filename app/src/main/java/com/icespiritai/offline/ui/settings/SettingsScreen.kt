@@ -1,5 +1,7 @@
 package com.icespiritai.offline.ui.settings
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -24,6 +26,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -36,8 +39,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.icespiritai.offline.AppGraph
 import com.icespiritai.offline.BuildConfig
 import com.icespiritai.offline.R
+import com.icespiritai.offline.glasses.GlassesDeviceStore
 import com.icespiritai.offline.settings.SettingsRepository
 import com.icespiritai.offline.settings.SettingsSnackbar
 import com.icespiritai.offline.settings.SettingsViewModel
@@ -172,6 +177,73 @@ fun SettingsScreen(
                     visible = visibleFeatures,
                     onToggle = viewModel::setFeatureVisible,
                 )
+            }
+            // v0.4.0: smart-glasses opt-in card. Default OFF per user
+            // requirement "默认不连接"; the Switch flips to ON and reveals
+            // the CaptureBar's "眼镜拍照" FAB on the home screen.
+            // Pairing is a separate concern: the user toggles the Switch,
+            // then taps "去蓝牙设置配对" to complete the OS-level flow.
+            Card(modifier = Modifier.fillMaxWidth()) {
+                val glassesEnabled by viewModel.enableGlassesCapture.collectAsStateWithLifecycle()
+                val glassesCtx = LocalContext.current
+                // Read on every composition; in-memory SharedPreferences is
+                // cheap and re-rendering the whole card on a switch flip is
+                // fine for this infrequent path. If a future v2 needs live
+                // updates without a state change, swap to a Flow.
+                val paired = remember(glassesEnabled) {
+                    AppGraph.glassesDeviceStore(glassesCtx).loadLastPaired()
+                }
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = stringResource(R.string.settings_glasses_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Switch(
+                            checked = glassesEnabled,
+                            onCheckedChange = { viewModel.setGlassesCaptureEnabled(it) },
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.settings_glasses_enable_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = paired?.let {
+                            stringResource(R.string.settings_glasses_paired, it)
+                        } ?: stringResource(R.string.settings_glasses_not_paired),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (glassesEnabled && paired == null) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(R.string.settings_glasses_pairing_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    val ctx = LocalContext.current
+                    TextButton(onClick = {
+                        val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        try {
+                            ctx.startActivity(intent)
+                        } catch (_: android.content.ActivityNotFoundException) {
+                            ctx.startActivity(
+                                Intent(Settings.ACTION_SETTINGS)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        }
+                    }) {
+                        Text(stringResource(R.string.settings_glasses_action_pair))
+                    }
+                }
             }
             Spacer(modifier = Modifier.height(8.dp))
             Column(modifier = Modifier.padding(horizontal = 16.dp)) {

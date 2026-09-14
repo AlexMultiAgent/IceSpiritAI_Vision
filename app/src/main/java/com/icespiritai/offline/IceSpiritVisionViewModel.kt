@@ -113,6 +113,22 @@ class IceSpiritVisionViewModel(
     )
 
     /**
+     * v0.4.0: smart-glasses capture opt-in flag, surfaced from
+     * [ThemeSettingsSource.enableGlassesCapture]. Defaults to `false`.
+     *
+     * The Vision ViewModel only forwards this state to the UI layer
+     * (HomeScreen reads it via `vm.enableGlassesCapture.value` to decide
+     * whether to show the CaptureBar's "眼镜拍照" button); the actual
+     * BLE capture pipeline is owned by the glasses module, not by this
+     * ViewModel.
+     */
+    val enableGlassesCapture: StateFlow<Boolean> = settingsSource.enableGlassesCapture.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = false,
+    )
+
+    /**
      * Resolve the [RuleMatcher] for [tab], or `null` if [tab] is not in
      * [visibleFeatures].
      *

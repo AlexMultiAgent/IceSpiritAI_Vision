@@ -28,6 +28,36 @@
     <string name="kpi_tooltip_violation">广告法明文禁止的违规内容,需立即下架整改</string>
     <string name="kpi_tooltip_warning">需结合语境判断的可疑话术或缺失披露</string>
     <string name="kpi_tooltip_info">广告含有合规资质 / 未成年相关等关键词,需另行核实</string>
+
+    <!-- Smart-glasses (Glass-D15) capture pipeline. See
+         docs/glass/AI识图传图提速_App连接参数配合.md for protocol details. -->
+    <string name="action_glasses_capture">眼镜拍照</string>
+    <string name="action_glasses_capture_desc">通过蓝牙让智能眼镜拍照并自动识别违规内容</string>
+    <string name="glasses_not_paired">请先在系统蓝牙设置中配对智能眼镜</string>
+    <string name="glasses_no_adapter">设备不支持蓝牙</string>
+    <string name="glasses_bluetooth_off">请打开系统蓝牙</string>
+    <string name="glasses_permission_denied">需要蓝牙权限才能连接眼镜</string>
+    <string name="glasses_scan_title">搜索附近的眼镜</string>
+    <string name="glasses_scan_empty">未发现配对的眼镜设备</string>
+    <string name="glasses_connecting">正在连接 %1$s…</string>
+    <string name="glasses_ready">眼镜已就绪</string>
+    <string name="glasses_capturing">拍照中…</string>
+    <string name="glasses_capture_progress">已接收 %1$d / %2$d 字节</string>
+    <string name="glasses_capture_success">拍照完成,用时 %1$d ms</string>
+    <string name="glasses_capture_failed">拍照失败:%1$s</string>
+    <string name="glasses_action_retry">重试</string>
+    <string name="glasses_action_cancel">取消</string>
+    <string name="glasses_action_close">关闭</string>
+    <string name="glasses_action_open_settings">去设置</string>
+    <string name="settings_glasses_title">智能眼镜</string>
+    <string name="settings_glasses_paired">已配对:%1$s</string>
+    <string name="settings_glasses_not_paired">未配对智能眼镜</string>
+    <string name="settings_glasses_enable">启用智能眼镜拍照</string>
+    <string name="settings_glasses_enable_desc">关闭后首页不显示眼镜拍照入口。默认关闭,需要眼镜时再打开。</string>
+    <string name="settings_glasses_action_pair">去蓝牙设置配对</string>
+    <string name="settings_glasses_action_forget">清除记忆</string>
+    <string name="settings_glasses_action_forget_confirm">确定要清除已记住的眼镜配对?下次拍照需要重新连接。</string>
+    <string name="settings_glasses_pairing_hint">已启用但未配对,请先去系统蓝牙设置配对眼镜。</string>
     <!-- Severity section header in the result panel: "违规 (3)" / "警告 (2)" / "信息 (1)" -->
     <string name="result_section_header">%1$s (%2$d)</string>
     <string name="tab_ad_law">广告招牌</string>

@@ -47,6 +47,40 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!--
+        Smart-glasses BLE photo-capture pipeline (Glass-D15 V2.4.5+).
+        See docs/glass/AI识图传图提速_App连接参数配合.md for the wire protocol.
+
+        Legacy (API ≤30) permissions cover GATT connect + scan under a
+        single BLUETOOTH/BLUETOOTH_ADMIN pair. The system Bluetooth
+        settings is responsible for pairing; this app does not invoke
+        createBond() — pairing is a one-time setup the user does via
+        Settings → Bluetooth.
+
+        usesPermissionFlags="neverForLocation" on BLUETOOTH_SCAN keeps
+        Play Console happy: the app never derives the user's location
+        from BLE scan results, so the location permission is not
+        requested.
+    -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!--
+        Foreground service type reserved for a future v2 upgrade where
+        BLE capture survives Activity backgrounding. v1 stays
+        Activity-scoped; the permission is added now so adding the
+        <service android:foregroundServiceType="connectedDevice"> later
+        doesn't require a manifest-only update mid-release.
+    -->
+    <!-- <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" /> -->
+
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />

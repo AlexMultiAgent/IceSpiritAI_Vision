@@ -28,6 +28,30 @@
 - 冰灵智译 `com.icespiritai.translate`
 - 冰灵锐目 `com.icespiritai.vision`
 
+## 与智能眼镜的互动(Glass-D15 V2.4.5+)
+
+冰灵锐目 APK 本身也是眼镜前端 App —— 通过 BLE 连接智能眼镜拍照,端侧 OCR + 规则识别后本地 TTS 播报。完整链路在 `app/src/main/java/com/icespiritai/offline/glasses/`:
+
+| 文件 | 职责 |
+|---|---|
+| `GlassesPhotoProtocol.kt` | 纯字节协议(0x33/0x51 FFF0 帧、FA10/FA11/FA12 控制字)+ 单测 29 项 |
+| `GlassesPhotoStream.kt` | JPEG 块拼装 + CRC32 + 缺失范围检测 + 单测 16 项 |
+| `GlassesDevice.kt` + `GlassesDeviceStore.kt` | 已配对眼镜数据 + SharedPreferences 持久化 |
+| `GlassesScan.kt` | `BluetoothLeScanner` 封装,按 `Glass-D15` 名称前缀过滤 |
+| `BluetoothController.kt` | 单 GATT 连接编排(MTU 协商 / 服务发现 / CCCD 写入 / 通知转发)|
+| `GlassesPhotoCaptureRepository.kt` | 拍照状态机:Connecting → MTU → Services → Notifies → Ready → Capturing → Success |
+| `ui/GlassesCaptureOverlay.kt` | Compose overlay(连接进度 / 拍照进度 / 失败重试) |
+
+**配对模型**:配对在**系统蓝牙设置**里完成(用户一次性操作),App 不调用 `createBond()`,只通过 OS 已存的 pairing keys 自动 secure connect。`GlassesScan` 按 name 前缀 `Glass-D15` 过滤 + 自动从 `GlassesDeviceStore` 拿上次地址重连。
+
+**单连接限制(v1)**:同一时刻只持一个 `BluetoothGatt` 引用(plan §D1)。`BluetoothController.connect()` 在覆盖前会 `gatt?.close()` 释放无线电 slot,避免 reference leak。如要支持"一手机多眼镜"是 v2 范畴(每个眼镜一个 Controller + Repository 实例)。
+
+**完全离线硬约束**:BLE 链路是数据搬运通道,**不连任何外网模型**。OCR(PP-OCRv6_small 本地 ONNX)、规则(本地 JSON)、TTS(本地 Android TTS 或 sherpa-onnx)全离线。Manifest 的 `INTERNET` 权限仅给 in-app update(`UpdateDownloadService` 拉新 APK),不参与识别链路。
+
+**未实现(v1 不做)**:Foreground Service(锁屏场景)、in-app 配对、跨 BLE 进程 AIDL、圈选再识、`onConnectionUpdated` 回调(compileSdk 37 SDK stub 不暴露该方法,已 KDoc 说明)。
+
+参考文档:`docs/glass/AI识图传图提速_App连接参数配合.md`(固件协议)+ `app/src/main/java/com/icespiritai/offline/glasses/` 源码 + plan 文件 `C:\Users\37311\.claude\plans\eager-fluttering-crayon.md`。
+
 ## 产品方向:广告招牌 + 食品标签 双域(v0.1.69 起双 tab 默认全开)
 
 **v0.1.69 起**:`RuleTabBar.visibleTabs` 由硬编码 `listOf(RuleTab.AdSignage)` 改为参数化 `Set<RuleTab>`,由 [`IceSpiritVisionViewModel.visibleFeatures`](app/src/main/java/com/icespiritai/offline/IceSpiritVisionViewModel.kt) 注入(默认 `{AdSignage, FoodLabeling}` **全开**,持久化在 DataStore `visible_features` key,见 [`SettingsRepository.kt`](app/src/main/java/com/icespiritai/offline/settings/SettingsRepository.kt))。用户可在设置层「功能可见性」Card 里单独禁用食品标签;`FoodLabeling` enum 项 / `FoodLabelRule*` / `matcherFor` 路由 / `CategoryDisplay.FoodLabelCategory` 完整保留。

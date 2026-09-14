@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.longPreferencesKey
@@ -38,6 +39,7 @@ class SettingsRepository(private val context: Context) : ThemeSettingsSource {
     private val themeModeKey = stringPreferencesKey("theme_mode")
     private val disclaimerKey = longPreferencesKey("disclaimer_accepted_at")
     private val visibleFeaturesKey = stringSetPreferencesKey("visible_features")
+    private val enableGlassesCaptureKey = booleanPreferencesKey("enable_glasses_capture")
 
     override val themeMode: Flow<ThemeMode> =
         context.dataStore.data
@@ -100,6 +102,29 @@ class SettingsRepository(private val context: Context) : ThemeSettingsSource {
     override suspend fun setVisibleFeatures(value: Set<RuleTab>) {
         context.dataStore.edit { prefs ->
             prefs[visibleFeaturesKey] = value.map(RuleTab::name).toSet()
+        }
+    }
+
+    /**
+     * Smart-glasses capture enable flag. Defaults to `false` — the BLE
+     * pipeline is opt-in because the app works fine without glasses
+     * hardware (gallery + phone camera cover the core capture paths).
+     *
+     * The DataStore key is missing on a fresh install; [DataStore.data]
+     * falls back to the empty-preferences recovery path (Bug 6 fix),
+     * and the `.map` below yields `false` for that case — correct
+     * "off-by-default" behaviour without an explicit `?: false` fallback.
+     */
+    override val enableGlassesCapture: Flow<Boolean> =
+        context.dataStore.data
+            .catch { e ->
+                if (e is IOException) emit(emptyPreferences()) else throw e
+            }
+            .map { it[enableGlassesCaptureKey] ?: false }
+
+    override suspend fun setGlassesCaptureEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[enableGlassesCaptureKey] = enabled
         }
     }
 

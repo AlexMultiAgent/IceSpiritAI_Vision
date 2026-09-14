@@ -98,6 +98,47 @@ class SettingsViewModel(
     )
 
     /**
+     * v0.4.0: smart-glasses capture opt-in flag. Defaults to `false` —
+     * the BLE pipeline is disabled until the user explicitly turns it
+     * on from Settings (matches the user's "默认不连接" requirement).
+     *
+     * Read by:
+     *  - [com.icespiritai.offline.ui.home.CaptureBar] to hide its
+     *    "眼镜拍照" button when `false`
+     *  - [com.icespiritai.offline.ui.home.HomeScreen.launchGlassesCapture]
+     *    as a defensive guard against the (defensive) button visibility
+     *    check being bypassed (e.g. via deep-link or deeplink jump)
+     *  - [com.icespiritai.offline.glasses.ui.GlassesCaptureOverlay] to
+     *    surface a "未启用" state if the overlay is somehow shown with
+     *    the flag off
+     */
+    val enableGlassesCapture: StateFlow<Boolean> = source.enableGlassesCapture.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = false,
+    )
+
+    /**
+     * Persist the user's opt-in / opt-out. Mirrors [setFeatureVisible]
+     * in spirit: a no-op coroutine on [viewModelScope], DataStore IO
+     * off the main thread, surface IO failures via [SettingsSnackbar].
+     *
+     * Unlike [setFeatureVisible], there's no "at least one must stay
+     * visible" invariant — the flag is a single Boolean.
+     */
+    fun setGlassesCaptureEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            runCatching { source.setGlassesCaptureEnabled(enabled) }
+                .onFailure { cause ->
+                    if (cause !is IOException) {
+                        Log.w(TAG, "setGlassesCaptureEnabled failed with non-IO throwable", cause)
+                    }
+                    _snackbar.tryEmit(SettingsSnackbar.PersistFailed(cause))
+                }
+        }
+    }
+
+    /**
      * Update flow read-through; ViewModel does not own the StateFlow
      * (singleton lives in [UpdateRepository]). Anything observing
      * `updateState` is observing the same process-global [UpdateRepository.state].

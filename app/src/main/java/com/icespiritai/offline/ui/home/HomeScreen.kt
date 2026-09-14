@@ -48,7 +48,11 @@ import com.icespiritai.offline.domain.ErrorCode
 import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.domain.ViolationReport
 import com.icespiritai.offline.domain.severityRank
+import com.icespiritai.offline.AppGraph
 import com.icespiritai.offline.export.ExportAction
+import com.icespiritai.offline.glasses.GlassesDeviceStore
+import com.icespiritai.offline.glasses.GlassesPhotoCaptureRepository
+import com.icespiritai.offline.glasses.ui.GlassesCaptureOverlay
 import com.icespiritai.offline.settings.SettingsRepository
 import com.icespiritai.offline.tts.TtsState
 import java.io.File
@@ -248,6 +252,36 @@ fun HomeScreen(
         }
     }
 
+    // Smart-glasses capture overlay state — set to true by the
+    // CaptureBar's `onGlassesCapture` callback; cleared by the
+    // overlay's onDismiss / onCaptured.
+    var glassesOverlayVisible by remember { mutableStateOf(false) }
+    val glassesRepository = remember { AppGraph.glassesPhotoCaptureRepository(context) }
+    val glassesDeviceStore = remember { AppGraph.glassesDeviceStore(context) }
+    // v0.4.0: opt-in toggle. Source of truth is SettingsViewModel +
+    // DataStore; VM mirrors it onto a StateFlow for cheap Compose reads.
+    val glassesEnabled by viewModel.enableGlassesCapture.collectAsState()
+
+    fun launchGlassesCapture() {
+        // Defensive guard 1: switch off. CaptureBar shouldn't render the
+        // button when this is false, but a deep-link / replay could still
+        // route here. Silently no-op rather than surface an error.
+        if (!glassesEnabled) return
+        // Defensive guard 2: switch on but no paired glasses. The user
+        // must complete pairing in system Bluetooth settings before
+        // capture can succeed; we toast and let the user choose where to
+        // go (Settings tab has the same hint + a deep-link button).
+        if (glassesDeviceStore.loadLastPaired() == null) {
+            Toast.makeText(
+                context,
+                R.string.settings_glasses_not_paired,
+                Toast.LENGTH_LONG,
+            ).show()
+            return
+        }
+        glassesOverlayVisible = true
+    }
+
     fun reset() {
         // viewModel.reset() now also clears pendingUri alongside the
         // analysis state, so the previous local `pendingUri = null` is
@@ -368,12 +402,34 @@ fun HomeScreen(
         // when hasHits=true). The standalone export Button above the
         // CaptureBar is gone — keeps the bar visually balanced and makes
         // "导出" discoverable next to the other primary actions.
+        // v0.4.0: smart-glasses button added as 2nd slot (only rendered
+        // when the user has enabled glasses capture from Settings — opt-in
+        // per user requirement "默认不连接").
         CaptureBar(
             onCapture = ::launchCapture,
             onPick = ::pickFromGallery,
             onExport = ::onExport,
+            showGlassesCapture = glassesEnabled,
+            onGlassesCapture = ::launchGlassesCapture,
             hasHits = hasHits,
             enabled = state !is AnalysisState.Loading,
+        )
+    }
+
+    // Smart-glasses capture overlay (BLE → OCR → TTS). The overlay
+    // observes `glassesRepository.state` and drives its own pipeline; on
+    // Success it calls back to `viewModel.startAnalysis(uri)` so the
+    // existing UI / TTS path is reused unchanged.
+    if (glassesOverlayVisible) {
+        GlassesCaptureOverlay(
+            repository = glassesRepository,
+            deviceStore = glassesDeviceStore,
+            scope = rememberCoroutineScope(),
+            onCaptured = { uri ->
+                viewModel.startAnalysis(uri)
+                glassesOverlayVisible = false
+            },
+            onDismiss = { glassesOverlayVisible = false },
         )
     }
 }
@@ -484,6 +540,7 @@ internal fun HomeScreenBare(onCapture: () -> Unit, onPick: () -> Unit) {
             onCapture = onCapture,
             onPick = onPick,
             onExport = {},
+            onGlassesCapture = {},  // bare variant is for screenshot tests; no BLE wiring
             hasHits = false,
         )
     }

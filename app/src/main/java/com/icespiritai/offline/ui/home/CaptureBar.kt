@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.BottomAppBar
@@ -41,6 +42,18 @@ import com.icespiritai.offline.R
  *    announces the action verb ("export evidence package") rather than the
  *    ambiguous "导出".
  *
+ * **Smart-glasses button (added v0.4.0, Glass-D15 BLE capture):**
+ *  - [onGlassesCapture] is invoked when the user taps the "眼镜拍照" FAB.
+ *    The HomeScreen passes a no-op default for tests that don't care about
+ *    BLE; production callers wire it to `GlassesCaptureOverlay`'s launcher.
+ *  - **4-slot layout** when [hasHits] is true: pick / glasses / export /
+ *    capture. Each gets `Modifier.weight(1f)` so widths are equal quarters.
+ *  - **3-slot layout** when [hasHits] is false: pick / glasses / capture
+ *    (no export).
+ *  - Mirrors the pick FAB's escape-hatch behaviour: stays clickable during
+ *    Loading so the user can recover from a stuck AnalysisState by starting
+ *    a fresh glasses capture.
+ *
  * Earlier (v0.1.31 → v0.1.40) layout, kept intact:
  *  - Pick FAB: text-then-icon. Empty icon slot + Row in text slot gives us
  *    "选图 → PhotoLibrary" without inheriting the icon→text padding the FAB
@@ -61,10 +74,20 @@ fun CaptureBar(
     onExport: () -> Unit,
     hasHits: Boolean,
     enabled: Boolean = true,
+    /**
+     * v0.4.0: smart-glasses capture is opt-in (default `false` per user
+     * requirement). When `false`, the "眼镜拍照" FAB is hidden entirely
+     * — defaults stay backwards-compatible for the existing 2/3-button
+     * layouts (CaptureBar's [onGlassesCapture] callback is a no-op when
+     * the button isn't rendered).
+     */
+    showGlassesCapture: Boolean = false,
+    onGlassesCapture: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val pickA11y = stringResource(R.string.pick_image_fab_desc)
     val exportA11y = stringResource(R.string.export_button_desc)
+    val glassesA11y = stringResource(R.string.action_glasses_capture_desc)
     BottomAppBar(
         // P0-C006: edge-to-edge (targetSdk 35) draws the system nav bar /
         // gesture pill on top of the bottom window region. Without an
@@ -105,6 +128,38 @@ fun CaptureBar(
                     .testTag(HomeScreenTestTags.CAPTURE_BAR_PICK)
                     .semantics { contentDescription = pickA11y },
             )
+        }
+
+        // Glasses — second slot. Only rendered when [showGlassesCapture]
+        // is true (default false per user requirement: glasses is opt-in).
+        // When hidden, the layout collapses to the legacy 2/3-button grid
+        // (pick + capture, or pick + export + capture).
+        if (showGlassesCapture) {
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.Center,
+            ) {
+                ExtendedFloatingActionButton(
+                    onClick = onGlassesCapture,
+                    expanded = true,
+                    icon = { /* empty — see text slot below */ },
+                    text = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(text = stringResource(R.string.action_glasses_capture))
+                            Icon(
+                                imageVector = Icons.Default.CameraAlt,
+                                contentDescription = null,
+                            )
+                        }
+                    },
+                    modifier = Modifier
+                        .testTag(HomeScreenTestTags.CAPTURE_BAR_GLASSES)
+                        .semantics { contentDescription = glassesA11y },
+                )
+            }
         }
 
         // Export — middle slot. Only when there are hits. With `enabled`

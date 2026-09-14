@@ -32,6 +32,7 @@ object HomeScreenTestTags {
     const val CAPTURE_BAR_PICK = "captureBar_pick"
     const val CAPTURE_BAR_EXPORT = "captureBar_export"
     const val CAPTURE_BAR_CAPTURE = "captureBar_capture"
+    const val CAPTURE_BAR_GLASSES = "captureBar_glasses"
 
     const val ERROR_PANEL = "errorPanel"
     const val ERROR_PANEL_RETRY = "errorPanel_retry"

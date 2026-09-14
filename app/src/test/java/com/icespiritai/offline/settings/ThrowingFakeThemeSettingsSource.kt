@@ -37,4 +37,11 @@ internal class ThrowingFakeThemeSettingsSource(
     override suspend fun setVisibleFeatures(value: Set<RuleTab>) {
         throw throwOnSetVisible
     }
+
+    override val enableGlassesCapture: Flow<Boolean> = MutableStateFlow(false)
+    override suspend fun setGlassesCaptureEnabled(enabled: Boolean) {
+        // Mirror the production failure semantics: this fake only
+        // throws on `setVisibleFeatures`. Glasses capture is orthogonal
+        // to the failure-injection purpose.
+    }
 }
