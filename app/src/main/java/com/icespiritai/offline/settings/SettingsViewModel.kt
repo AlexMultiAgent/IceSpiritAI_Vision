@@ -51,7 +51,10 @@ sealed class SettingsSnackbar {
     data class PersistFailed(val cause: Throwable) : SettingsSnackbar()
 }
 
-class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
+class SettingsViewModel(
+    private val source: ThemeSettingsSource,
+    private val clock: () -> Long = System::currentTimeMillis,
+) : ViewModel() {
 
     /**
      * Last [AppVersionInfo] passed to [download]. Held so [cancel] can
@@ -182,10 +185,10 @@ class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
             }
             if (current.downloadedBytes != lastWritten) {
                 lastWritten = current.downloadedBytes
-                stallStartedAt = System.currentTimeMillis()
+                stallStartedAt = clock()
                 stallSignaled = false
             } else if (!stallSignaled &&
-                System.currentTimeMillis() - stallStartedAt >= STALL_THRESHOLD_MS
+                clock() - stallStartedAt >= STALL_THRESHOLD_MS
             ) {
                 stallSignaled = true
                 _downloadStallEvents.tryEmit(Unit)
@@ -302,6 +305,10 @@ class SettingsViewModel(private val source: ThemeSettingsSource) : ViewModel() {
         val stateId = (updateState.value as? UpdateState.Downloading)?.downloadId
         val downloadId = infoId ?: stateId ?: return
         UpdateRepository.cancel(context.applicationContext, downloadId)
+        // cgroup-frozen devices: FGS handleCancel IO coroutine may never
+        // schedule. Write state directly so the UI updates immediately
+        // instead of waiting for the (potentially dead) FGS to acknowledge.
+        UpdateRepository.markCancelled(downloadId)
     }
 
     private fun sha256Short(s: String): String {
