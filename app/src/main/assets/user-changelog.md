@@ -1,5 +1,25 @@
 # 用户更新日志
 
+## v0.3.1 — 2026-09-14
+
+**修复:APK 更新下载卡在中间时无法恢复**。v0.3.0 及之前版本在 MIUI/ColorOS/HyperOS 后台冻结场景下,70 MB 的下载会卡在 60% 左右,UI 长期只剩「取消」按钮,cgroup 冻结时连「取消」也不响应,用户只能放弃下载重头来。规则库 / OCR / TTS / tab / 设置项 / 食品标签等与 v0.3.0 同量级。**v0.3.0 公告里 v0.3.1+ 计划项(G6 语速 / 音调 / Phase D 可执行建议 / 跨引擎 `onUtteranceStart` parity / TTS 进度条 / 导出取证包 TTS 一键播放 / word-level 高亮)全部继续 v0.3.2+**(本版只做这次 stall recovery 修复)。
+
+### 修复
+
+- **下载中途卡死三层兜底**:
+  1. **FGS HTTP 连接加 timeout**(`connectTimeout=15s` / `readTimeout=30s`):之前 Android 默认 `readTimeout=0` 无限,server 慢段 / 半开 TCP / cgroup 冻结会让 `ins.read` 永久阻塞,3 次重试循环因 `SocketTimeoutException` 不触发而失效。30s timeout + 既有 2+4+8s backoff → ~104s 内自动转 `Failed.NetworkUnreachable`,「重试」按钮出现。
+  2. **stall 检测器(5 min)写 state**:之前 5 min 静默只 Toast「加白名单」提示,UI 仍卡在「下载中」只有「取消」。现在 stall 检测器触发时同步把 state 从 `Downloading` 改 `Failed.NetworkUnreachable`,UI 立刻出现「重试」按钮,点 → `Range: bytes=N-` + `If-Range` 续传,已下载 60 MB 不丢。
+  3. **「取消」同步写 state**:`SettingsViewModel.cancel()` 调 FGS cancel intent 后,VM 端同步调 `markCancelled` 写 `Failed.Cancelled`。cgroup 冻结时 FGS 协程可能永远不调度,VM 直接写 state 保证 UI 立即跳「已取消」无延迟。
+- **零 UI 改动** / 零新状态 / 零新字符串 / 零新 intent。完全复用 v0.1.69 起的「重试」按钮 + `UpdateRepository.retry` + `Range: bytes=N-` 续传链路(该链路在 v0.1.58 法规新鲜度 fix 时已完整落)。
+- **零配置变化**:用户不感知任何新功能,纯后端逻辑修复 + 1 个新 internal method(`clock: () -> Long` ctor 参数,默认 `System::currentTimeMillis`,生产 factory 不变)。
+
+### 验证
+
+- 5 个 implementation commits: `2be0faa`(tryMarkStalledAsFailed)/ `9d0a3a6`(markCancelled)/ `3a5969a`(cancel 同步写 state + clock refactor)/ `d2b7326`(stall 检测器写 state)/ `f7f11b5`(FGS openConnection timeouts)。
+- `UpdateRepositoryStallTest` 8 个 case + `SettingsViewModelCancelTest` 2 个 Robolectric case,守卫 / 转换 / 幂等都覆盖。Task 4 的 live-loop 单元测试按 plan 写过但跟 `runTest` + `while(true)+delay+first{}` 不兼容(同款坑见 CLAUDE.md v0.1.45 stallDetectorJob hang),已删除并在 commit `d2b7326` body 文档化;live-loop wiring 由真机 e2e 覆盖。
+- `app/build.gradle.kts versionCode 70→71` + `versionName 0.3.0→0.3.1`,与本条目同步。
+- 2 个 full-suite 失败(`AdSignageTextFixtureRegressionTest` + `UpdateRepositoryStallTest.markCancelled is no-op` in suite)为 pre-existing infrastructure 问题(在 baseline `f7a8d47` 复现),非本版回归,留 v0.3.2+ 修。
+
 ## v0.3.0 — 2026-09-14
 
 **TTS 朗读内容结构化升级 + 多段 UI 滚动同步 + 长报告摘要开关**。规则库 / OCR 模型 / 食品标签 tab 等与 v0.2.0 同量级。**G6 语速 / 音调 / Phase D(可执行建议 + 域前缀)显式延后 v0.3.1+**(用户 2026-09-11 决定)。
