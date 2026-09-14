@@ -1,5 +1,23 @@
 # 用户更新日志
 
+## v0.3.4 — 2026-09-14
+
+**修正:v0.3.0 引入的 TTS 多段朗读 bug(sherpa 用户命中,system TTS 用户不命中)—— 之前朗读时只念免责声明(最后一段),前面计数 / 命中正文 / 依据全被吃掉**。根因是 sherpa engine 的 `speak()` 有"打断前一段"逻辑(Opt-7 v0.1.68),`TtsController.dispatchSegments` 紧密 loop 调 `speak()` 时第 2 个把第 1 个 cancel,只有最后一个真的播。Android system TTS 用 `QUEUE_ADD` 没这个 bug,所以只影响装了 sherpa-onnx 引擎的用户。
+
+### 修复
+
+- **多段朗读不再互相打断**:`TtsEngine.speak` 加 `interrupt: Boolean = true` 参数,`TtsController.dispatchSegments` 在多段 batch 路径下传 `interrupt = false` —— sherpa engine 看到这个 flag 跳过"打断前一段"逻辑,新协程等 inFlight 的 mutex 释放,自然串行。AndroidTtsEngine 参数收下但 no-op(QUEUE_ADD 本来就不打断)。用户主动 `stop()` / `toggle` 仍走 `engine.stop()` 先清队列,不受影响。
+- **Sherpa 用户应该恢复完整朗读**:之前 70 MB 的报告朗读只有最后 3-5 秒("AI识别仅供参考..."),前 60+ 秒的内容(计数 + 命中正文 + 依据)全被吞。装 sherpa-onnx 引擎(`设置 → 语音播报 → 引擎`)的用户更新到 v0.3.4 即可恢复。
+
+### 验证
+
+- 1 个 fix commit: `c3e790b`(TtsEngine 加 interrupt 参数 + SherpaTtsEngine 按 flag 走 cancel 分支 + TtsController 传 false + TtsControllerTest 新增 1 个回归 case + SherpaTtsEngineTest 8 处 `speak()` call 加 `, interrupt = true` 命名参数以适应 reorder)。
+- 新回归 test:`dispatchSegments passes interrupt false to every segment` —— 验 multi-segment batch 里所有 `engine.speak` 都收到 `interrupt = false`(防止未来有人手滑把 `interrupt = false` 改回 `true` 让 bug 回潮)。
+- 8 个 SherpaTtsEngineTest 既有测试加了 `, interrupt = true`(`interrupt` 从第 3 位 reorder 到第 3 位但语义变,需要命名参数区分;`true` 是默认值,显式写出是为了与 batch 路径的 `false` 形成对比)。
+- `./gradlew testDebugUnitTest -PmodelProfile=shell` TTS 包 9 类全过(8 个 SherpaTtsEngineTest + TtsControllerTest + SegmentedScriptTest + ScriptBuilderTest 等),无回归。
+- v0.3.0 留下的待办 —— 跨引擎 `onUtteranceStart` parity(Sherpa 仍 no-op) / TTS 进度条 / 导出取证包 TTS 一键播放 / word-level highlight —— 全部继续 v0.3.5+。
+- `app/build.gradle.kts versionCode 73→74` + `versionName 0.3.3→0.3.4`,与本条目同步。
+
 ## v0.3.3 — 2026-09-14
 
 **修正 v0.3.2 误删:TTS 朗读重新带法规依据(去掉 truncated 法条原文,只念「依据 X §Y」)+ 0 命中完全沉默**。v0.3.2 把"具体条文"误读成"依据"一起删了 —— 实际"条文"是 truncated 的 20 字 + "等"(听感断章),依据是「广告法 §9」这种条款引用,跟命中正文一样属于"内容"的一部分,应保留。0 命中走完全沉默(连"未筛查出违规事项"也不念)。
