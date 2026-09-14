@@ -358,6 +358,15 @@ class TtsController(
                 return
             }
         }
+        // v0.3.2: stop the currently-speaking engine BEFORE the DataStore
+        // write. Otherwise `currentEngine()` (read at the next stop() call
+        // by the user tapping Pause) resolves to the *new* engine — which
+        // has no in-flight utterance — and the old engine keeps playing
+        // while the UI shows Idle. The user perceives "Pause doesn't work
+        // after switching engines." Calling stop() here also forces
+        // _state.value to Idle synchronously, so the immediate next toggle
+        // (if any) starts cleanly on the new engine.
+        if (_state.value is TtsState.Speaking) stop()
         scope.launch { settings.setEnginePackage(pkg) }
     }
 

@@ -368,6 +368,57 @@ class TtsControllerTest {
         assertEquals(com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE, fakeSettings.lastEmitted().enginePackage)
     }
 
+    /**
+     * v0.3.2 regression: switching engines while Speaking must stop the
+     * currently-speaking engine first, otherwise tapping Pause (which
+     * routes through [currentEngine] and resolves to the *new* engine)
+     * leaves the old engine's in-flight utterance orphaned and playing.
+     * See `TtsController.engineClick` KDoc.
+     */
+    @Test fun `engineClick while Speaking stops the old engine before swap`() = runTest {
+        fakeSettings.emit(TtsSetting(enabled = true))
+        val sherpaEngine = FakeTtsEngine(
+            enginesAfterInstall = listOf(
+                EngineInfo(
+                    packageName = com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE,
+                    label = com.icespiritai.offline.tts.sherpa.SherpaTtsEngine.LOCAL_LABEL,
+                    supportsChinese = true,
+                    status = EngineStatus.Installed,
+                ),
+            ),
+        )
+        val ctrl = TtsController(
+            systemEngine = fakeEngine,
+            sherpaEngine = sherpaEngine,
+            modelInstaller = null,
+            settings = fakeSettings,
+            scope = testScope,
+        )
+        // System engine starts speaking.
+        ctrl.speak(reportWith("100% 中国第一"))
+        // dispatchSegments internally pre-calls engine.stop() — count is now 1.
+        assertEquals(1, fakeEngine.stopCallCount)
+        // User taps the LOCAL engine row in the picker.
+        ctrl.engineClick(com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE)
+        // With the fix, engineClick must stop the previously-speaking engine
+        // BEFORE the DataStore write. The system engine's stop() count
+        // jumps to 2. Without the fix, the count stays at 1 and the
+        // test fails here.
+        assertEquals(
+            "engineClick must stop the speaking engine before swapping to LOCAL",
+            2,
+            fakeEngine.stopCallCount,
+        )
+        // State must be Idle (synchronous stop() forces this).
+        assertEquals(TtsState.Idle, ctrl.state.first())
+        // The DataStore write still happens (after the stop).
+        advanceUntilIdle()
+        assertEquals(
+            com.icespiritai.offline.tts.LOCAL_TTS_PACKAGE,
+            fakeSettings.lastEmitted().enginePackage,
+        )
+    }
+
     @Test fun `engineClick on system engine package sets engine package to that pkg`() = runTest {
         fakeSettings.emit(TtsSetting(enabled = true))
         controller.engineClick("com.google.android.tts")
