@@ -72,6 +72,58 @@ class UpdateRepositoryStallTest {
         assertTrue(first === second)
     }
 
+    @Test
+    fun `markCancelled transitions Downloading to Failed Cancelled`() {
+        UpdateRepository.onDownloadProgress("abc123", 1000L, 10000L)
+
+        UpdateRepository.markCancelled("abc123")
+
+        val s = UpdateRepository.state.value
+        assertTrue("expected Failed, got $s", s is UpdateState.Failed)
+        val r = (s as UpdateState.Failed).result
+        assertTrue(
+            "expected Cancelled, got $r",
+            r is UpdateCheckResult.Failed.DownloadInterrupted.Cancelled,
+        )
+    }
+
+    @Test
+    fun `markCancelled is no-op when state is not Downloading`() {
+        UpdateRepository.onDownloadVerified(
+            record = testRecord(),
+            result = VerifierResult.Mismatch(expected = "a".repeat(64), actual = "b".repeat(64)),
+        )
+
+        val before = UpdateRepository.state.value
+        UpdateRepository.markCancelled("any-id")
+
+        assertTrue(before === UpdateRepository.state.value)
+    }
+
+    @Test
+    fun `markCancelled is no-op when downloadId does not match`() {
+        UpdateRepository.onDownloadProgress("real-id", 1000L, 10000L)
+
+        UpdateRepository.markCancelled("wrong-id")
+
+        val s = UpdateRepository.state.value
+        assertTrue("guard must reject mismatched id, got $s", s is UpdateState.Downloading)
+        assertEquals("real-id", (s as UpdateState.Downloading).downloadId)
+    }
+
+    @Test
+    fun `markCancelled is idempotent`() {
+        UpdateRepository.onDownloadProgress("abc123", 1000L, 10000L)
+
+        UpdateRepository.markCancelled("abc123")
+        val first = UpdateRepository.state.value
+
+        UpdateRepository.markCancelled("abc123")
+        val second = UpdateRepository.state.value
+
+        assertTrue(first === second)
+    }
+
     private fun testRecord() = DownloadRecord(
         downloadId = "x", url = "http://x", destPath = "/tmp/x",
         bytesWritten = 0, totalBytes = 0, etag = null,

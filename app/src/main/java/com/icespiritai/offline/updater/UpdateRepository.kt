@@ -249,6 +249,32 @@ object UpdateRepository {
         }
     }
 
+    /**
+     * Guarded `Downloading → Failed.Cancelled` transition.
+     *
+     * Triggered by [com.icespiritai.offline.settings.SettingsViewModel.cancel]
+     * immediately after dispatching the FGS cancel intent. The VM writes
+     * state directly so the UI does not depend on the FGS's IO coroutine
+     * scheduling — on cgroup-frozen devices the FGS `handleCancel`
+     * `scope.launch` may never run, leaving the UI stuck at `Downloading`.
+     *
+     * Guard: identical to [tryMarkStalledAsFailed].
+     *
+     * Idempotent with the FGS's own cleanup: when the FGS later wakes up,
+     * `handleCancel` calls `cleanup(record)` (deletes partial file +
+     * DataStore record) and `onDownloadCancelled(record)` (writes the same
+     * `Failed.Cancelled` value). Both writes target the same state, the
+     * second is a no-op.
+     */
+    fun markCancelled(downloadId: String) {
+        val cur = _state.value
+        if (cur is UpdateState.Downloading && cur.downloadId == downloadId) {
+            _state.value = UpdateState.Failed(
+                UpdateCheckResult.Failed.DownloadInterrupted.Cancelled,
+            )
+        }
+    }
+
     fun setReadyToInstall(file: File, versionName: String) {
         _state.value = UpdateState.ReadyToInstall(file)
     }
