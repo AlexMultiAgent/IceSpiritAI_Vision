@@ -192,6 +192,13 @@ class SettingsViewModel(
             ) {
                 stallSignaled = true
                 _downloadStallEvents.tryEmit(Unit)
+                // Layer 1: write Failed.NetworkUnreachable directly so the
+                // UI shows the 「重试」 button. Guarded inside the Repository
+                // method — if state has moved on (FGS finished, or another
+                // transition fired) the call is a no-op.
+                (updateState.value as? UpdateState.Downloading)?.let {
+                    UpdateRepository.tryMarkStalledAsFailed(it.downloadId)
+                }
             }
             delay(STALL_POLL_INTERVAL_MS)
         }
