@@ -1,5 +1,24 @@
 # 用户更新日志
 
+## v0.3.2 — 2026-09-14
+
+**修复:语音朗读 2 个 UX 问题**。TTS 内容结构 / 严重度桶 / 计数 / 免责声明 / 长报告摘要开关 等与 v0.3.0 同量级。v0.3.0 公告里 v0.3.1+ 计划项(G6 语速 / 音调 / Phase D 可执行建议 / 跨引擎 `onUtteranceStart` parity / TTS 进度条 / 导出取证包 TTS 一键播放 / word-level 高亮)全部继续 v0.3.3+。
+
+### 修复
+
+- **播放时切换语音引擎,无法暂停**:`TtsController.engineClick(pkg)` 之前只写新 `enginePackage` 到 DataStore,**不**先 stop 当前在播的 engine。用户按 Pause → `stop()` 走 `currentEngine()`(读最新 `enginePackage` 返回**新** engine,无在飞 utterance)→ 旧 engine 继续播,UI 看起来"按了 Pause 但还在念"。现在 `engineClick` 在 DataStore 写入前同步 `if (_state.value is Speaking) stop()`,旧 engine 真的停了 + state 立即回 Idle,用户按 Pause 立即生效。
+- **不再朗读法律条文**:之前 v0.3.0 给每条命中拼了 `,依据 <regulation> <truncated 20字>等`(如 "依据广告法 §9 绝对化用语等"),念出来割裂且不权威(truncated 看起来断章取义)。`BuildOptions.Default.includeLawCitation` 由 `true` 反为 `false`,TTS 桶只念命中正文。屏 UI(`HitCard.kt` 的 `依据: ...` 行 + 折叠 `法条原文`)和取证包导出(`EvidencePackageBuilder.kt`)完全不动 —— 这两个 surface 展示的是完整条文,不是 truncated 摘要,体验没问题。
+- **顺手清 orphan string**:`strings.xml` 里 v0.3.0 计划时加了 `tts_hit_citation_separator = ",依据"`,从未被引用(实现走的是字面量硬编码),删。
+
+### 验证
+
+- 2 个 fix commit: `cc9961f`(`engineClick` stop-before-swap) + `93b0f19`(默认 `includeLawCitation=false` + 4 个 test 更新 + orphan string 删)。
+- `TtsControllerTest`:新增 `engineClick while Speaking stops the old engine before swap` 回归 case(验 stopCallCount 从 1 跳到 2,state → Idle,DataStore 写入照旧)。`engineClick on installed local engine sets engine package to LOCAL` 等 4 个既有 case 不回归。
+- `SegmentedScriptTest`:`severity grouping` 改负断言(默认无 `依据`);`law citation opt-in` 改名 + 用 `BuildOptions.Default.copy(includeLawCitation = true)` 显式打开测试(opt-in 路径未来可重启用);`default omits regulation` 改用 Default 直接验(新契约);`blank regulation omits citation even with opt-in` 加 opt-in 让边界真正测到。
+- `./gradlew testDebugUnitTest -PmodelProfile=shell` TTS 包 7 类(81 tests)全过,无回归。
+- 屏 UI 仍消费 `RuleHit.regulation` / `lawText` 字段,`HitCard.kt` 顶部"依据"行 + 折叠"法条原文"面板不受影响。
+- `app/build.gradle.kts versionCode 71→72` + `versionName 0.3.1→0.3.2`,与本条目同步。
+
 ## v0.3.1 — 2026-09-14
 
 **修复:APK 更新下载卡在中间时无法恢复**。v0.3.0 及之前版本在 MIUI/ColorOS/HyperOS 后台冻结场景下,70 MB 的下载会卡在 60% 左右,UI 长期只剩「取消」按钮,cgroup 冻结时连「取消」也不响应,用户只能放弃下载重头来。规则库 / OCR / TTS / tab / 设置项 / 食品标签等与 v0.3.0 同量级。**v0.3.0 公告里 v0.3.1+ 计划项(G6 语速 / 音调 / Phase D 可执行建议 / 跨引擎 `onUtteranceStart` parity / TTS 进度条 / 导出取证包 TTS 一键播放 / word-level 高亮)全部继续 v0.3.2+**(本版只做这次 stall recovery 修复)。
