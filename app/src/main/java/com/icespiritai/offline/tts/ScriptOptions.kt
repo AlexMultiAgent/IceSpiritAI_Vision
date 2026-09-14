@@ -8,8 +8,11 @@ data class BuildOptions(
     val topN: Int? = null,
     /** 是否在脚本末尾追加 "AI识别仅供参考" 免责声明。 */
     val trailingDisclaimer: Boolean = true,
-    /** 每条命中是否朗读 regulation 字段(如 "GB 7718-2025 §5.1 致敏原强制")。 */
-    val includeLawCitation: Boolean = true,
+    /** 每条命中是否朗读 regulation 字段(如 "GB 7718-2025 §5.1 致敏原强制")。
+     *  v0.3.2: 默认 false。truncated 到 20 字 + "等" 念出来体验割裂
+     *  (用户反馈:条文不全,误导)。屏 UI 仍消费 `hit.regulation` 显示
+     *  (HitCard.kt 独立路径),所以字段本身保留;TTS 脚本不再念。 */
+    val includeLawCitation: Boolean = false,
     /** 域前缀("广告招牌" / "食品标签")— null = 不前缀。 */
     val domainPrefix: String? = null,
 ) {
