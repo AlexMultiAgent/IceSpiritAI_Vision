@@ -185,7 +185,18 @@ class UpdateDownloadService : Service() {
 
         while (true) {
             val outcome = ApkDownloader.fetch(
-                openConnection = { URL(record.url).openConnection() as HttpURLConnection },
+                // Layer 0: connection timeouts so the 3-attempt retry loop in
+                // runDownload actually fires on a hung server. Without these
+                // the Android-default readTimeout=0 leaves ins.read blocking
+                // forever on a slow segment / half-open TCP / cgroup freeze.
+                // connectTimeout=15 s, readTimeout=30 s — same pattern as
+                // TtsModelInstaller (30s/60s) and TtsEngineInstaller (30s/60s).
+                openConnection = {
+                    (URL(record.url).openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 15_000
+                        readTimeout = 30_000
+                    }
+                },
                 destFile = File(record.destPath),
                 resumeFrom = resumeOffset,
                 etag = lastEtag,
