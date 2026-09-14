@@ -16,6 +16,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URL
@@ -215,6 +216,37 @@ object UpdateRepository {
 
     fun onDownloadCancelled(record: DownloadRecord) {
         _state.value = UpdateState.Failed(UpdateCheckResult.Failed.DownloadInterrupted.Cancelled)
+    }
+
+    /**
+     * Guarded `Downloading → Failed.NetworkUnreachable` transition.
+     *
+     * Triggered by [com.icespiritai.offline.settings.SettingsViewModel.stallDetectorJob]
+     * when no byte progress has been reported for STALL_THRESHOLD_MS (5 min).
+     * Writes state directly from the VM so the UI does not depend on the
+     * FGS being alive — on cgroup-frozen devices the FGS IO coroutine may
+     * never schedule, and the existing stall Toast alone is not a recovery
+     * path that preserves the partial file.
+     *
+     * Guard: only transitions if current state is `Downloading` AND
+     * `downloadId` matches. Already-Failed / ReadyToInstall / Idle states
+     * are no-op to avoid overwriting later progress. FGS unstick events
+     * (`onDownloadProgress`) overwrite `downloadedBytes`, which resets the
+     * stall detector's `lastWritten` and re-arms the 5 min timer before
+     * this method ever fires.
+     *
+     * Idempotent: second call sees state already at `Failed`, the guard
+     * fails, no-op.
+     */
+    fun tryMarkStalledAsFailed(downloadId: String) {
+        val cur = _state.value
+        if (cur is UpdateState.Downloading && cur.downloadId == downloadId) {
+            _state.value = UpdateState.Failed(
+                UpdateCheckResult.Failed.DownloadInterrupted.NetworkUnreachable(
+                    cause = IOException("Download stalled (no progress for 5 minutes)"),
+                ),
+            )
+        }
     }
 
     fun setReadyToInstall(file: File, versionName: String) {
