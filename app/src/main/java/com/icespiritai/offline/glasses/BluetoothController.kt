@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Single-device BLE GATT orchestrator for the smart glasses.
@@ -163,6 +165,14 @@ class BluetoothController(
     private var pendingServices: CompletableDeferred<Boolean>? = null
     private var pendingCharWrite: CompletableDeferred<Boolean>? = null
     private var pendingDescriptorWrite: CompletableDeferred<Boolean>? = null
+
+    /**
+     * Serializes GATT writes. Concurrent writeCharacteristic() calls
+     * would clobber each other's `pendingCharWrite` deferred (smoke 12
+     * 2026-09-15: 8 op2 fanout writes → only the first completed,
+     * the rest hung). See writeCharacteristic() for the long version.
+     */
+    private val writeMutex = Mutex()
 
     /**
      * Cached characteristic + descriptor handles after
@@ -406,18 +416,43 @@ class BluetoothController(
         charUuid: UUID,
         payload: ByteArray,
     ): Boolean {
-        val g = gatt ?: error("not connected")
-        // Look up by UUID since the cache may have been invalidated by
-        // a service-change indication. Cheap linear scan.
-        val ch: BluetoothGattCharacteristic = g.services
-            ?.mapNotNull { it.getCharacteristic(charUuid) }
-            ?.firstOrNull()
-            ?: error("characteristic $charUuid not found")
-        ch.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-        ch.value = payload
-        pendingCharWrite = CompletableDeferred()
-        g.writeCharacteristic(ch)
-        return pendingCharWrite!!.await()
+        // Serialize writes — `pendingCharWrite` is a single var, so
+        // concurrent writeCharacteristic() calls would clobber each
+        // other's deferreds: call A sets deferred_A, call B sets
+        // deferred_B; the OS GATT callback for write A fires while
+        // pendingCharWrite == deferred_B and completes deferred_B
+        // (the wrong one), leaving deferred_A unresolved forever.
+        // The Repository's resend fanout (smoke 12, 2026-09-15)
+        // triggered this — 8 op2 writes fired in <1 ms, only the
+        // first round's first write completed; the rest hung. A
+        // Mutex around the whole write body makes calls 2..N block
+        // until call 1's await() returns, then run safely. Cheap
+        // (one local Mutex, no per-call allocation).
+        writeMutex.lock()
+        try {
+            val g = gatt ?: error("not connected")
+            // Look up by UUID since the cache may have been invalidated
+            // by a service-change indication. Cheap linear scan.
+            val ch: BluetoothGattCharacteristic = g.services
+                ?.mapNotNull { it.getCharacteristic(charUuid) }
+                ?.firstOrNull()
+                ?: error("characteristic $charUuid not found")
+            ch.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            ch.value = payload
+            pendingCharWrite = CompletableDeferred()
+            g.writeCharacteristic(ch)
+            // Bound the wait so a stuck callback can't pin the
+            // collector forever. 2 s is generous for a single
+            // GATT write (typical <50 ms); on timeout we return
+            // false so the fanout can try the next gap.
+            val ok = withTimeoutOrNull(2_000L) {
+                pendingCharWrite!!.await()
+            } ?: false
+            pendingCharWrite = null
+            return ok
+        } finally {
+            writeMutex.unlock()
+        }
     }
 
     private fun hasConnectPermission(): Boolean {
