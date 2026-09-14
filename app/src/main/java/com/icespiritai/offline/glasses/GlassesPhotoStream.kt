@@ -149,6 +149,24 @@ class GlassesPhotoStream(val totalSize: Int) {
     }
 
     /**
+     * Returns the next missing byte range whose start is ≥ [after], or
+     * `null` if there is none. Used by the chunk collector's resend
+     * fan-out to walk the gap list and ask the firmware for the next
+     * few missing chunks in one stall cycle (smoke 8 2026-09-15:
+     * firmware V2.4.5 only retransmits 1-3 chunks per op2 write, so
+     * we batch 4 opcodes per cycle).
+     */
+    fun nextMissingRangeAfter(after: Int): IntRange? {
+        if (contiguousBytes >= totalSize) return null
+        var i = maxOf(contiguousBytes, after)
+        while (i < totalSize && received[i]) i++
+        if (i >= totalSize) return null
+        val start = i
+        while (i < totalSize && !received[i]) i++
+        return start until i
+    }
+
+    /**
      * True iff every byte `[0, totalSize)` has been filled. After this
      * returns true, [assemble] / [crc32] are safe to call.
      */

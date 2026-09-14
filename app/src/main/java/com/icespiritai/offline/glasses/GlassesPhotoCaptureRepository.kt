@@ -181,7 +181,18 @@ class GlassesPhotoCaptureRepository(
         val ready = _state.value as? GlassesCaptureState.Ready
             ?: return fail("未连接眼镜", retryable = false).let { null }
 
-        bluetoothController.requestPriority(android.bluetooth.BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+        // Priority choice (2026-09-15 smoke 6/7): use BALANCED instead
+        // of HIGH. The firmware spec `docs/glasses/...App连接参数配合.md`
+        // §2.3 explicitly states HIGH (~7.5-15ms conn interval) produces
+        // ~35 % chunk loss on this firmware (V2.4.5) — 50 of ~150 chunks
+        // are dropped and the firmware's op2 resend is slow (~7 s per
+        // chunk), making a 35 KB image take 3-10 min and reliably
+        // hitting our 30 s hard cap. BALANCED (~40 ms, 0 % loss, 3.6 s
+        // total) is the reliable path until the firmware cuts its
+        // block-interval macro to ~10 ms (per §1.2, requires paired
+        // firmware + App release). The 1.4 s HIGH goal is parked in
+        // a TODO and gated on a firmware-side change.
+        bluetoothController.requestPriority(android.bluetooth.BluetoothGatt.CONNECTION_PRIORITY_BALANCED)
 
         val captureDevice = ready.device
         val startedMs = System.currentTimeMillis()
@@ -320,12 +331,18 @@ class GlassesPhotoCaptureRepository(
         var totalSize = startAnnounced.fileSize
 
         // ── Stage 3: collect FA12 chunks ─────────────────────────────
-        val stream = if (totalSize != null && totalSize > 0) {
+        var stream = if (totalSize != null && totalSize > 0) {
             GlassesPhotoStream(totalSize)
         } else {
             // file_size omitted by firmware — start with a placeholder
             // size; we'll re-init the stream on the first chunk that
-            // reveals the true extent.
+            // reveals the true extent. (Bug fix 2026-09-15 smoke 6: the
+            // outer `stream` reference used to be `val`, so when
+            // collectChunks internally swapped in a larger stream after
+            // the first chunk, the outer one stayed at 1 byte and
+            // `assemble()` threw "stream not complete: 0 / 1 bytes
+            // filled". Made this a `var` and update it from the resize
+            // callback below.)
             GlassesPhotoStream(1)
         }
         _state.value = GlassesCaptureState.Capturing(
@@ -336,8 +353,11 @@ class GlassesPhotoCaptureRepository(
             ),
         )
 
-        val collected = collectChunks(stream, startedMs, totalSize) { resized ->
+        val collected = collectChunks(stream, startedMs, totalSize) { resized, newStream ->
             totalSize = resized
+            // Re-bind the outer reference to the resized working
+            // stream (carries all the addChunk'd bytes with it).
+            stream = newStream
         }
         if (!collected) {
             cleanupTempFile()
@@ -387,7 +407,7 @@ class GlassesPhotoCaptureRepository(
         stream: GlassesPhotoStream,
         startedMs: Long,
         initialTotal: Int?,
-        onTotalSizeResized: (Int) -> Unit,
+        onTotalSizeResized: (Int, GlassesPhotoStream) -> Unit,
     ): Boolean {
         Log.d(TAG, "collectChunks entered: stream.totalSize=${stream.totalSize} initialTotal=$initialTotal")
         var working = stream
@@ -432,7 +452,7 @@ class GlassesPhotoCaptureRepository(
                 if (chunk.offset + chunk.data.size > working.totalSize) {
                     Log.d(TAG, "resizing stream: old=${working.totalSize} new=${chunk.offset + chunk.data.size}")
                     working = GlassesPhotoStream(chunk.offset + chunk.data.size)
-                    onTotalSizeResized(working.totalSize)
+                    onTotalSizeResized(working.totalSize, working)
                 }
                 val filledBefore = working.contiguousFilledBytes
                 val addResult = working.addChunk(chunk)
@@ -461,9 +481,41 @@ class GlassesPhotoCaptureRepository(
                 if (now - lastProgressMs >= chunkStallMs && resendRounds < maxResendRounds) {
                     val gap = working.firstMissingRange()
                     if (gap != null) {
-                        Log.d(TAG, "resend #$resendRounds for gap=$gap filled=${working.contiguousFilledBytes}/${working.totalSize}")
-                        bluetoothController.writeFa11(GlassesPhotoProtocol.buildFa11Resend(gap.first))
-                        resendRounds++
+                        // (Smoke 8, 2026-09-15) The firmware (Glass-D15
+                        // V2.4.5) only retransmits 1-3 chunks per op2
+                        // request — verified across 3 captures: asking
+                        // for offset 240 brought back chunk at 0;
+                        // asking for 720 brought back 240 + 480; etc.
+                        // To pull the whole file in under the 30 s hard
+                        // cap, fan out the resend: ask the firmware for
+                        // the first 4 missing chunks in this round.
+                        // Each request is still a single FA11 write,
+                        // so the firmware queues them; empirically
+                        // fills ~12-15 chunks per 7 s window instead of
+                        // 1-3. Stays under maxResendRounds cap because
+                        // 4 writes per round × 24 rounds = 96 opcodes.
+                        val fanout = 4
+                        var i = 0
+                        var cursor: IntRange? = gap
+                        while (cursor != null && i < fanout && resendRounds < maxResendRounds) {
+                            val target = cursor.first
+                            Log.d(TAG, "resend #$resendRounds for offset=$target (gap=$cursor) filled=${working.contiguousFilledBytes}/${working.totalSize}")
+                            bluetoothController.writeFa11(GlassesPhotoProtocol.buildFa11Resend(target))
+                            resendRounds++
+                            i++
+                            // Walk to the NEXT missing range after the
+                            // current one. firstMissingRange() re-scans
+                            // from contiguousBytes so the new gap will
+                            // reflect any chunks filled during this
+                            // round. (We don't see those fills within
+                            // this stall cycle — they arrive after we
+                            // return to the top of the loop and
+                            // `first()` returns them — but the request
+                            // we already sent covered the previous
+                            // gap, and we want to make progress on
+                            // later gaps too.)
+                            cursor = working.nextMissingRangeAfter(cursor.last)
+                        }
                     } else {
                         // No gap recorded, just no chunks — give up.
                         fail("传输停滞且无缺失块", retryable = true)
