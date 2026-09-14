@@ -149,16 +149,18 @@ class GlassesPhotoStream(val totalSize: Int) {
     }
 
     /**
-     * Returns the next missing byte range whose start is ≥ [after], or
+     * Returns the next missing byte range whose start is ≥ [from], or
      * `null` if there is none. Used by the chunk collector's resend
      * fan-out to walk the gap list and ask the firmware for the next
-     * few missing chunks in one stall cycle (smoke 8 2026-09-15:
+     * few missing chunks in one stall cycle (smoke 8-10 2026-09-15:
      * firmware V2.4.5 only retransmits 1-3 chunks per op2 write, so
-     * we batch 4 opcodes per cycle).
+     * we batch 4 opcodes per cycle. The caller is expected to pass
+     * `lastExclusive` from the previous gap, not `lastInclusive`, to
+     * avoid re-finding the same boundary byte).
      */
-    fun nextMissingRangeAfter(after: Int): IntRange? {
+    fun nextMissingRangeFrom(from: Int): IntRange? {
         if (contiguousBytes >= totalSize) return null
-        var i = maxOf(contiguousBytes, after)
+        var i = maxOf(contiguousBytes, from)
         while (i < totalSize && received[i]) i++
         if (i >= totalSize) return null
         val start = i

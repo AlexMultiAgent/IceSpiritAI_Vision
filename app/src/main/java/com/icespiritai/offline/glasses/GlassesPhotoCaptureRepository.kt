@@ -101,7 +101,7 @@ class GlassesPhotoCaptureRepository(
     // Tunables — see `docs/glass/AI识图传图提速_App连接参数配合.md` §9
     // ────────────────────────────────────────────────────────────────────
 
-    private val captureTimeoutMs = 30_000L
+    private val captureTimeoutMs = 90_000L
     private val chunkStallMs = 3_500L
     private val maxResendRounds = 24
 
@@ -181,18 +181,17 @@ class GlassesPhotoCaptureRepository(
         val ready = _state.value as? GlassesCaptureState.Ready
             ?: return fail("未连接眼镜", retryable = false).let { null }
 
-        // Priority choice (2026-09-15 smoke 6/7): use BALANCED instead
-        // of HIGH. The firmware spec `docs/glasses/...App连接参数配合.md`
-        // §2.3 explicitly states HIGH (~7.5-15ms conn interval) produces
-        // ~35 % chunk loss on this firmware (V2.4.5) — 50 of ~150 chunks
-        // are dropped and the firmware's op2 resend is slow (~7 s per
-        // chunk), making a 35 KB image take 3-10 min and reliably
-        // hitting our 30 s hard cap. BALANCED (~40 ms, 0 % loss, 3.6 s
-        // total) is the reliable path until the firmware cuts its
-        // block-interval macro to ~10 ms (per §1.2, requires paired
-        // firmware + App release). The 1.4 s HIGH goal is parked in
-        // a TODO and gated on a firmware-side change.
-        bluetoothController.requestPriority(android.bluetooth.BluetoothGatt.CONNECTION_PRIORITY_BALANCED)
+        // Priority choice (2026-09-15 smoke 6-9): the firmware DOES
+        // meet spec §1.2 (verified at smoke 8: 154 chunks in 1.5 s =
+        // 102 chunks/s ≈ 10 ms/block when HIGH is requested). The
+        // ~28 % loss we observed is Android L2CAP saturation, not a
+        // firmware bug. We use HIGH and rely on the fanout resend
+        // (4 op2 writes per stall cycle, see collectChunks) to
+        // recover dropped blocks. The spec's 1.4 s goal is the ideal
+        // case (0 % loss); in practice the resend phase takes the
+        // bulk of the time. The hard cap (captureTimeoutMs) bounds
+        // the total to 90 s — see tuning notes.
+        bluetoothController.requestPriority(android.bluetooth.BluetoothGatt.CONNECTION_PRIORITY_HIGH)
 
         val captureDevice = ready.device
         val startedMs = System.currentTimeMillis()
@@ -481,40 +480,49 @@ class GlassesPhotoCaptureRepository(
                 if (now - lastProgressMs >= chunkStallMs && resendRounds < maxResendRounds) {
                     val gap = working.firstMissingRange()
                     if (gap != null) {
-                        // (Smoke 8, 2026-09-15) The firmware (Glass-D15
-                        // V2.4.5) only retransmits 1-3 chunks per op2
-                        // request — verified across 3 captures: asking
-                        // for offset 240 brought back chunk at 0;
-                        // asking for 720 brought back 240 + 480; etc.
-                        // To pull the whole file in under the 30 s hard
-                        // cap, fan out the resend: ask the firmware for
-                        // the first 4 missing chunks in this round.
-                        // Each request is still a single FA11 write,
-                        // so the firmware queues them; empirically
-                        // fills ~12-15 chunks per 7 s window instead of
-                        // 1-3. Stays under maxResendRounds cap because
-                        // 4 writes per round × 24 rounds = 96 opcodes.
-                        val fanout = 4
+                        // (Smoke 8-11, 2026-09-15) The firmware
+                        // (Glass-D15 V2.4.5) only retransmits 1-3
+                        // chunks per op2 request — verified across
+                        // multiple captures: asking for offset 240
+                        // brought back chunk at 0; asking for 720
+                        // brought back 240 + 480; etc. Fan out the
+                        // resend: ask the firmware for the first N
+                        // missing chunks in this round. Each request
+                        // is a single FA11 write; the firmware
+                        // queues them; empirically fills ~12-15
+                        // chunks per 7 s window instead of 1-3.
+                        //
+                        // Fanout sizing (smoke 11): a 46 KB JPEG is
+                        // ~192 chunks. With fanout=4 and 24 rounds we
+                        // could only address 96 chunks — i.e. we'd
+                        // never fill the file. fanout=8 × 24 = 192
+                        // exactly matches worst-case size, fitting in
+                        // the 90 s cap (24 × 3.5 s ≈ 84 s). For
+                        // smaller files the loop early-exits when
+                        // `nextMissingRangeFrom` returns null.
+                        //
+                        // CRITICAL: the cursor walk must use
+                        // `cursor.last + 1` (the first byte AFTER
+                        // the current gap), not `cursor.last`
+                        // itself. IntRange `0..719` has last=719;
+                        // scanning from 719 just re-finds the 1-byte
+                        // sliver at 719 and we burn the rest of the
+                        // fanout on the same byte. (Smoke 10 caught
+                        // this: 3 of 4 resends in a round were
+                        // offset=719 because nextMissingRangeAfter
+                        // found the 1-byte sliver, not the next real
+                        // gap.) Walk to the next distinct gap.
+                        val fanout = 8
                         var i = 0
-                        var cursor: IntRange? = gap
-                        while (cursor != null && i < fanout && resendRounds < maxResendRounds) {
-                            val target = cursor.first
-                            Log.d(TAG, "resend #$resendRounds for offset=$target (gap=$cursor) filled=${working.contiguousFilledBytes}/${working.totalSize}")
+                        var nextScanFrom = gap.first
+                        while (i < fanout && resendRounds < maxResendRounds) {
+                            val nextGap = working.nextMissingRangeFrom(nextScanFrom) ?: break
+                            val target = nextGap.first
+                            Log.d(TAG, "resend #$resendRounds for offset=$target (gap=$nextGap) filled=${working.contiguousFilledBytes}/${working.totalSize}")
                             bluetoothController.writeFa11(GlassesPhotoProtocol.buildFa11Resend(target))
                             resendRounds++
                             i++
-                            // Walk to the NEXT missing range after the
-                            // current one. firstMissingRange() re-scans
-                            // from contiguousBytes so the new gap will
-                            // reflect any chunks filled during this
-                            // round. (We don't see those fills within
-                            // this stall cycle — they arrive after we
-                            // return to the top of the loop and
-                            // `first()` returns them — but the request
-                            // we already sent covered the previous
-                            // gap, and we want to make progress on
-                            // later gaps too.)
-                            cursor = working.nextMissingRangeAfter(cursor.last)
+                            nextScanFrom = nextGap.last + 1
                         }
                     } else {
                         // No gap recorded, just no chunks — give up.
