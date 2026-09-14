@@ -12,6 +12,7 @@ import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import androidx.core.content.ContextCompat
 import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
@@ -71,6 +72,7 @@ class BluetoothController(
      * as opaque handles.
      */
     companion object {
+        private const val TAG = "BluetoothController"
         private val FFF0_SERVICE_UUID: UUID = uuid16(0xFFF0)
         private val FFF1_CHAR_UUID: UUID = uuid16(0xFFF1)   // write — App → Glass (0x33 Request)
         private val FFF2_CHAR_UUID: UUID = uuid16(0xFFF2)   // notify — Glass → App (0x33 Response + 0x51 Status)
@@ -450,6 +452,10 @@ class BluetoothController(
         }
 
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+            Log.d(TAG, "onServicesDiscovered status=$status services=${gatt.services.size}")
+            gatt.services.forEach { svc ->
+                Log.d(TAG, "  service ${svc.uuid} chars=${svc.characteristics.size}")
+            }
             pendingServices?.complete(status == BluetoothGatt.GATT_SUCCESS)
         }
 
@@ -471,8 +477,18 @@ class BluetoothController(
         ) {
             val data = characteristic.value ?: return
             when (characteristic.uuid) {
-                FFF2_CHAR_UUID -> _fff0Notify.tryEmit(data)
-                FA12_CHAR_UUID -> _fa12Notify.tryEmit(data)
+                FFF2_CHAR_UUID -> {
+                    val ok = _fff0Notify.tryEmit(data)
+                    Log.d(TAG, "FFF2 notify size=${data.size} tryEmit=$ok")
+                }
+                FA12_CHAR_UUID -> {
+                    val ok = _fa12Notify.tryEmit(data)
+                    if (!ok) {
+                        Log.w(TAG, "FA12 notify DROPPED size=${data.size} — SharedFlow buffer full / no consumer")
+                    } else if (data.size < 8 || data.size % 4 != 0) {
+                        Log.d(TAG, "FA12 notify size=${data.size} tryEmit=$ok (unusual size)")
+                    }
+                }
             }
         }
 

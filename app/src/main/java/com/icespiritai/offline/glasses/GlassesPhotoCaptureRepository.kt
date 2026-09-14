@@ -2,6 +2,7 @@ package com.icespiritai.offline.glasses
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileOutputStream
@@ -91,6 +92,10 @@ class GlassesPhotoCaptureRepository(
 
     private val _state = MutableStateFlow<GlassesCaptureState>(GlassesCaptureState.Idle)
     val state: StateFlow<GlassesCaptureState> = _state.asStateFlow()
+
+    private companion object {
+        const val TAG = "GlassesCapture"
+    }
 
     // ────────────────────────────────────────────────────────────────────
     // Tunables — see `docs/glass/AI识图传图提速_App连接参数配合.md` §9
@@ -264,6 +269,7 @@ class GlassesPhotoCaptureRepository(
         currentTempFile = file
 
         // ── Stage 1: send 0x33 ────────────────────────────────────────
+        Log.d(TAG, "Stage 1: SendingCommand — writing 0x33 to FFF1")
         _state.value = GlassesCaptureState.Capturing(
             CaptureProgress(
                 stage = CaptureProgress.Stage.SendingCommand,
@@ -274,6 +280,7 @@ class GlassesPhotoCaptureRepository(
         val sendOk = bluetoothController.writeFff0(
             GlassesPhotoProtocol.buildCaptureRequestFrame(seq = 0x00),
         )
+        Log.d(TAG, "0x33 writeFff0 returned: $sendOk")
         if (!sendOk) {
             cleanupTempFile()
             fail("0x33 发送失败", retryable = true)
@@ -296,10 +303,13 @@ class GlassesPhotoCaptureRepository(
             }
         }
         if (startPayload == null) {
+            Log.w(TAG, "0x51 START not received within ${captureTimeoutMs}ms")
             cleanupTempFile()
             fail("等待 START 超时", retryable = true)
             return false
         }
+        Log.d(TAG, "0x51 START received: ${startPayload.size} bytes; raw=" +
+            startPayload.joinToString("") { "%02x".format(it.toInt() and 0xFF) })
         val startStatus = GlassesPhotoProtocol.parseStatusNotify(startPayload)
         if (startStatus is GlassesPhotoProtocol.StatusNotify.Failed) {
             cleanupTempFile()
@@ -379,9 +389,18 @@ class GlassesPhotoCaptureRepository(
         initialTotal: Int?,
         onTotalSizeResized: (Int) -> Unit,
     ): Boolean {
+        Log.d(TAG, "collectChunks entered: stream.totalSize=${stream.totalSize} initialTotal=$initialTotal")
         var working = stream
-        var lastChunkMs = System.currentTimeMillis()
+        // Track progress (contiguous bytes) — not raw chunk arrival. The
+        // firmware may resend chunks we already have; those are Duplicate
+        // and don't advance the prefix, but our previous code reset
+        // `lastChunkMs` on any arrival and the resend timer never fired.
+        // Bug found 2026-09-14 (smoke 4): at HIGH conn priority, ~35% of
+        // blocks are lost and the firmware's resend responses are mostly
+        // duplicates — the loop ran 6+ min without making progress.
+        var lastProgressMs = System.currentTimeMillis()
         var resendRounds = 0
+        var chunksProcessed = 0
 
         // We drive chunk collection by polling the SharedFlow in a
         // loop. A more idiomatic approach is `first { it.isComplete }`
@@ -390,26 +409,42 @@ class GlassesPhotoCaptureRepository(
         val collectStart = System.currentTimeMillis()
         val ctx = currentCoroutineContext()
         while (ctx.isActive) {
-            if (working.isComplete) return true
+            if (working.isComplete) {
+                Log.d(TAG, "collectChunks complete: ${working.contiguousFilledBytes}/${working.totalSize} after $chunksProcessed chunks")
+                return true
+            }
             val now = System.currentTimeMillis()
             if (now - collectStart > captureTimeoutMs) {
+                Log.w(TAG, "collectChunks hard timeout after $chunksProcessed chunks, " +
+                    "filled=${working.contiguousFilledBytes}/${working.totalSize} resendRounds=$resendRounds")
                 fail("传输超时", retryable = true)
                 return false
             }
-            // Pull one chunk with a short timeout (don't block forever).
             val chunkPayload: ByteArray? = withTimeoutOrNull(chunkStallMs) {
                 bluetoothController.fa12Notifications.first()
             }
             if (chunkPayload != null) {
-                val chunk = GlassesPhotoProtocol.parsePhotoChunk(chunkPayload) ?: continue
-                // If the firmware didn't advertise file_size, the first
-                // chunk reveals the real extent — re-init the stream.
+                val chunk = GlassesPhotoProtocol.parsePhotoChunk(chunkPayload)
+                if (chunk == null) {
+                    Log.w(TAG, "parsePhotoChunk returned null for size=${chunkPayload.size}")
+                    continue
+                }
                 if (chunk.offset + chunk.data.size > working.totalSize) {
+                    Log.d(TAG, "resizing stream: old=${working.totalSize} new=${chunk.offset + chunk.data.size}")
                     working = GlassesPhotoStream(chunk.offset + chunk.data.size)
                     onTotalSizeResized(working.totalSize)
                 }
-                working.addChunk(chunk)
-                lastChunkMs = System.currentTimeMillis()
+                val filledBefore = working.contiguousFilledBytes
+                val addResult = working.addChunk(chunk)
+                chunksProcessed++
+                val filledAfter = working.contiguousFilledBytes
+                val madeProgress = filledAfter > filledBefore
+                if (madeProgress) {
+                    lastProgressMs = now
+                }
+                if (chunksProcessed <= 3 || chunksProcessed % 20 == 0 || !madeProgress) {
+                    Log.d(TAG, "chunk #$chunksProcessed offset=${chunk.offset} size=${chunk.data.size} addResult=$addResult filled=$filledAfter/${working.totalSize} progress=$madeProgress")
+                }
                 _state.value = GlassesCaptureState.Capturing(
                     CaptureProgress(
                         stage = CaptureProgress.Stage.ReceivingChunks,
@@ -419,10 +454,14 @@ class GlassesPhotoCaptureRepository(
                     ),
                 )
             } else {
-                // Stall — check if we should resend.
-                if (now - lastChunkMs >= chunkStallMs && resendRounds < maxResendRounds) {
+                // Stall — check if we should resend. Note: this uses
+                // `lastProgressMs` (contiguous-bytes advance), not
+                // `lastChunkMs` (any arrival) — see comment at the top
+                // of this fn for why.
+                if (now - lastProgressMs >= chunkStallMs && resendRounds < maxResendRounds) {
                     val gap = working.firstMissingRange()
                     if (gap != null) {
+                        Log.d(TAG, "resend #$resendRounds for gap=$gap filled=${working.contiguousFilledBytes}/${working.totalSize}")
                         bluetoothController.writeFa11(GlassesPhotoProtocol.buildFa11Resend(gap.first))
                         resendRounds++
                     } else {
@@ -431,6 +470,7 @@ class GlassesPhotoCaptureRepository(
                         return false
                     }
                 } else if (resendRounds >= maxResendRounds) {
+                    Log.w(TAG, "resend rounds exhausted ($maxResendRounds), filled=${working.contiguousFilledBytes}/${working.totalSize}")
                     fail("重传次数耗尽 ($maxResendRounds 轮)", retryable = true)
                     return false
                 }
