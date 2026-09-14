@@ -122,12 +122,15 @@ fun GlassesCaptureOverlay(
                     }
 
                     is GlassesPhotoCaptureRepository.GlassesCaptureState.NegotiatingMtu -> {
-                        Text(text = stringResource(R.string.glasses_connecting, s.device.name))
+                        Text(text = stringResource(R.string.glasses_negotiating_mtu))
                     }
 
-                    is GlassesPhotoCaptureRepository.GlassesCaptureState.DiscoveringServices,
+                    is GlassesPhotoCaptureRepository.GlassesCaptureState.DiscoveringServices -> {
+                        Text(text = stringResource(R.string.glasses_discovering_services))
+                    }
+
                     is GlassesPhotoCaptureRepository.GlassesCaptureState.EnablingNotifies -> {
-                        Text(text = stringResource(R.string.glasses_connecting, s.toString()))
+                        Text(text = stringResource(R.string.glasses_enabling_notifies))
                     }
 
                     is GlassesPhotoCaptureRepository.GlassesCaptureState.Ready -> {

@@ -40,6 +40,10 @@
     <string name="glasses_scan_title">搜索附近的眼镜</string>
     <string name="glasses_scan_empty">未发现配对的眼镜设备</string>
     <string name="glasses_connecting">正在连接 %1$s…</string>
+    <string name="glasses_negotiating_mtu">协商 MTU…</string>
+    <string name="glasses_discovering_services">扫描 GATT 服务…</string>
+    <string name="glasses_enabling_notifies">订阅通知…</string>
+    <string name="glasses_connect_dropped">蓝牙连接已断开,正在重连…</string>
     <string name="glasses_ready">眼镜已就绪</string>
     <string name="glasses_capturing">拍照中…</string>
     <string name="glasses_capture_progress">已接收 %1$d / %2$d 字节</string>
