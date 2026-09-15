@@ -179,7 +179,18 @@ class GlassesPhotoCaptureRepository(
     suspend fun capture(): Uri? {
         if (_state.value is GlassesCaptureState.Capturing) return null
         val ready = _state.value as? GlassesCaptureState.Ready
-            ?: return fail("未连接眼镜", retryable = false).let { null }
+            // (smoke 20 2026-09-15) The "未连接眼镜" path used to set
+            // retryable=false, which hid the 重试 button — the user
+            // saw only "关闭" and had no way to recover. In practice
+            // this failure means "ensureConnected didn't reach Ready
+            // in time" (A2DP contended BLE radio per the user's
+            // earlier report, or transient GATT drop). The right
+            // behavior is: surface the error, but let the user
+            // re-trigger the whole pipeline (re-establish GATT +
+            // retry the 0x33 capture). The Retry button already
+            // calls repository.reset() + ensureConnected() + capture(),
+            // which is exactly the right sequence. Mark this retryable.
+            ?: return fail("未连接眼镜", retryable = true).let { null }
 
         // Priority: use BALANCED (intv=32, ~40 ms) — the current
         // observable state per spec §2.2 ("Android 常按 BALANCED 策略
