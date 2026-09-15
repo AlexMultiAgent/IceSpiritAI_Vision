@@ -443,7 +443,16 @@ fun HomeScreen(
                 viewModel.startAnalysis(uri)
                 glassesOverlayVisible = false
             },
-            onDismiss = { glassesOverlayVisible = false },
+            onDismiss = {
+                // Cancel any in-flight capture and tell the glasses to
+                // stop pushing FA12 — without this, the underlying
+                // pipeline keeps running after the dialog closes and
+                // _state stays at Capturing, which makes the next
+                // capture() call return null until the 90 s timeout
+                // (smoke 2026-09-15 §P1 #3).
+                glassesRepository.cancel()
+                glassesOverlayVisible = false
+            },
         )
     }
 }

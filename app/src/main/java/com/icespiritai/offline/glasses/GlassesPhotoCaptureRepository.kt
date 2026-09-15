@@ -238,6 +238,15 @@ class GlassesPhotoCaptureRepository(
                 runCapturePipeline(captureDevice, startedMs)
             } catch (e: CancellationException) {
                 cleanupTempFile()
+                // Cancellation was external — typically the user closed
+                // the overlay mid-capture. Force state to a terminal so
+                // the next capture() doesn't observe a stale Capturing
+                // (smoke 2026-09-15 §P1 #3: capture() first line checks
+                // _state.value is Capturing → return null → 90 s timeout
+                // before the user can retry).
+                if (_state.value is GlassesCaptureState.Capturing) {
+                    _state.value = GlassesCaptureState.Failed("已取消", retryable = false)
+                }
                 throw e
             } catch (e: Throwable) {
                 cleanupTempFile()
@@ -292,15 +301,26 @@ class GlassesPhotoCaptureRepository(
     fun reset() {
         cleanupTempFile()
         val current = _state.value
-        if (current is GlassesCaptureState.Failed || current is GlassesCaptureState.Success) {
-            _state.value =
-                if (bluetoothController.connectionState.value is BluetoothController.ConnectionState.Connected) {
-                    val dev = (bluetoothController.connectionState.value
-                        as BluetoothController.ConnectionState.Connected).device
-                    GlassesCaptureState.Ready(GlassesCaptureDevice.from(dev))
-                } else {
-                    GlassesCaptureState.Idle
-                }
+        when (current) {
+            is GlassesCaptureState.Failed, is GlassesCaptureState.Success -> {
+                _state.value =
+                    if (bluetoothController.connectionState.value is BluetoothController.ConnectionState.Connected) {
+                        val dev = (bluetoothController.connectionState.value
+                            as BluetoothController.ConnectionState.Connected).device
+                        GlassesCaptureState.Ready(GlassesCaptureDevice.from(dev))
+                    } else {
+                        GlassesCaptureState.Idle
+                    }
+            }
+            // Defensive: if some path leaves _state stuck at Capturing
+            // (e.g. a missed cancellation), drop to Idle so the next
+            // capture() doesn't return null at its first-line guard
+            // (smoke 2026-09-15 §P1 #3). cancel() handles the in-flight
+            // job; reset() here just clears the flag.
+            is GlassesCaptureState.Capturing -> {
+                _state.value = GlassesCaptureState.Idle
+            }
+            else -> Unit
         }
     }
 
