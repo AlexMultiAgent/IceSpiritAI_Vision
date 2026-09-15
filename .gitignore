@@ -81,12 +81,30 @@ install.log
 /main*.png
 /now.png
 /state.png
-/ui[0-9]*.xml
+/ui*.xml
+/u_*.xml
+/[0-9][0-9]*.png
+/[0-9]?_*.png
 /d
 /dump.xml
 /garbled.*
 /smoke_test.ps1
 /check_artifacts.ps1
+
+# Stale release JSON that landed in repo root from a previous release.
+# The release pipeline writes to build/generated/release-staging/ now
+# (per memory feedback-no-release-history-archive); anything at the
+# repo root is leftover from before that move.
+/vision-latest.json
+
+# Smoke verify runtime evidence — logcat captures + UI dumps collected
+# during real-device testing. Only the per-session README.md commits
+# (under docs/smoke/<date>-*/); the raw .txt and .xml artifacts stay
+# local because they reference test-time internal state and are
+# regenerated on every smoke run.
+docs/smoke/*/logcat*.txt
+docs/smoke/*/logcat*.out
+docs/smoke/*/ui*.xml
 
 # Claude review scratch files.
 review_committed.diff
@@ -107,6 +125,16 @@ logcat_output.txt
 # Tracked: gradle.token.properties.example (template).
 # Untracked: gradle.token.properties (contains the real PAT).
 # gradle.properties remains tracked (shared JVM args + Kotlin config).
+#
+# 凭据隔离警告 (2026-09-16):
+# gradle.token.properties 是 PAT 单一来源 —— `uploadVisionReleaseToGitea`
+# Gradle task 读 GITEA_TOKEN 走这里,git push gitea 也走这里(经 inline
+# shell-script credential helper,见 .claude/projects/.../memory/)。
+#
+# 不要改名(`.gitignore` 显式列出 + pre-tool-use hook 按字面路径匹配 +
+# post-tool-use hook 也按字面路径扫,改名 = 失去双重防护)。
+# 不要 commit。Pre-tool-use hook 会拦截。Post-tool-use hook 也会拦。
+# 如果文件丢失,在 giteaadmin/user/settings/applications mint 新 PAT 重建。
 gradle.token.properties
 
 # PaddleOCR SDK build artifacts (regenerable via tools/build-ppocr-sdk.sh)
