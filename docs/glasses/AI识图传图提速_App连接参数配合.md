@@ -1,9 +1,19 @@
 # AI 拍照识图传图提速 & App 端识图全流程说明
 
-> 需求方：眼镜固件侧（Glass-D15 V2.4.5）  
-> 文档整合日期：2026-09-14  
-> 适用范围：glassfront App（对照源码 v3.0.x）  
-> 原始需求日期：2026-09-05  
+> **⚠️ SCOPE（必读）**：本文的**协议层（§1-9,§六,§九）描述眼镜固件 V2.4.5 的规范（0x33/FA10/FA11/FA12/MTU/HIGH/timeout 等），通用有效**。但**§10「App 落地现状」+ §11「关键类与文件索引」是 glassfront App v3.0.x 的实现**,**不是本仓 IceSpiritAI_Vision 的实现**。
+>
+> 本仓 `app/src/main/java/com/icespiritai/offline/glasses/` 实际类布局:
+> - `BluetoothController`(对应 glassfront 的 `BluetoothController`/`BluetoothManager`/`ConnectionAwareGattCallback`)
+> - `GlassesPhotoCaptureRepository`(对应 `PhotoCaptureService`)
+> - `GlassesCaptureOverlay`(对应 `PhotoIdentifyOverlay`)
+> - `IceSpiritVisionActivity`(对应 `MainActivity`/`GlassesHomeScreen`)
+>
+> 具体本仓实现 + 调参 + 时序,见 **CLAUDE.md §"与智能眼镜的互动"** + **`docs/smoke/2026-09-15-ble-fix-verify/README.md`**(BLE 拍照传图修复真机验证日志)+ 各 BLE commit 的 commit message(ef09f9e / 4f3ced1 / ffdacfc / 23bab0e / e616c4a / 0cdfcdc / a9ad054 / 126a9b1)。
+>
+> 需求方:眼镜固件侧(Glass-D15 V2.4.5)  
+> 文档整合日期:2026-09-14  
+> 适用范围:协议层(§1-9)通用;§10/§11 仅适用于 glassfront App v3.0.x  
+> 原始需求日期:2026-09-05  
 
 ---
 
@@ -82,7 +92,7 @@
 
 ### 3.1 会话开始升 HIGH
 
-在发送 **0x33 识图拍照命令之后立即调用**（也可在 Overlay 打开 / 发令前预热）。拍照前置约 1.4s，足够参数在传图前生效：
+在发送 **0x33 识图拍照命令之前**调用(理想时机:Overlay 打开时 + capture_start 各一次,让系统有 ~800 ms-1.4 s 时间调连接参数)。本仓实现走"capture 入口调 HIGH,finally 调 BALANCED"(BluetoothController.kt:231-256)。发 0x33 后再调来不及生效:
 
 ```java
 // 发送 0x33 识图拍照命令之后立即调用
@@ -259,7 +269,6 @@ PhotoCaptureService.captureAndRecognize()
 | 命令 | 值 | 方向 | 含义 |
 |---|---|---|---|
 | AI 识图拍照（主路径） | **0x33** | App→眼镜 Request(0x01) | payload：1 字节 quality（App 固定 **80**）。OEM 官方 APP (`com.deepvision_tek.glass_front` 3.1.00) `BluetoothController.requestAiPhotoCapture()` 主入口用此命令，配套 `prepareMediaCaptureCoexistence("ai_photo")` + `ensureBindPairingBeforeGatt` + `ensureClassicBondForAcl`。v0.3.5 起冰灵锐目采用此命令 |
-| AI 拍照（BLE 通道） | **0x33** | App→眼镜 Request(0x01) | OEM 官方暴露为 `requestAiPhotoBleCapture()`，是 0x33 的 fallback/次路径（命名 `aiPhotoBleCmd`）。V2.4.5 固件 0x33 命令下只回 0x51 START 但 FA12 一块不到，疑似需要经典蓝牙 ACL bond |
 | 0x33 Response | type=0x02 | 眼镜→App | 0=接受；非 0=拒绝（低电/OTA/忙等），可 400ms 后重试一次 |
 | 状态 | **0x51** | 眼镜→App Notify | 见下表 |
 | 普通拍照 | 0x30 | App→眼镜 | `captureOnly()` 用，非识物主路径 |
@@ -347,56 +356,78 @@ PhotoCaptureService.captureAndRecognize()
 | PHOTO_BLE_DESIRED_MTU | 517 | 协商目标 |
 | 通道就绪超时 | ~8s | 等 MTU + FA12 CCCD |
 | interval 快档等待 | ~800ms | 期望 interval ≤16（≈20ms；理想 6–12） |
-| App 等终态 | ~25–30s | 发 0x33 后总超时 |
-| 有进度宽限 | ~15s | 可再延长一次 |
-| 停包判定 | ~3.5s | 触发补洞 |
-| 补洞等待 | ~2.5s / 轮 | FA11 0x02 后 |
-| 补洞轮次 | ≤24 | — |
-| HIGH 会话 | 开场 + 0x33；首块 FA12 可补一次 | 传图期限制外部乱调优先级 |
+| **App 等终态** | **~90s**(`captureTimeoutMs`) | **本仓 90 s flat**,**未采用** OEM 的 25 s + 15 s grace(`PHOTO_BLE_APP_TIMEOUT_MS`);本仓判断 90 s 是更宽容业务超时,真机 1.7-2.1 s 出图场景不触及 |
+| ~~有进度宽限~~ | **N/A** | OEM 有 ~15 s grace,本仓没有 |
+| 停包判定 | ~3.5s | `chunkStallMs = 3_500L`,触发 FA11 op2 补洞 |
+| 补洞等待 | ~2.5s / 轮 | `resendWaitMs = 2_500L` |
+| 补洞轮次 | ≤24 | `maxResendRounds = 24`(对齐 OEM `AI_PHOTO_RETRANS_ABORT`) |
+| **零块早停** | 3 轮 | `FA12_NO_SIGNAL_ABORT_ROUNDS = 3`,一块都没到时 3 轮即止(对齐 OEM `AI_PHOTO_RETRANS_ABORT pkts0`) |
+| HIGH 会话 | capture 入口 → HIGH;finally → BALANCED | **`aiPhotoPriorityHighRequested` 外部锁本仓未采用** — 当前仅拍照入口调 `requestPriority()`,无第二个调用方需锁;HIGH 期间外部仍可调,实测不影响 |
+| 首块补 HIGH | `boostPriorityIfFirstFa12StillSlow` | 阈值 `lastBleConnInterval ≥ 17`(OEM `PHOTO_BLE_FAST_INTERVAL_MAX=16`);**实测 nova 6 报 `interval=12`,不触发**;`onConnectionUpdated` 隐藏 API 在本 ROM 正常派发(`FA12 first block, interval=` 日志判别) |
+| 取消 FA11 0x04 | 任何 App 端放弃(停包超时 / 硬超时 / 零块 / 用户取消) | `GlassesPhotoCaptureRepository.cancel()`(对齐 OEM `cancelAiPhotoBleTransfer`) |
+| `MAX_AI_PHOTO_BYTES` | 2 MiB | 防止伪造 u32 OOM(伪造 `file_size` 撑到 4 GB) |
 
 ### 9.2 App 业务层
 
 | 项 | 值 |
 |---|---|
 | 0x33 quality | 80 |
-| 识图上传压缩 | 边长 640 / Q≈55 |
-| 圈选输出 | Q≈92 |
-| 等 BLE 回图 | ~30s |
+| 识图压缩 | 边长 ~640 / Q≈55(本仓走本地 PP-OCRv6_small,不是云端 vision API) |
+| 等 BLE 回图 | 90s(业务) |
+| 端到端 | BLE 1.7-2.1 s(真机:41715/50715 bytes,1.7-2.1 s 出图,见 `docs/smoke/2026-09-15-ble-fix-verify/logcat_v2.txt`) |
 
 ---
 
-## 十、App 落地现状（源码对照）
+## 十、App 落地现状(源码对照 — 仅 glassfront,非本仓)
 
-固件文档中的「App 配合 HIGH」**已在当前 glassfront 源码落地**，要点如下：
+固件文档中的「App 配合 HIGH」**已在 glassfront v3.0.x 源码落地**,要点如下。**本仓 IceSpiritAI_Vision 实现见 §9.1 备注 + CLAUDE.md §"与智能眼镜的互动"**,与本节不同名/不同数。
 
-| 需求点 | 实现位置 / 行为 |
+| 需求点 | glassfront v3.0.x 实现位置 / 行为 |
 |---|---|
-| 会话开始升 HIGH | `prewarmAiPhotoBlePriority()`：Overlay 打开、`capture_start` |
-| 0x33 后升 HIGH | `boostAiPhotoConnectionPriority()`；失败 **200ms 重试** |
-| 每会话少次调用 | `aiPhotoPriorityHighRequested` 防刷；仅「仍慢」时 force 再顶 |
+| 会话开始升 HIGH | `prewarmAiPhotoBlePriority()`:Overlay 打开、`capture_start` |
+| 0x33 后升 HIGH | `boostAiPhotoConnectionPriority()`;失败 **200ms 重试** |
+| 每会话少次调用 | `aiPhotoPriorityHighRequested` 防刷;仅「仍慢」时 force 再顶 |
 | 发令前等快档 | `awaitAiPhotoIntervalFast()` |
 | 首块 FA12 仍 40ms | `maybeRetryAiPhotoHighOnFirstChunk()` 补调 HIGH |
 | 结束恢复 BALANCED | 传图完成/失败路径 `CONNECTION_PRIORITY_BALANCED` |
-| 观察 interval | `onConnectionUpdated`（`ConnectionAwareGattCallback`）记录 `lastBleConnInterval`（单位 1.25ms；32=40ms） |
+| 观察 interval | `onConnectionUpdated`(`ConnectionAwareGattCallback`)记录 `lastBleConnInterval`(单位 1.25ms;32=40ms) |
 
-**仍需固件配套**：块间延时宏改为 ~10ms，并与支持 HIGH 的 App 版本一起发版，才能达到 1.4s 目标。
+**仍需固件配套**:块间延时宏改为 ~10ms,并与支持 HIGH 的 App 版本一起发版,才能达到 1.4 s 目标。
 
 ---
 
 ## 十一、关键类与文件索引
+
+**§11.1 glassfront v3.0.x 索引**(本文原描述,保留供 cross-reference):
 
 | 类 / 文件 | 路径（示意） | 职责 |
 |---|---|---|
 | `PhotoCaptureService` | `app/.../service/PhotoCaptureService.kt` | 识图主状态机 |
 | `BluetoothController` / Manager | `app/.../bluetooth/BluetoothManager.kt` | 0x33、FA10、优先级、MTU |
 | `ConnectionAwareGattCallback` | `app/.../bluetooth/ConnectionAwareGattCallback.java` | `onConnectionUpdated` |
-| `GlassesAiRepository` | `app/.../repository/GlassesAiRepository.kt` | 视觉识图 |
+| `GlassesAiRepository` | `app/.../repository/GlassesAiRepository.kt` | 视觉识图(云端 API) |
 | `VisionModelConfigCacheManager` | `app/.../repository/...` | 视觉配置缓存 |
 | `PhotoIdentifyStore` | `app/.../repository/PhotoIdentifyStore.kt` | TTS 开关 + 历史 |
 | `PhotoIdentifyOverlay` | `app/.../ui/components/...` | 结果 UI |
 | `GlassesHomeScreen` | `app/.../ui/screens/...` | 入口 |
 | `MainActivity` | `app/.../MainActivity.kt` | 编排 |
-| BLE 说明 | `docs/BLE指令说明.md` | 协议文档 |
+
+**§11.2 IceSpiritAI_Vision v0.4.x 实际类布局**(本仓真值,grep `app/src/main/java/com/icespiritai/offline/glasses/` 即可定位):
+
+| 类 / 文件 | 路径 | 职责 |
+|---|---|---|
+| `GlassesPhotoCaptureRepository` | `glasses/GlassesPhotoCaptureRepository.kt` | BLE 拍照状态机(`capture()`/`cancel()`/`reset()`/`runCapturePipeline()`,文档本仓唯一权威实现) |
+| `GlassesPhotoCaptureRepository.runStages` | 同上 | 阶段分发(Stage 1-5) |
+| `GlassesFa12Collector` | `glasses/GlassesFa12Collector.kt` | FA12 块收集 + 停包补洞 + CRC32 + 零块早停 |
+| `GlassesReceiveTap` | `glasses/GlassesReceiveTap.kt` | 单次长订阅 tap,取代 `first()` 漏块陷阱 |
+| `GlassesPhotoStream` | `glasses/GlassesPhotoStream.kt` | JPEG 块拼装 + 缺失范围检测 + CRC32 |
+| `GlassesPhotoProtocol` | `glasses/GlassesPhotoProtocol.kt` | 协议字节布局(`buildFa11*`/`parseFrameHeader`/`isCaptureAckSuccess` 等) |
+| `BluetoothController` | `glasses/BluetoothController.kt` | 单 GATT 连接编排(MTU 协商 / 服务发现 / CCCD 写入 / 通知转发 / `requestPriority` HIGH/BALANCED / `boostPriorityIfFirstFa12StillSlow`) |
+| `GlassesDevice` | `glasses/GlassesDevice.kt` | 已配对眼镜数据(`NAME_PREFIXES` = 双前缀 + `nameMatches()`) |
+| `GlassesScan` | `glasses/GlassesScan.kt` | BLE 扫描(`BluetoothLeScanner` + 回调转发) |
+| `GlassesCaptureOverlay` | `glasses/ui/GlassesCaptureOverlay.kt` | Compose overlay(连接进度 / 拍照进度 / 失败重试 / 用户关窗接 cancel) |
+| `IceSpiritVisionActivity` | `IceSpiritVisionActivity.kt` | 入口 Activity |
+| BLE 说明 | `docs/glasses/AI识图传图提速_App连接参数配合.md`(本文)+ `docs/glasses/AI识图传图-App端接收处理说明.md` | 协议文档(本仓权威)+ 历史对照 |
 | 联调纪要 | `docs/photo-identify-*.md` | 案例与结论 |
 
 ---
