@@ -192,7 +192,7 @@ object GlassesPhotoProtocol {
      * force-complete a still-empty buffer 3.5 s later and hand OCR a
      * JPEG padded with 0xFF ("拍照成功" but recognition always failed).
      * Only `0x51` SUCCESS / FAILED ends a transfer; see
-     * [GlassesPhotoCaptureRepository.collectChunks] and
+     * [collectFa12Chunks] and
      * `docs/glasses/AI识图传图-App端接收处理说明.md` §2.3 Step 4.
      */
     fun isCaptureAckSuccess(payload: ByteArray): Boolean {
