@@ -1,8 +1,12 @@
 # AI 拍照识图传图 — App 端接收处理说明
 
+> **⚠️ SCOPE（必读）**：本文对照的源码是 **glassfront App 历史包（v3.0.x）+ glass_test/yuan/ 历史双模实现** — 不是本仓 `app/`。
+> 本仓 `app/src/main/java/com/icespiritai/offline/glasses/` 的实际类布局完全不同于本文引用的 `PhotoCaptureService` / `MainActivity` / `BluetoothManager` / `GlassesAiRepository`(这些类在本仓**不存在**)。当前 IceSpiritAI_Vision 实现走 `GlassesPhotoCaptureRepository` + `GlassesCaptureOverlay` + `IceSpiritVisionActivity` + `BluetoothController`。
+>
+> 本文作为**协议 / 契约层参考**继续有用 —— §2.3 Step 4(开收缓冲)、§2.6 停包补洞阈值、§3 模式 B 蓝牙共享网络等契约层定义仍适用于本仓;但具体类名 / 方法签名 / 调用顺序不要照搬。
+>
 > 对应需求：《AI 拍照识图传图提速 — App 端连接参数配合需求》  
 > 文档重点：**App 如何接收眼镜回传的 JPEG**（含 BLE 与蓝牙共享网络两种模式）  
-> 对照源码：`app/` 现行包 · `glass_test/yuan/` 历史双模实现  
 > 更新日期：2026-09-15  
 
 ---
