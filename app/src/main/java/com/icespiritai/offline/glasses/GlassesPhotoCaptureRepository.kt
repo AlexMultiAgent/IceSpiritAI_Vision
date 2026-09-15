@@ -532,6 +532,10 @@ class GlassesPhotoCaptureRepository(
                     ),
                 )
             },
+            // The session asked for HIGH at entry; if Android granted a slow
+            // interval anyway, the first block is the moment to ask again
+            // (spec §3.3.3 / OEM maybeRetryAiPhotoHighOnFirstChunk).
+            onFirstBlock = bluetoothController::boostPriorityIfFirstFa12StillSlow,
             chunkStallMs = chunkStallMs,
             resendWaitMs = resendWaitMs,
             maxResendRounds = maxResendRounds,

@@ -93,6 +93,10 @@ private class Rig(scope: kotlinx.coroutines.CoroutineScope) {
     /** Invoked with the requested offset when the App sends FA11 op2. */
     var onOp2: (Int) -> Unit = {}
 
+    /** Counts first-block callbacks so the caller's once-per-session hook can be asserted. */
+    var firstBlocks = 0
+    val onFirstBlock: () -> Unit = { firstBlocks++ }
+
     fun writeFa11(payload: ByteArray): Boolean {
         fa11Writes.add(payload)
         if (payload[0] == GlassesPhotoProtocol.FA11_OP_RESEND) onOp2(readLe32(payload, 1))
@@ -147,6 +151,7 @@ class GlassesFa12CollectorTest {
         status = rig.statusFrames,
         writeFa11 = rig::writeFa11,
         onProgress = { _, _ -> },
+        onFirstBlock = rig.onFirstBlock,
         chunkStallMs = chunkStallMs,
         resendWaitMs = RESEND_WAIT,
         maxResendRounds = maxResendRounds,
@@ -346,6 +351,24 @@ class GlassesFa12CollectorTest {
             listOf(GlassesPhotoProtocol.FA11_OP_CANCEL),
             rig.fa11Writes.map { it[0] },
         )
+    }
+
+    @Test
+    fun firstBlockHookFiresExactlyOncePerSession() = runTest {
+        // The OEM latches this with aiPhotoPriorityFa12RetryUsed; here the
+        // collector's own block count is what bounds it, because a hook that
+        // fires per block would spam requestConnectionPriority and trip the
+        // ROM rate limit spec §3.3.2 warns about.
+        val image = picture(1_000)
+        val rig = Rig(backgroundScope)
+        assertTrue(rig.status.tryEmit(startFrame(1_000)))
+        rig.fa12.pushRange(image, 0, 1_000)
+
+        val outcome = runCollector(rig, totalSize = 1_000)
+
+        outcome as Fa12Collection.Complete
+        assertEquals(5, outcome.blocks)
+        assertEquals(1, rig.firstBlocks)
     }
 
     @Test

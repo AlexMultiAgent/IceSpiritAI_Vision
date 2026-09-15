@@ -171,7 +171,7 @@ withTimeoutOrNull(chunkStallMs) { bluetoothController.fa12Notifications.first() 
 | 最大补发轮次 | #164 `const/16 24` | `maxResendRounds=24` | ✅ 一致 |
 | 补发偏移 | #14/#198 `BitSet.nextClearBit(0)` | `firstMissingRange().first` | ✅ 等价 |
 | 完成判定 | `nextClearBit(0) >= totalSize`；收齐后 #70-73 `CRC32`，#104 **先** `emitAiPhotoComplete`，#134 再 `schedulePhotoCtrlWrite(op3,"complete_crc")` | 先 `assemble()` 落盘 → 后写 `0x03` | ✅ 本地先出图，一致 |
-| 首块 | #7-11 `aiPhotoFa12FirstSeen` → `maybeRetryAiPhotoHighOnFirstChunk()`（日志 `ai_photo_fa12_still_40ms`，一次性 flag） | 未实现 | ⚠️ 见下 |
+| 首块 | #7-11 `aiPhotoFa12FirstSeen` → `maybeRetryAiPhotoHighOnFirstChunk()`（日志 `ai_photo_fa12_still_40ms`，一次性 flag；`interval ≥ 17` 才补，未观测不猜） | `onFirstBlock` → `boostPriorityIfFirstFa12StillSlow`（后续提交补齐） | ✅ 一致 |
 | 早块缓冲 | `aiPhotoEarlyChunks`，`beginAiPhotoReceive` 里回填（#50-73） | `ReceiveTap` inbox（订阅早于 `0x33`） | ✅ 等价 |
 | `file_size` 上限 | `beginAiPhotoReceive` #2 `const/high16 2097152` | 新增 `MAX_AI_PHOTO_BYTES = 2 MiB` | ➕ **本轮采纳** |
 | 放弃会话 | 超时/无信号路径 #347/#390 `const/4 4` → `writePhotoCtrl(0x04)`；`cancelAiPhotoBleTransfer` 同理 | **原本全仓没人调 `buildFa11Cancel()`** | ➕ **本轮采纳**（fix #11） |
@@ -196,8 +196,11 @@ withTimeoutOrNull(chunkStallMs) { bluetoothController.fa12Notifications.first() 
 1. **不在 `onCharacteristicChanged` 里同步重组**（官方做法）。本仓把块经单次长订阅 tap 投进 `Channel(UNLIMITED)`，
    tap 用 `Dispatchers.Unconfined` 在 binder 线程内联投递，块在 `tryEmit` 返回前就已入队 —— 丢失面与官方等价，
    且不改官方 App 的类结构。真要再省一跳可以把重组搬进 `BluetoothController`，但那是一次没有验证手段可支撑的重构。
-2. **首块仍慢时补调一次 HIGH**（官方 `maybeRetryAiPhotoHighOnFirstChunk`）与 **会话中锁死外部优先级**：
-   纯提速/防干扰，本仓当前唯一调用 `requestPriority` 的就是拍照入口，没有第二个调用方需要锁；且这两条在无设备的条件下无法验证，留待接机时随真机日志一起做。
+2. **会话中锁死外部优先级**（官方 `requestBleConnectionPriority` 在 `aiPhotoBleActive && !balancedRestored` 时直接拒绝外部改优先级）：
+   本仓当前唯一调用 `requestPriority` 的就是拍照入口，没有第二个调用方需要锁，未搬。
+   - **首块仍慢补调一次 HIGH 已在后续提交补上**（`shouldReboostHighOnFirstFa12`，阈值按官方 `interval ≥ 17`）。
+     它有个前提：`onConnectionUpdated` 是隐藏 API，本仓靠「子类声明同签名」的惯用法接，**是否真被本机派发只有真机能定**。
+     判据是 `FA12 first block, interval=` 这行：一直是哨兵 0 就说明该 ROM 不派发，此时补 HIGH **按设计保持惰性**（不盲推）。
 3. **25 s + 宽限 15 s 的 App 端总超时**（官方 `PHOTO_BLE_APP_TIMEOUT_MS`）：本仓仍是 90 s 业务超时。零块早停（#12）已把最常见卡死的等待压到 ~11 s，
    总超时对齐会改变用户可见的重试时机，等真机数据再定。
 4. `aiPhotoRetransmitRequested`（官方用来记「这个 offset 已经要过了」）：官方每轮同样只按 `nextClearBit(0)` 要第一个洞，该 Set 主要服务日志/连击判定，行为等价，未搬。
@@ -209,6 +212,9 @@ GlassesCapture: FA12 notify LOST …              # 期望：不再出现
 GlassesCapture: chunk #1 offset=0 …
 GlassesCapture: collectChunks complete: N/N bytes covered by M chunks in Xms (resends=0)
 GlassesCapture: FA12 silent — FA11 op2 #1 from <hole>
+BluetoothController: FA12 first block, interval=32 still slow — re-pushing HIGH
+                      # 若一直是 interval=0 — no HIGH re-push，说明本机没派发 onConnectionUpdated（隐藏 API），
+                      # 属预期降级，不影响收图
 GlassesCapture: abandoning transfer: …          # 之后应看到下一条
 BluetoothController: FA11 write size=5 raw=02…  /  raw=03…  /  取消时 raw=04
 GlassesCapture: 0x51 FAILED during transfer …   # 此时不应出现 raw=04（眼镜已自行结束）

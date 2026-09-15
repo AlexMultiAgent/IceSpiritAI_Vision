@@ -9,6 +9,7 @@
 |---|---|
 | [`build-stack-2026-08.md`](./build-stack-2026-08.md) | AGP / Kotlin / Gradle / JDK / NDK / AndroidX / 主流三方库的 2026-08 实际版本与硬约束矩阵。Phase 1 baseline 研判的主文档。 |
 | [`cross-project-implications.md`](./cross-project-implications.md) | 上述 baseline 对冰灵智译 / 冰灵慧语两个项目的迁移含义与建议顺序。 |
+| [`official-glasses-apk-ble-internals.md`](./official-glasses-apk-ble-internals.md) | 反编译官方眼镜 App（`com.deepvision_tek.glass_front` 3.1.00，未混淆）得到的 BLE 传图真实实现：状态机、逐项数值（含 smali 指令索引）、日志词表、与本仓对齐/不采纳清单，以及被推翻的三个旧判断。 |
 
 ## 调研时间与维护
 

@@ -113,6 +113,9 @@ internal const val FA12_NO_SIGNAL_ABORT_ROUNDS = 3
  *   silence — spec §2.3 Step 5 forbids writing while blocks are still
  *   flowing, because FA11 writes starve FA12 notifies.
  * @param onProgress reports contiguous bytes for the overlay's progress.
+ * @param onFirstBlock fires once, on the first block of the session, so the
+ *   caller can re-push HIGH if the link parameter update never landed
+ *   (spec §3.3.3, OEM `maybeRetryAiPhotoHighOnFirstChunk`).
  */
 internal suspend fun collectFa12Chunks(
     stream: GlassesPhotoStream,
@@ -120,6 +123,7 @@ internal suspend fun collectFa12Chunks(
     status: StatusFrames,
     writeFa11: suspend (ByteArray) -> Boolean,
     onProgress: (contiguousBytes: Int, totalBytes: Int) -> Unit,
+    onFirstBlock: () -> Unit = {},
     chunkStallMs: Long,
     resendWaitMs: Long,
     maxResendRounds: Int,
@@ -175,6 +179,11 @@ internal suspend fun collectFa12Chunks(
             working = working.grownTo(chunk.offset + chunk.data.size)
         }
         working.addChunk(chunk)
+        if (blocks == 0) {
+            // Exactly once per session, which is what lets the caller skip
+            // the OEM's `aiPhotoPriorityFa12RetryUsed` latch field entirely.
+            onFirstBlock()
+        }
         blocks++
         if (blocks <= 3 || blocks % 20 == 0) {
             Log.d(

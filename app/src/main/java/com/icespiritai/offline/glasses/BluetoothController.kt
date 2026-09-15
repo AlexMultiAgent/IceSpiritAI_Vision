@@ -124,6 +124,14 @@ class BluetoothController(
          * downstream coroutine is descheduled for the whole transfer.
          */
         private const val FA12_EMIT_BUFFER: Int = 512
+
+        /**
+         * Sentinel for [lastConnInterval] before any `onConnectionUpdated`
+         * has arrived. The OEM app defaults its copy to 0 and bails out of
+         * the first-chunk re-boost on `interval < 1` rather than guessing —
+         * an unobserved interval is not evidence that the link is slow.
+         */
+        private const val INTERVAL_NOT_OBSERVED = 0
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -145,19 +153,23 @@ class BluetoothController(
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Idle)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
-    private val _lastConnInterval = MutableStateFlow(32)   // 32 × 1.25ms = 40ms (Android default)
+    private val _lastConnInterval = MutableStateFlow(INTERVAL_NOT_OBSERVED)
     /**
-     * Most recent BLE connection interval in **1.25 ms units**. 32 = 40 ms
-     * (Android BALANCED default); 12 = 15 ms (target under HIGH priority
-     * after the firmware accepts the parameter update).
+     * Most recent BLE connection interval in **1.25 ms units**: 32 = 40 ms
+     * (the BALANCED default the glasses link sits at), 6–12 = 7.5–15 ms
+     * (what HIGH is supposed to buy, spec §4.1). [INTERVAL_NOT_OBSERVED]
+     * means no `onConnectionUpdated` has arrived yet, which is *not* the
+     * same thing as "slow" — see [shouldReboostHighOnFirstFa12].
      *
-     * **Not currently auto-updated** — the Android SDK stub the AGP 9.3
-     * toolchain binds against does not expose `onConnectionUpdated` as an
-     * overridable method on `BluetoothGattCallback` (the compileSdk 37
-     * stub has a different signature). The state is preserved as a hook
-     * for a future re-bind when the stub stabilizes; for now callers
-     * should treat `32` as "no observation yet" and rely on the
-     * HIGH-priority behavior empirically (observe transfer time).
+     * The value is fed by [BluetoothGattCallback.onConnectionUpdated],
+     * which is **not in the compileSdk stub** and so cannot be marked
+     * `override` here. Declaring the matching signature on a
+     * [BluetoothGattCallback] subclass is the usual way to receive a
+     * hidden framework callback: whether the platform actually dispatches
+     * it on a given ROM can only be settled on device. The `FA12 first
+     * block, interval=` log below is the discriminator — if it never
+     * leaves [INTERVAL_NOT_OBSERVED], the hook is dead on that device and
+     * the interval-driven re-boost stays inert by design.
      */
     val lastConnInterval: StateFlow<Int> = _lastConnInterval.asStateFlow()
 
@@ -346,6 +358,30 @@ class BluetoothController(
     }
 
     /**
+     * One-shot HIGH re-push for the case spec §3.3.3 describes and the OEM
+     * app implements in `maybeRetryAiPhotoHighOnFirstChunk`: the session
+     * asked for HIGH at entry, Android granted something slower, and the
+     * first photo block is proof the transfer is about to run at 40 ms.
+     *
+     * Call once per session, on the first FA12 block
+     * ([GlassesFa12Collector] guarantees the single call). Returns whether
+     * a request was actually made, so the caller can log which world it is
+     * in: `false` means the interval was never observed (hidden
+     * `onConnectionUpdated` not firing on this ROM) or was already fast —
+     * in both cases there is nothing to correct, and pushing anyway would
+     * just burn the ROM's rate limit.
+     */
+    fun boostPriorityIfFirstFa12StillSlow(): Boolean {
+        val interval = _lastConnInterval.value
+        if (!shouldReboostHighOnFirstFa12(interval)) {
+            Log.d(TAG, "FA12 first block, interval=$interval — no HIGH re-push")
+            return false
+        }
+        Log.w(TAG, "FA12 first block, interval=$interval still slow — re-pushing HIGH")
+        return requestPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+    }
+
+    /**
      * Negotiate the ATT MTU. Suspends until the OS completes the
      * exchange. Throws if not currently connected.
      *
@@ -473,7 +509,7 @@ class BluetoothController(
         fff2Desc = null
         fa12Desc = null
         fa12CccdRetryCount = 0
-        _lastConnInterval.value = 32
+        _lastConnInterval.value = INTERVAL_NOT_OBSERVED
         _mtu.value = 23
     }
 
@@ -732,3 +768,26 @@ class BluetoothController(
         }
     }
 }
+
+/**
+ * Connection interval (1.25 ms units) at or above which the OEM glasses
+ * app re-pushes HIGH once per capture session, on the assumption the link
+ * is still at the 40 ms BALANCED default.
+ *
+ * `PHOTO_BLE_FAST_INTERVAL_MAX + 1` in the OEM binary
+ * (`com.deepvision_tek.glass_front` 3.1.00): `maybeRetryAiPhotoHighOnFirstChunk`
+ * returns early unless `lastBleConnInterval >= 17`, and
+ * `boostAiPhotoConnectionPriority` treats `<= 16` as already fast.
+ */
+private const val FA12_STILL_SLOW_INTERVAL_MIN = 17
+
+/**
+ * Should the first FA12 block of a session trigger one more HIGH request?
+ *
+ * File-scope and pure so the rule is unit-testable without a
+ * [android.bluetooth.BluetoothGatt]. An unobserved interval (0) answers
+ * `false` — the OEM refuses to guess, and so do we: without a real reading
+ * this would be a blind re-push of what `capture()` already asked for.
+ */
+internal fun shouldReboostHighOnFirstFa12(interval: Int): Boolean =
+    interval >= FA12_STILL_SLOW_INTERVAL_MIN
