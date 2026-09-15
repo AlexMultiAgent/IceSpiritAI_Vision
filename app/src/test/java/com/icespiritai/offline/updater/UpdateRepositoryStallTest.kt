@@ -1,7 +1,13 @@
 package com.icespiritai.offline.updater
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import java.io.IOException
 
@@ -14,8 +20,26 @@ import java.io.IOException
  * known starting state via the public onDownloadProgress / onDownloadCancelled
  * entry points — no @Before reset needed because the last test's state
  * is overwritten before the next test asserts.
+ *
+ * `MutableStateFlow.value =` dispatches subscriber notifications through
+ * `Dispatchers.Main`; without `@Before setMain(...)` / `@After resetMain()`
+ * those notifications land on the real Android main looper (or whatever
+ * the previous test left behind) and `full-suite` ordering surfaces the
+ * `DispatchException`. See CLAUDE.md §"Unit test 踩坑".
  */
 class UpdateRepositoryStallTest {
+
+    private val testDispatcher = UnconfinedTestDispatcher()
+
+    @Before
+    fun setup() {
+        Dispatchers.setMain(testDispatcher)
+    }
+
+    @After
+    fun teardown() {
+        Dispatchers.resetMain()
+    }
 
     @Test
     fun `tryMarkStalledAsFailed transitions Downloading to Failed NetworkUnreachable`() {
