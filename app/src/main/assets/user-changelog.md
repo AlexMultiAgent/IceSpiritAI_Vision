@@ -1,5 +1,35 @@
 # 用户更新日志
 
+## v0.4.0 — 2026-09-15
+
+**重写智能眼镜 BLE 拍照传图管线 —— 之前一拍照就卡死直到 90 s 超时,现在 1.7-2.1 s 出图**。根因有两个:(1) `0x33 Response` 被仓库误读成"传图完成信号",触发 `fillGapsWith(0xFF)` + `forceCompleted=true` 产出一张全 `0xFF` 的伪 JPEG,OCR 必然失败;(2) `SharedFlow.first()` 的"订阅→取一个→退订"语义对 `replay=0` 流是漏块陷阱 —— `tryEmit` 仍返回 `true` 但值已丢,所以头部块永远收不到(`filled=0` 从头到尾不变),`assemble()` 抛异常被吞,FA11 `0x03` 永远写不出去。逐项修法见下方。
+
+### 修复 (BLE 传图管线)
+
+- **`0x33 Response` 不再误触发 SUCCESS**:`GlassesPhotoProtocol.isCaptureAckSuccess` 的 KDoc 改为明确禁止把 0x33 ack 当传图完成信号;`collectFa12Chunks` 收到此帧静默忽略,继续等 FA12 块。
+- **单次长订阅 tap 取代 `first()`**:新增 `GlassesReceiveTap.kt`,会话期间只订阅一次,块经 `Channel(UNLIMITED)` 投递;在写 `0x33` **之前**开启,`finally` 关闭。天然充当官方 `aiPhotoEarlyChunks` 的等价物,头部块不再丢。
+- **停包补洞恢复**:3.5 s 停包 → FA11 `0x02` 补洞,每轮 2.5 s,≤24 轮(spec §2.3 Step 6);`maxResendRounds` 不再是死变量;超轮次给准确文案。
+- **零块早停**:一块都没到时 3 轮即止,不再空耗 24×2.5 s ≈ 60 s(对齐官方 `AI_PHOTO_RETRANS_ABORT pkts0`)。
+- **FA11 `0x04` 取消握手**:任何 App 端放弃(停包超时 / 硬超时 / 零块早停 / 用户取消)都补发 FA11 `0x04`,固件不再往没人收的会话里推 FA12(对齐官方 `cancelAiPhotoBleTransfer`)。
+- **优先级恢复**:capture 入口 HIGH(对齐官方 `prewarmAiPhotoBlePriority`),`finally` 恢复 BALANCED(对齐官方 `restoreBlePriorityAfterAiPhoto`,spec §3.2/§2.4)。之前 `finally` 里再调一次 HIGH 与入口自相矛盾。
+- **`file_size` 上限 2 MiB**:伪造的 u32 撑到 4 GB 会 OOM;`GlassesPhotoStream` 按上限分配,超限拒收。
+- **GATT write 串行化(Mutex)**:多块并发写会 hang radio,改成串行写入队列。
+- **连接子阶段细化 overlay**:之前"Connecting..." 显示 2+ 分钟没动静,实际在 MTU / Services / Notifies 阶段;分阶段上报状态。
+- **首块 HIGH re-boost**:`onConnectionUpdated` 报 `≥ 17` 时再推一次 HIGH,本机 nova 6 报 `interval=12`,不需要触发(由 `FA12 first block, interval=` 日志判别,数字恒为 `0` 的 ROM 表示不派发,按设计惰降)。
+
+### 修复 (UI 收尾)
+
+- **Overlay 关闭按钮接 cancel**:之前 `onDismiss` 只翻 Compose state,后台 job 继续跑 → 下次拍照假死直到 90 s 超时。`onDismiss` 现先调 `repository.cancel()`(发 FA11 0x04 + 取消 job),`reset()` 也支持从 Capturing 强制落终态。
+- **双广播名前缀**:`GlassesDevice.NAME_PREFIXES = ["Glass-D15", "Glasses-A"]`;`GlassesScan` + `findBondedDevice` 走 `nameMatches(name)`。spec 文档硬件名是 `Glass-D15`,实际出货固件广播名是 `Glasses-A88`,两者都接收 —— pin spec 契约(`NAME_PREFIX = "Glass-D15"`)+ 单独接受新 OEM / 固件一行可加。修复了 baseline `f7a8d47` 的 `GlassesDeviceTest` 2 项失败。
+
+### 验证
+
+- 10 个 fix / feat / docs commit:`329feec` → `32ded3d` → `7376d80` → `8ca05b7` → `c81d14a` → `ef09f9e` → `4f3ced1` → `df6b01b` → `ffdacfc` → `23bab0e`,作者 `AlexMultiAgent`,无 Co-Authored-By trailer。
+- 真机(华为 nova 6 + Glasses-A88 V2.4.5 + MAC `60:0B`)**双 capture 全过**,实测 **1.7-2.1 s 出图**:`docs/smoke/2026-09-15-ble-fix-verify/logcat_v2.txt`。判据逐条对齐:① `chunk #1 offset=0` + `filled` 递增(不再是 `0/41715` 卡死);② `collectChunks complete: N/N bytes covered by M chunks in Xms (resends=0)`,`M ≈ fileSize/240`(41715/240 = 173.8 → 174 ✓;50715/240 = 211.3 → 212 ✓);③ 日志无 `FA12 notify LOST`;④ `FA11 write size=5 raw=03...`(成功路径,非取消);⑤ `0x33 Response` (`raw=55aa003302010000`) 静默忽略,不再触发 force-complete;⑥ `0x51 SUCCESS` (`raw=...02`) 到达。
+- `./gradlew :app:testDebugUnitTest --tests "com.icespiritai.offline.glasses.*"`(shell profile)92 项全过:`BluetoothControllerPriority(4)` + `GlassesDevice(10)` + `GlassesFa12Collector(14)` + `GlassesPhotoProtocol(36)` + `GlassesPhotoStream(21)` + `GlassesReceiveTap(7)`。baseline `f7a8d47` 的 `GlassesDeviceTest` 2 项失败已修;`AdSignageTextFixtureRegressionTest` / `ChangelogScreenTest` / `UpdateRepositoryStallTest.markCancelled` 3 项 pre-existing 失败按计划留 v0.3.2+。
+- OCR 命中具体内容未在本日志验证(图片是眼镜侧的物理场景,随用户实拍变化)。回归路径:用 v0.4.0 重拍招牌,OCR 命中数应 ≥ v0.3.4 同场景(已无 0xFF 伪图卡 OCR 解析)。
+- `app/build.gradle.kts versionCode 74→75` + `versionName 0.3.4→0.4.0`,与本条目同步。
+
 ## v0.3.4 — 2026-09-14
 
 **修正:v0.3.0 引入的 TTS 多段朗读 bug(sherpa 用户命中,system TTS 用户不命中)—— 之前朗读时只念免责声明(最后一段),前面计数 / 命中正文 / 依据全被吃掉**。根因是 sherpa engine 的 `speak()` 有"打断前一段"逻辑(Opt-7 v0.1.68),`TtsController.dispatchSegments` 紧密 loop 调 `speak()` 时第 2 个把第 1 个 cancel,只有最后一个真的播。Android system TTS 用 `QUEUE_ADD` 没这个 bug,所以只影响装了 sherpa-onnx 引擎的用户。
