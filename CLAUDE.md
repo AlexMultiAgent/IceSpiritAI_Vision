@@ -35,7 +35,8 @@
 | 文件 | 职责 |
 |---|---|
 | `GlassesPhotoProtocol.kt` | 纯字节协议(0x33/0x51 FFF0 帧、FA10/FA11/FA12 控制字)+ 单测 29 项 |
-| `GlassesPhotoStream.kt` | JPEG 块拼装 + CRC32 + 缺失范围检测 + 单测 16 项 |
+| `GlassesPhotoStream.kt` | JPEG 块拼装 + CRC32 + 缺失范围检测 + 单测 21 项 |
+| `GlassesReceiveTap.kt` | 通知流的**单次长订阅**投递原语(`Channel(UNLIMITED)`),FA12/0x51 零丢失 + 单测 7 项 |
 | `GlassesDevice.kt` + `GlassesDeviceStore.kt` | 已配对眼镜数据 + SharedPreferences 持久化 |
 | `GlassesScan.kt` | `BluetoothLeScanner` 封装,按 `Glass-D15` 名称前缀过滤 |
 | `BluetoothController.kt` | 单 GATT 连接编排(MTU 协商 / 服务发现 / CCCD 写入 / 通知转发)|
@@ -209,6 +210,8 @@ Phase 1 走 OCR + 规则库路线(**PP-OCRv6_small** + PaddleOCR 官方 SDK v3.7
 ```
 
 **CI 仅跑 `shell` profile** — 仓库 .github/workflows 不会构建 `ice_ocr_rules`(避免拉 70 MB AAR + 30 MB ONNX + 跑 5 步 pre-flight + 真机烟测)。`ice_ocr_rules` profile 的端侧回归由 [`/icevision-release`](.claude/skills/icevision-release/SKILL.md) skill 的 5 步 pre-flight + 真机烟测覆盖(local-only,见 [docs/smoke/](docs/smoke/))。本地构建任一 profile 都需要先 export `JAVA_HOME` 到 JDK 17(`§开发环境`)。
+
+**`testDebugUnitTest` 不要带 `-PmodelProfile=ice_ocr_rules`** — 单测源码里的 `FakeOcrEngine` / `FakeOcrEngineFactory` 只挂在 `src/shell/java`(`app/build.gradle.kts` 的 `androidComponents` 按 profile 选 srcDir),用 `ice_ocr_rules` 跑测试会在 `compileDebugUnitTestKotlin` 阶段报 11 个 `Unresolved reference`。构建 APK 用 `ice_ocr_rules`,跑单测用默认 profile。
 
 ## Lint vital/analyze 已禁用(AGP 9.3 + Kotlin 2.4.10 FIR 崩)
 

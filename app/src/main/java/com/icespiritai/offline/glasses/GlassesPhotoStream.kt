@@ -182,6 +182,21 @@ class GlassesPhotoStream(val totalSize: Int) {
     val contiguousFilledBytes: Int get() = contiguousBytes
 
     /**
+     * Number of bytes **anywhere** in `[0, totalSize)` not yet covered by a
+     * block. Differs from `totalSize - contiguousFilledBytes` whenever a
+     * block arrived out of order, so this is the honest answer to "how
+     * much of the picture would we have to invent".
+     */
+    val missingBytes: Int
+        get() {
+            var missing = 0
+            for (i in 0 until totalSize) {
+                if (!received[i]) missing++
+            }
+            return missing
+        }
+
+    /**
      * Assemble the JPEG into a fresh `ByteArray`. Throws if [isComplete]
      * is false — callers must drain to completion before invoking the
      * OCR engine (a partial JPEG is unrecoverable for OCR).
@@ -215,6 +230,37 @@ class GlassesPhotoStream(val totalSize: Int) {
         highestWrittenOffset = -1
         // Don't zero `buffer` — overwrite happens on next addChunk, and
         // zeroing a multi-MB buffer on every reset is wasted work.
+    }
+
+    /**
+     * Return a stream of [newTotalSize] bytes carrying every byte and
+     * every coverage bit this stream already holds.
+     *
+     * Used when the firmware sends past the `file_size` it declared in
+     * `0x51 START`. Constructing a fresh [GlassesPhotoStream] instead —
+     * the previous behaviour — discarded the entire assembled prefix,
+     * which stopped being a rare curiosity once blocks began arriving
+     * ahead of START (they always do; see
+     * [GlassesPhotoCaptureRepository.runCapturePipeline]).
+     *
+     * [totalSize] is a `val` because callers read it for progress UI, so
+     * growing means returning a new instance rather than mutating.
+     */
+    fun grownTo(newTotalSize: Int): GlassesPhotoStream {
+        require(newTotalSize > totalSize) {
+            "grownTo requires a larger size: $newTotalSize <= $totalSize"
+        }
+        val grown = GlassesPhotoStream(newTotalSize)
+        System.arraycopy(buffer, 0, grown.buffer, 0, totalSize)
+        System.arraycopy(received, 0, grown.received, 0, totalSize)
+        grown.seenStartOffsets.addAll(seenStartOffsets)
+        grown.highestWrittenOffset = highestWrittenOffset
+        // Re-advance the cursor: it cannot go backwards, and the copied
+        // bits are what decide how far it goes.
+        var i = contiguousBytes
+        while (i < newTotalSize && grown.received[i]) i++
+        grown.contiguousBytes = i
+        return grown
     }
 
     /**

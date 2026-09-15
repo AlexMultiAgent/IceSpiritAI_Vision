@@ -182,12 +182,18 @@ object GlassesPhotoProtocol {
      *
      * Once the firmware has acked the capture command it has also
      * committed to sending 0x51 START + FA12 chunks (or 0x51 FAILED on
-     * capture-time error). The ack is therefore the right "photo
-     * pipeline is alive" sentinel — the chunk collector observes it so
-     * the resend watchdog can stop burning FA11 writes the moment the
-     * firmware stops responding (which is what really happens on this
-     * V2.4.5 hardware: firmware drops ~30 % of FA12 blocks and
-     * silently stops replying to FA11 op2 retransmit requests).
+     * capture-time error), so the ack is useful as a liveness marker in
+     * logs.
+     *
+     * **It is not a transfer-completion signal and must not be treated
+     * as one.** It arrives ~30 ms after the Request — before the glass
+     * has taken the photo, let alone streamed a block. The collector
+     * used to flip its SUCCESS flag on this frame, which made it
+     * force-complete a still-empty buffer 3.5 s later and hand OCR a
+     * JPEG padded with 0xFF ("拍照成功" but recognition always failed).
+     * Only `0x51` SUCCESS / FAILED ends a transfer; see
+     * [GlassesPhotoCaptureRepository.collectChunks] and
+     * `docs/glasses/AI识图传图-App端接收处理说明.md` §2.3 Step 4.
      */
     fun isCaptureAckSuccess(payload: ByteArray): Boolean {
         if (payload.size != 8) return false

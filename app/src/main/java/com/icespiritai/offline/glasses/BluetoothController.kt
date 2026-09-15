@@ -12,11 +12,14 @@ import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
 import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -94,6 +97,33 @@ class BluetoothController(
          */
         const val REQUIRED_MIN_MTU: Int = 247
         const val DESIRED_MTU: Int = 517
+
+        /**
+         * Max FA12 CCCD retry attempts on a non-success write. Each
+         * retry waits [FA12_CCCD_RETRY_DELAY_MS]. Mirrors OEM
+         * reference (`fa12CccdRetryCount < 2` in zhang).
+         */
+        private const val FA12_CCCD_MAX_RETRIES: Int = 2
+
+        /**
+         * Backoff between FA12 CCCD retries (ms). 200 ms is the OEM
+         * value — long enough for the GATT server to drain its
+         * descriptor-write queue, short enough to keep the connect
+         * path under ~600 ms total (FFF2 + 80 ms + 2 × 200 ms).
+         */
+        private const val FA12_CCCD_RETRY_DELAY_MS: Long = 200L
+
+        /**
+         * Emission buffer for the FA12 notify flow. Sized for a whole
+         * photo, not for "a brief consumer stall": at the documented
+         * ~240 B/block (spec §2.1) a 30 KB JPEG is ~128 blocks, and the
+         * V2.4.5 firmware streams them back-to-back in under a second
+         * once the link is at HIGH priority. 512 slots keeps
+         * [kotlinx.coroutines.flow.MutableSharedFlow.tryEmit] from
+         * returning `false` for the entire session even if the
+         * downstream coroutine is descheduled for the whole transfer.
+         */
+        private const val FA12_EMIT_BUFFER: Int = 512
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -144,12 +174,26 @@ class BluetoothController(
      */
     val fff0Notifications: SharedFlow<ByteArray> = _fff0Notify.asSharedFlow()
 
-    private val _fa12Notify = MutableSharedFlow<ByteArray>(extraBufferCapacity = 256)
+    private val _fa12Notify = MutableSharedFlow<ByteArray>(extraBufferCapacity = FA12_EMIT_BUFFER)
     /**
      * FA12 (photo data) notify payloads — each emission is one JPEG
      * chunk in the wire format documented in
-     * [GlassesPhotoProtocol.parsePhotoChunk]. 256-buffer capacity
-     * tolerates a brief consumer stall during state transitions.
+     * [GlassesPhotoProtocol.parsePhotoChunk].
+     *
+     * **Consumers must hold a single subscription for as long as they
+     * want to keep receiving.** This flow is `replay = 0`: a payload
+     * emitted while nobody is subscribed is **discarded immediately, and
+     * [android.bluetooth.BluetoothGattCallback]-side
+     * [kotlinx.coroutines.flow.MutableSharedFlow.tryEmit] still returns
+     * `true`** — so the loss is invisible in the logs. The buffer above
+     * only protects a *subscribed but momentarily slow* consumer.
+     *
+     * In particular `flow.first()` is not a safe way to read this: it
+     * subscribes, takes one value and unsubscribes, so every chunk that
+     * lands in the gap between two calls is gone. That is what broke
+     * the FA10 transfer before 2026-09-15 (see
+     * [GlassesPhotoCaptureRepository.runCapturePipeline], which taps
+     * this flow once per capture session into an unbounded channel).
      */
     val fa12Notifications: SharedFlow<ByteArray> = _fa12Notify.asSharedFlow()
 
@@ -165,6 +209,26 @@ class BluetoothController(
     private var pendingServices: CompletableDeferred<Boolean>? = null
     private var pendingCharWrite: CompletableDeferred<Boolean>? = null
     private var pendingDescriptorWrite: CompletableDeferred<Boolean>? = null
+
+    /**
+     * FA12 CCCD write retry counter. Some ROMs (Huawei nova 6 /
+     * HarmonyOS in particular) return `0` (GATT_SUCCESS-ish but
+     * with the descriptor not actually subscribed) on the first CCCD
+     * write when it follows immediately after a FFF2 CCCD write —
+     * the GATT server hasn't finished processing the prior descriptor
+     * yet. The OEM reference app retries up to 2 times with a 200 ms
+     * backoff; we mirror that behaviour. Reset to 0 on each fresh
+     * `enableFa12Notify` call and on a successful write.
+     */
+    private var fa12CccdRetryCount: Int = 0
+
+    /**
+     * Main-thread Handler for posting delayed CCCD write retries. The
+     * GATT callback fires on a Binder thread; retry scheduling needs
+     * a looper-backed Handler so the delayed Runnable still runs even
+     * if the original caller's coroutine was cancelled.
+     */
+    private val mainHandler: Handler = Handler(Looper.getMainLooper())
 
     /**
      * Serializes GATT writes. Concurrent writeCharacteristic() calls
@@ -284,8 +348,18 @@ class BluetoothController(
     /**
      * Negotiate the ATT MTU. Suspends until the OS completes the
      * exchange. Throws if not currently connected.
+     *
+     * Pre-MTU delay of 200 ms mirrors the OEM reference app
+     * (zhang BluetoothController.onConnectionStateChange). Some ROMs
+     * (notably the Huawei nova 6 / HarmonyOS stack under Glass-D15
+     * V2.4.5) drop the MTU exchange if it's fired within the first
+     * ~100 ms of STATE_CONNECTED — the link layer is still settling
+     * the encryption / parameter update. Waiting 200 ms is empirically
+     * the smallest window that consistently grants the negotiated MTU
+     * without changing the negotiated value.
      */
     suspend fun requestMtu(target: Int): Int {
+        delay(200L)
         val g = gatt ?: error("not connected")
         pendingMtu = CompletableDeferred()
         g.requestMtu(target)
@@ -311,9 +385,29 @@ class BluetoothController(
         fff2Desc = it
     }
 
-    /** Enable FA12 notify (CCCd write). Suspends until OS confirms. */
-    suspend fun enableFa12Notify(): Boolean = enableNotify(FA10_SERVICE_UUID, FA12_CHAR_UUID) {
-        fa12Desc = it
+    /**
+     * Enable FA12 notify (CCCd write). Suspends until OS confirms.
+     *
+     * Pre-write delay of 80 ms mirrors the OEM reference app (zhang
+     * BluetoothController.onDescriptorWrite). Writing the FA12 CCCD
+     * back-to-back after the FFF2 CCCD races the GATT server's
+     * descriptor-write queue on some ROMs — the second write returns
+     * success-but-not-subscribed. The OEM's fix is to schedule the
+     * FA12 write 80 ms after the FFF2 callback resolves; we approximate
+     * that with a flat `delay(80)` since `enableFa12Notify` is always
+     * called immediately after `enableFff0Notify` in the
+     * `ensureConnected` pipeline.
+     *
+     * Also resets [fa12CccdRetryCount] so a fresh attempt starts at 0.
+     * The retry itself is handled inside
+     * `BluetoothGattCallback.onDescriptorWrite`.
+     */
+    suspend fun enableFa12Notify(): Boolean {
+        fa12CccdRetryCount = 0
+        delay(80L)
+        return enableNotify(FA10_SERVICE_UUID, FA12_CHAR_UUID) {
+            fa12Desc = it
+        }
     }
 
     /**
@@ -348,6 +442,7 @@ class BluetoothController(
         fa11Char = null
         fff2Desc = null
         fa12Desc = null
+        fa12CccdRetryCount = 0
         _connectionState.value = ConnectionState.Idle
         cancelPendingDeferreds()
     }
@@ -377,6 +472,7 @@ class BluetoothController(
         fa11Char = null
         fff2Desc = null
         fa12Desc = null
+        fa12CccdRetryCount = 0
         _lastConnInterval.value = 32
         _mtu.value = 23
     }
@@ -525,11 +621,26 @@ class BluetoothController(
                     )
                 }
                 FA12_CHAR_UUID -> {
+                    // Sample the subscriber count *before* tryEmit: with
+                    // replay=0 a zero-subscriber emission is discarded
+                    // even though tryEmit reports success, and that was
+                    // the invisible half of the pre-2026-09-15 transfer
+                    // failures.
+                    val subscribers = _fa12Notify.subscriptionCount.value
                     val ok = _fa12Notify.tryEmit(data)
-                    if (!ok) {
-                        Log.w(TAG, "FA12 notify DROPPED size=${data.size} — SharedFlow buffer full / no consumer")
-                    } else if (data.size < 8 || data.size % 4 != 0) {
-                        Log.d(TAG, "FA12 notify size=${data.size} tryEmit=$ok (unusual size)")
+                    when {
+                        !ok -> Log.w(
+                            TAG,
+                            "FA12 notify LOST size=${data.size} — emit buffer full " +
+                                "(subscribers=$subscribers)",
+                        )
+                        subscribers == 0 -> Log.w(
+                            TAG,
+                            "FA12 notify LOST size=${data.size} — no subscriber " +
+                                "(replay=0 discards it; tryEmit=true is misleading)",
+                        )
+                        data.size < 8 || data.size % 4 != 0 ->
+                            Log.d(TAG, "FA12 notify size=${data.size} (unusual size)")
                     }
                 }
             }
@@ -548,7 +659,64 @@ class BluetoothController(
             descriptor: BluetoothGattDescriptor,
             status: Int,
         ) {
-            pendingDescriptorWrite?.complete(status == BluetoothGatt.GATT_SUCCESS)
+            when (descriptor.characteristic?.uuid) {
+                FA12_CHAR_UUID -> handleFa12CccdWrite(gatt, descriptor, status)
+                else -> pendingDescriptorWrite?.complete(status == BluetoothGatt.GATT_SUCCESS)
+            }
+        }
+
+        /**
+         * Handle a CCCD write completion on FA12 with up to 2 retries
+         * (200 ms backoff) when the OS reports non-success. Mirrors
+         * the OEM reference app's `fa12CccdRetryCount` logic in zhang
+         * BluetoothController.onDescriptorWrite. Only the FA12 path is
+         * retried — FFF2 CCCD failures are surfaced immediately because
+         * the management channel is far less failure-prone and we
+         * don't want a buggy FA12 to mask a real FFF2 issue.
+         *
+         * The retry is scheduled on the main-thread Handler so it
+         * survives even if the awaiting coroutine is cancelled (the
+         * pending deferred is left pending until the retry resolves or
+         * gives up).
+         */
+        private fun handleFa12CccdWrite(
+            gatt: BluetoothGatt,
+            descriptor: BluetoothGattDescriptor,
+            status: Int,
+        ) {
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                fa12CccdRetryCount = 0
+                pendingDescriptorWrite?.complete(true)
+                return
+            }
+            if (fa12CccdRetryCount < FA12_CCCD_MAX_RETRIES) {
+                fa12CccdRetryCount++
+                Log.w(
+                    TAG,
+                    "FA12 CCCD write status=$status, retry #$fa12CccdRetryCount in ${FA12_CCCD_RETRY_DELAY_MS}ms",
+                )
+                mainHandler.postDelayed({
+                    // Bail if the controller was released or the GATT
+                    // handle was swapped in the meantime — firing a
+                    // write against a stale handle is a guaranteed
+                    // SecurityException / GATT_FAILURE storm.
+                    if (this@BluetoothController.gatt !== gatt) {
+                        Log.d(TAG, "FA12 CCCD retry aborted: gatt handle changed")
+                        pendingDescriptorWrite?.complete(false)
+                        return@postDelayed
+                    }
+                    try {
+                        descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                        gatt.writeDescriptor(descriptor)
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "FA12 CCCD retry threw", e)
+                        pendingDescriptorWrite?.complete(false)
+                    }
+                }, FA12_CCCD_RETRY_DELAY_MS)
+            } else {
+                Log.e(TAG, "FA12 CCCD write failed after $FA12_CCCD_MAX_RETRIES retries")
+                pendingDescriptorWrite?.complete(false)
+            }
         }
 
         fun onConnectionUpdated(

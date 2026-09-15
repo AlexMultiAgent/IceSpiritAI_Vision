@@ -225,4 +225,74 @@ class GlassesPhotoStreamTest {
         assertFalse(a === b)
         assertArrayEquals(a, b)
     }
+
+    // ── grownTo ────────────────────────────────────────────────────────
+    // The firmware occasionally sends past the file_size it declared in
+    // 0x51 START. Growing used to mean `GlassesPhotoStream(newSize)`,
+    // which silently dropped every byte already assembled — fatal now
+    // that blocks are buffered ahead of START (they always include the
+    // head of the JPEG).
+
+    @Test
+    fun grownTo_preservesAlreadyReceivedBytes() {
+        val original = GlassesPhotoStream(240)
+        original.addChunk(GlassesPhotoProtocol.PhotoChunk(0, byteRange(0, 240)))
+        assertTrue(original.isComplete)
+
+        val grown = original.grownTo(480)
+        assertFalse("growing must not leave the stream complete", grown.isComplete)
+        assertEquals(240, grown.contiguousFilledBytes)
+        // Coverage bits were copied too: the only gap left is the new
+        // tail, not anything inside the old window.
+        val gap = grown.firstMissingRange()
+        assertNotNull(gap)
+        assertEquals(240, gap!!.first)
+    }
+
+    @Test
+    fun grownTo_completesAfterReceivingTheTail() {
+        val original = GlassesPhotoStream(240)
+        original.addChunk(GlassesPhotoProtocol.PhotoChunk(0, byteRange(0, 240)))
+        val grown = original.grownTo(480)
+        grown.addChunk(GlassesPhotoProtocol.PhotoChunk(240, byteRange(240, 240)))
+
+        assertTrue(grown.isComplete)
+        assertArrayEquals(byteRange(0, 480), grown.assemble())
+        assertEquals(
+            CRC32().also { it.update(byteRange(0, 480)) }.value,
+            grown.crc32(),
+        )
+    }
+
+    @Test
+    fun grownTo_reportsGapBeyondTheOldCeiling() {
+        // A hole that starts inside the old window and runs past it must
+        // still be reported, or the FA11 op2 resend would ask for the
+        // wrong offset.
+        val grown = GlassesPhotoStream(100)
+            .also { it.addChunk(GlassesPhotoProtocol.PhotoChunk(0, byteRange(0, 50))) }
+            .grownTo(300)
+        grown.addChunk(GlassesPhotoProtocol.PhotoChunk(100, byteRange(100, 200)))
+
+        val range = grown.firstMissingRange()
+        assertNotNull(range)
+        assertEquals(50, range!!.first)
+        assertEquals(100, range.last + 1)
+    }
+
+    @Test
+    fun grownTo_preservesHeadHoleWhenPrefixWasIncomplete() {
+        // Head-of-file missing (the pre-START-loss signature): contiguous
+        // prefix stays 0 across the grow, and the gap still reports from 0.
+        val grown = GlassesPhotoStream(240)
+            .also { it.addChunk(GlassesPhotoProtocol.PhotoChunk(120, byteRange(120, 120))) }
+            .grownTo(480)
+        assertEquals(0, grown.contiguousFilledBytes)
+        assertEquals(0, grown.firstMissingRange()!!.first)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun grownTo_smallerOrEqualSize_throws() {
+        GlassesPhotoStream(240).grownTo(240)
+    }
 }

@@ -14,7 +14,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -38,15 +37,24 @@ import kotlinx.coroutines.withTimeoutOrNull
  *   6. Persist the JPEG to `cacheDir/capture/photo_capture_<n>.jpg`
  *      and return its FileProvider URI.
  *
- * **Design note: sequential, not concurrent.** The pipeline runs in one
- * suspending function rather than three concurrent collectors. This is
- * deliberately simpler than the "ideal" fan-out; the real-device smoke
- * test (Phase 6) will tell us if the throughput matters. If it does,
- * the chunk collector + SUCCESS awaiter + resender fan-out can be
- * reintroduced in a v2 behind the same [capture] / [cancel] API.
+ * **Design note: one receive tap, sequential consumption.** The stages
+ * above run in a single suspending chain — but the two notification
+ * streams are read through a [ReceiveTap] each, opened before stage 1 and
+ * closed when the session ends. The tap is what makes that safe: it holds
+ * one subscription for the whole session and buffers, so no notification
+ * is lost in the gap between two stages. Reading the raw `SharedFlow`s
+ * per stage instead (with `first()`) is what broke the transfer; see
+ * [runCapturePipeline].
  *
- * **Connection priority.** Pushed HIGH at [capture] entry, restored
- * BALANCED on terminal state (per `docs/glass/...` §3).
+ * **Connection priority.** HIGH at [capture] entry, BALANCED again when the
+ * session ends — the same pair the official glasses app uses
+ * (`prewarmAiPhotoBlePriority` / `restoreBlePriorityAfterAiPhoto`) and what
+ * spec §3.2 asks for, including on the failure path.
+ *
+ * **Abandonment.** Every App-side abort of an in-flight transfer writes
+ * FA11 `0x04` — from [collectFa12Chunks] (stall / timeout / no signal) or
+ * from [cancel] (user closed the overlay). Without it the glasses keep
+ * pushing FA12 into a session nobody is collecting any more.
  *
  * **Single-flight.** Re-entrant [capture] calls while one is in flight
  * return `null` immediately. The caller should observe [state] and only
@@ -95,6 +103,14 @@ class GlassesPhotoCaptureRepository(
 
     private companion object {
         const val TAG = "GlassesCapture"
+
+        /**
+         * Upper bound accepted for a `0x51 START` `file_size`, and the size
+         * allocated for it. A glasses JPEG is ~20-30 KB (spec §7), so this
+         * only ever rejects a corrupt trailer — but it has to be rejected
+         * before `GlassesPhotoStream` allocates, not after.
+         */
+        const val MAX_AI_PHOTO_BYTES = 2 * 1024 * 1024
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -103,6 +119,16 @@ class GlassesPhotoCaptureRepository(
 
     private val captureTimeoutMs = 90_000L
     private val chunkStallMs = 3_500L
+
+    /**
+     * Per-round wait once a FA11 op2 resend has been requested — spec
+     * §2.3 Step 6 (单轮等待 ~2.5 s), shorter than the initial
+     * [chunkStallMs] silence detector because at that point we know the
+     * firmware still has the session alive.
+     */
+    private val resendWaitMs = 2_500L
+
+    /** FA11 op2 resend rounds per session (spec §2.3 Step 6 最大轮次 ≤24). */
     private val maxResendRounds = 24
 
     private val captureSeq = AtomicInteger(0)
@@ -192,31 +218,16 @@ class GlassesPhotoCaptureRepository(
             // which is exactly the right sequence. Mark this retryable.
             ?: return fail("未连接眼镜", retryable = true).let { null }
 
-        // Priority: use BALANCED (intv=32, ~40 ms) — the current
-        // observable state per spec §2.2 ("Android 常按 BALANCED 策略
-        // 回 intv=32,导致 turbo 未生效"). Smoke 4-13 (2026-09-14/15,
-        // nova 6 + Glasses-A88 V2.4.5) confirmed:
-        //   - Our HIGH request gets queued but Android often grants
-        //     intv=32 anyway (per spec §2.2 + §3.3.4 fallback)
-        //   - HIGH when granted (8 ms) → 35 % L2CAP loss per spec
-        //     §2.3; our fanout=8 + 24-round resend ceiling can't
-        //     recover the 28-35 % drops within 90 s (firmware V2.4.5
-        //     only re-sends 1-3 chunks per op2 write and won't
-        //     re-send missing blocks it never had in its buffer)
-        //   - The "A2DP contention" theory was wrong — phone audio
-        //     to glasses works fine, A2DP is unrelated
-        // So we use BALANCED (~3.6 s, 0 % loss per spec §2.3) as
-        // the baseline. The 1.4 s HIGH goal (spec §1.2) is parked
-        // until the firmware cuts its block-interval macro to 10 ms
-        // (requires paired App + firmware release; our App code
-        // already calls requestPriority(HIGH) inside the overlay
-        // Priority: HIGH at capture entry — matches zhang reference app's
-        // `prewarmAiPhotoBlePriority` (HIGH + never restore). Smoke 21
-        // 2026-09-15: commit 8ca05b7 "back to BALANCED" was a wrong
-        // call — it slowed the firmware to 40ms block cadence and
-        // raised the loss rate. Going back to HIGH with the fanout-8
-        // resend ceiling (24 rounds × 8 = 192, plenty of headroom for
-        // the spec §2.3 35% loss case).
+        // HIGH for the duration of the session, exactly like the official
+        // app's `prewarmAiPhotoBlePriority` / `boostAiPhotoConnectionPriority`
+        // (both call requestGattConnectionPriority(1, …), i.e.
+        // CONNECTION_PRIORITY_HIGH). The 2026-09-15 field log confirms it
+        // works on Glass-D15 V2.4.5 + nova 6: the glass pushed all 83 blocks
+        // of a 19 907 B JPEG in 0.78 s.
+        //
+        // The earlier "use BALANCED because HIGH costs 35 % of the blocks"
+        // note that stood here was wrong — that loss was the FA12
+        // subscription bug, not the radio (see runCapturePipeline).
         bluetoothController.requestPriority(android.bluetooth.BluetoothGatt.CONNECTION_PRIORITY_HIGH)
 
         val captureDevice = ready.device
@@ -232,13 +243,15 @@ class GlassesPhotoCaptureRepository(
                 cleanupTempFile()
                 fail(e.message ?: "未知错误", retryable = true)
             } finally {
-                // zhang reference: HIGH throughout the capture session
-                // — does NOT restore BALANCED until the BLE link itself
-                // is torn down. Keeping HIGH lets a follow-up capture
-                // session start fast. The GATT close path in
-                // BluetoothController.requestPriority resets it.
+                // Restore BALANCED when the session ends — the official app's
+                // `restoreBlePriorityAfterAiPhoto` does exactly this
+                // (requestGattConnectionPriority(0, …), guarded so it runs
+                // once), and spec §3.2 / §2.4 require it on the failure path
+                // as well. Holding HIGH past the transfer invites some ROMs
+                // to rate-limit the next session's parameter update; the
+                // next capture raises HIGH again at entry, so nothing is lost.
                 bluetoothController.requestPriority(
-                    android.bluetooth.BluetoothGatt.CONNECTION_PRIORITY_HIGH,
+                    android.bluetooth.BluetoothGatt.CONNECTION_PRIORITY_BALANCED,
                 )
             }
         }
@@ -260,6 +273,17 @@ class GlassesPhotoCaptureRepository(
      * firmware will time out on its own.
      */
     fun cancel() {
+        // Launch the cancel packet on the repository scope rather than the
+        // capture job, which is being cancelled right now: without FA11
+        // op4 the glasses keep pushing FA12 into a session nobody is
+        // collecting (official `cancelAiPhotoBleTransfer`, spec §2.4).
+        scope.launch(Dispatchers.IO) {
+            try {
+                bluetoothController.writeFa11(GlassesPhotoProtocol.buildFa11Cancel())
+            } catch (_: Throwable) {
+                // The link is usually what broke.
+            }
+        }
         activeCaptureJob?.cancel()
         cleanupTempFile()
     }
@@ -297,11 +321,71 @@ class GlassesPhotoCaptureRepository(
      * dispatcher (the [capture] entry point dispatches to IO before
      * invoking this).
      *
+     * **This wrapper owns the receive taps; [runStages] does the work.**
+     *
+     * Both notify flows in [BluetoothController] are `SharedFlow`s with
+     * `replay = 0`, which means an emission that finds no subscriber is
+     * thrown away — and, the trap, `tryEmit` still reports that discard
+     * as a success. [runStages] used to read FA12 with
+     * `fa12Notifications.first()` once per loop iteration, so the
+     * pipeline held a subscription only while it was suspended inside
+     * that one call:
+     *
+     *   - everything the glasses pushed from `0x51 START` until the
+     *     collector actually subscribed was lost (V2.4.5 leaves ~1.8 s
+     *     between its warm-up START and the START that carries
+     *     `file_size`) → the head of the JPEG was never filled, hence
+     *     `filled=0/19907` in the 2026-09-15 15:59 log;
+     *   - everything that landed while the loop was busy parsing,
+     *     assembling or publishing [state] was lost too — at "chunk #20"
+     *     the app had 20 blocks while the firmware was already at offset
+     *     11 280 (block #47).
+     *
+     * Un-filled head bytes mean `GlassesPhotoStream.isComplete` can
+     * never become true, so FA11 `0x03` is never written and the
+     * firmware times the session out with `0x51 FAILED` ~8 s later.
+     *
+     * The tap below holds **one** subscription for the whole session and
+     * republishes into an unbounded channel, making delivery as lossless
+     * as the OEM reference, which reassembles synchronously in
+     * `onCharacteristicChanged` and parks pre-START blocks in
+     * `aiPhotoEarlyChunks` (`docs/glasses/zhang/.../BluetoothController.kt`
+     * :1124-1160). The inbox is our `aiPhotoEarlyChunks`.
+     *
      * @return `true` if the capture completed successfully — the
      *   caller reads [state] for the result URI.
      */
     private suspend fun runCapturePipeline(
         device: GlassesCaptureDevice,
+        startedMs: Long,
+    ): Boolean {
+        val fa12Tap = scope.tapSharedFlow(bluetoothController.fa12Notifications)
+        // Status frames parked by an earlier stage (the 0x33 Response
+        // lands while we are still waiting for 0x51 START) so the next
+        // stage still sees them.
+        val status = StatusFrames(scope.tapSharedFlow(bluetoothController.fff0Notifications))
+        // Blocks from an aborted previous session must not be allowed to
+        // land in this one's stream — offsets are meaningless across
+        // captures.
+        fa12Tap.drainBuffered()
+        status.drainBuffered()
+        try {
+            return runStages(fa12Tap, status, startedMs)
+        } finally {
+            fa12Tap.stop()
+            status.stop()
+        }
+    }
+
+    /**
+     * [runCapturePipeline]'s body — stages 1-4. See the wrapper for the
+     * receive-tap contract these stages rely on: both inboxes are already
+     * subscribed before `0x33` goes out, so no notification can be missed
+     * while a stage is being entered.
+     */
+    private suspend fun runStages(
+        fa12Tap: ReceiveTap<ByteArray>,
+        status: StatusFrames,
         startedMs: Long,
     ): Boolean {
         // Allocate a temp file ahead of writing.
@@ -343,6 +427,12 @@ class GlassesPhotoCaptureRepository(
         //
         // Wait until a START with a non-null `fileSize` arrives before
         // opening the receive stream. Failed short-circuits the wait.
+        //
+        // Frames that are neither START nor FAILED (the `0x33` Response,
+        // anything unparseable) are parked rather than discarded: the
+        // stage-3 collector still has to see a `SUCCESS` that lands in
+        // this window, and the whole point of the tap is that nothing
+        // gets dropped between stages.
         _state.value = GlassesCaptureState.Capturing(
             CaptureProgress(
                 stage = CaptureProgress.Stage.WaitingForStart,
@@ -352,60 +442,70 @@ class GlassesPhotoCaptureRepository(
         )
         var totalSize: Int? = null
         val startDeadline = System.currentTimeMillis() + captureTimeoutMs
-        while (totalSize == null && System.currentTimeMillis() < startDeadline) {
-            val startPayload = withTimeoutOrNull(
-                (startDeadline - System.currentTimeMillis()).coerceAtLeast(1L),
-            ) {
-                bluetoothController.fff0Notifications.first { payload ->
-                    val status = GlassesPhotoProtocol.parseStatusNotify(payload)
-                    status is GlassesPhotoProtocol.StatusNotify.Start ||
-                        status is GlassesPhotoProtocol.StatusNotify.Failed
-                }
-            }
-            if (startPayload == null) {
+        while (totalSize == null) {
+            val remaining = startDeadline - System.currentTimeMillis()
+            val frame = status.receiveWithin(remaining.coerceAtLeast(1L))
+            if (frame == null) {
                 Log.w(TAG, "0x51 START not received within ${captureTimeoutMs}ms")
                 cleanupTempFile()
                 fail("等待 START 超时", retryable = true)
                 return false
             }
-            Log.d(TAG, "0x51 START received: ${startPayload.size} bytes; raw=" +
-                startPayload.joinToString("") { "%02x".format(it.toInt() and 0xFF) })
-            val startStatus = GlassesPhotoProtocol.parseStatusNotify(startPayload)
-            if (startStatus is GlassesPhotoProtocol.StatusNotify.Failed) {
-                cleanupTempFile()
-                fail("眼镜拒绝拍照 (code=${startStatus.code})", retryable = true)
-                return false
+            val hex = frame.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
+            when (val notify = GlassesPhotoProtocol.parseStatusNotify(frame)) {
+                is GlassesPhotoProtocol.StatusNotify.Start -> {
+                    Log.d(TAG, "0x51 START received: ${frame.size} bytes; raw=$hex")
+                    val announced = notify.fileSize
+                    totalSize = announced
+                    if (announced != null && announced !in 1..MAX_AI_PHOTO_BYTES) {
+                        // Boundary validation, and it is the firmware's own
+                        // number: GlassesPhotoStream allocates exactly
+                        // file_size bytes, so a corrupt u32 here would try to
+                        // reserve up to 4 GB. The official app applies the
+                        // same 2 MiB ceiling in beginAiPhotoReceive.
+                        Log.w(TAG, "0x51 START declared fileSize=$announced — out of range")
+                        cleanupTempFile()
+                        fail("眼镜上报的文件大小异常 ($announced)", retryable = true)
+                        return false
+                    }
+                    // If the firmware omitted fileSize in this START, loop
+                    // and wait for the next one (V2.4.5 sends a second
+                    // START ~1.8 s later that does carry it). Don't waste
+                    // the warm-up START — it's still firmware confirmation
+                    // that the capture request was accepted. Meanwhile FA12
+                    // keeps accumulating in fa12Tap.
+                    if (totalSize == null) {
+                        Log.d(TAG, "0x51 START without fileSize — waiting for the next one")
+                    }
+                }
+                is GlassesPhotoProtocol.StatusNotify.Failed -> {
+                    Log.w(TAG, "0x51 FAILED while waiting for START: raw=$hex")
+                    cleanupTempFile()
+                    fail("眼镜拒绝拍照 (code=${notify.code})", retryable = true)
+                    return false
+                }
+                else -> {
+                    Log.d(TAG, "frame while waiting for START, parked: raw=$hex")
+                    status.park(frame)
+                }
             }
-            val startAnnounced = startStatus as GlassesPhotoProtocol.StatusNotify.Start
-            totalSize = startAnnounced.fileSize
-            // If the firmware omitted fileSize in this START, loop and
-            // wait for the next one (V2.4.5 sends a second START
-            // ~1.8 s later that does carry it). Don't waste the warm-up
-            // START — it's still firmware confirmation that the
-            // capture request was accepted.
-            if (totalSize == null) {
-                Log.d(TAG, "0x51 START without fileSize — waiting for the next one")
+            if (totalSize == null && System.currentTimeMillis() >= startDeadline) {
+                Log.w(TAG, "0x51 START-with-fileSize not received within ${captureTimeoutMs}ms " +
+                    "(last frames seen were parked/without size)")
+                cleanupTempFile()
+                fail("等待 START 超时", retryable = true)
+                return false
             }
         }
 
         // ── Stage 3: collect FA12 chunks ─────────────────────────────
-        var stream = if (totalSize != null && totalSize > 0) {
-            GlassesPhotoStream(totalSize)
-        } else {
-            // file_size was still null when the wait loop exited —
-            // shouldn't happen on V2.4.5 (firmware always emits the
-            // second START with file_size before captureTimeoutMs),
-            // but kept as a defensive fallback. Start with a
-            // placeholder size; we'll re-init the stream on the first
-            // chunk that reveals the true extent. (Bug fix 2026-09-15
-            // smoke 6: the outer `stream` reference used to be `val`,
-            // so when collectChunks internally swapped in a larger
-            // stream after the first chunk, the outer one stayed at
-            // 1 byte and `assemble()` threw "stream not complete: 0 /
-            // 1 bytes filled". Made this a `var` and update it from
-            // the resize callback below.)
-            GlassesPhotoStream(1)
-        }
+        // `totalSize` is non-null here: the wait loop above only exits
+        // with a START that carried `file_size`, or returns false. The
+        // old `GlassesPhotoStream(1)` placeholder is gone — with chunks
+        // now buffered *before* START (see runCapturePipeline), a
+        // placeholder stream would have tripped the resize path and
+        // thrown away the whole back-buffered prefix.
+        var stream = GlassesPhotoStream(totalSize)
         _state.value = GlassesCaptureState.Capturing(
             CaptureProgress(
                 stage = CaptureProgress.Stage.ReceivingChunks,
@@ -414,16 +514,36 @@ class GlassesPhotoCaptureRepository(
             ),
         )
 
-        val collected = collectChunks(stream, startedMs, totalSize) { resized, newStream ->
-            totalSize = resized
-            // Re-bind the outer reference to the resized working
-            // stream (carries all the addChunk'd bytes with it).
-            stream = newStream
-        }
-        if (!collected) {
-            cleanupTempFile()
-            // Failure reason already emitted by collectChunks via fail().
-            return false
+        // Reassembly + stall repair lives in collectFa12Chunks so it can
+        // be driven against a simulated firmware without a Context
+        // (GlassesFa12CollectorTest).
+        when (val outcome = collectFa12Chunks(
+            stream = stream,
+            fa12 = fa12Tap,
+            status = status,
+            writeFa11 = bluetoothController::writeFa11,
+            onProgress = { filled, total ->
+                _state.value = GlassesCaptureState.Capturing(
+                    CaptureProgress(
+                        stage = CaptureProgress.Stage.ReceivingChunks,
+                        bytesReceived = filled,
+                        totalBytes = total,
+                        elapsedMs = System.currentTimeMillis() - startedMs,
+                    ),
+                )
+            },
+            chunkStallMs = chunkStallMs,
+            resendWaitMs = resendWaitMs,
+            maxResendRounds = maxResendRounds,
+            timeoutMs = captureTimeoutMs,
+        )) {
+            is Fa12Collection.Complete -> stream = outcome.stream
+            is Fa12Collection.CompletedWithGaps -> stream = outcome.stream
+            is Fa12Collection.Failed -> {
+                // fail() drops the temp file and publishes the reason.
+                fail(outcome.reason, retryable = true)
+                return false
+            }
         }
 
         // ── Stage 4: persist + CRC ────────────────────────────────────
@@ -456,160 +576,6 @@ class GlassesPhotoCaptureRepository(
         _state.value = GlassesCaptureState.Success(uri, latencyMs)
         return true
     }
-
-    /**
-     * Consume FA12 notifications until the stream is complete or a
-     * failure surfaces. Mirrors zhang reference app (passive receive —
-     * no FA11 op2 resend fan-out; the Glass-D15 / Glasses-A88 V2.4.5
-     * firmware's resend channel on this hardware is broken and
-     * flooding it with op2s only burns the FA11 GATT write slot
-     * without provoking retransmits — smoke 21 2026-09-15).
-     *
-     * Completion triggers:
-     *   1. 0x51 SUCCESS from the firmware → force-complete with whatever
-     *      bytes we have, fill any unfilled prefix bytes with 0xFF so
-     *      OCR doesn't trip on a degenerate JPEG.
-     *   2. contiguous prefix reaches `totalSize` (zhang's
-     *      `nextClearBit(0) >= size` semantics).
-     *   3. Capture timeout (90 s) → fail.
-     *
-     * @return `true` if the stream completed; `false` on timeout /
-     *   failure (caller must inspect [state] for the reason).
-     */
-    private suspend fun collectChunks(
-        stream: GlassesPhotoStream,
-        startedMs: Long,
-        initialTotal: Int?,
-        onTotalSizeResized: (Int, GlassesPhotoStream) -> Unit,
-    ): Boolean {
-        Log.d(TAG, "collectChunks entered: stream.totalSize=${stream.totalSize} initialTotal=$initialTotal")
-        var working = stream
-        var chunksProcessed = 0
-        var forceCompleted = false
-        var statusFlag: StatusFlag = StatusFlag.NONE
-
-        // Side-channel observer: a child coroutine that watches the
-        // 0x51 flow and flips `statusFlag` when SUCCESS/FAILED arrives.
-        // Uses an independent SupervisorJob so a `cancel()` from inside
-        // the observer doesn't propagate to `collectChunks` itself.
-        //
-        // Two completion signals are honored:
-        //   * 0x33 SUCCESS (55 aa ?? 33 02 01 00 00): firmware ack'd the
-        //     capture command. Once it's been sent, the firmware stops
-        //     streaming new blocks; from there we just race the watchdog.
-        //   * 0x51 SUCCESS / FAILED: classic photo-result channel —
-        //     success means the firmware considers the transfer done
-        //     (either full or just gave up), failure means give up.
-        val statusObserverJob: Job = kotlinx.coroutines.CoroutineScope(
-            kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
-        ).launch {
-            try {
-                bluetoothController.fff0Notifications.collect { payload ->
-                    when {
-                        // 0x33 SUCCESS — capture command ack'd.
-                        GlassesPhotoProtocol.isCaptureAckSuccess(payload) -> {
-                            Log.d(TAG, "0x33 capture ack (err=0) — firmware accepted the photo command")
-                            statusFlag = StatusFlag.SUCCESS
-                        }
-                        // 0x51 SUCCESS / FAILED — pass through parser.
-                        GlassesPhotoProtocol.parseStatusNotify(payload) is
-                            GlassesPhotoProtocol.StatusNotify.Success -> {
-                            Log.d(TAG, "0x51 SUCCESS — firmware reports transfer complete")
-                            statusFlag = StatusFlag.SUCCESS
-                        }
-                        GlassesPhotoProtocol.parseStatusNotify(payload) is
-                            GlassesPhotoProtocol.StatusNotify.Failed -> {
-                            Log.d(TAG, "0x51 FAILED — firmware reports transfer failure")
-                            statusFlag = StatusFlag.FAILED
-                        }
-                        // 0x51 START / LegacyFtpReady — out of scope for
-                        // the chunk-collection loop; runCapturePipeline
-                        // already handled them up-stream.
-                    }
-                }
-            } catch (_: CancellationException) {
-                // normal exit when collectChunks returns and cancels us
-            }
-        }
-
-        // Race FA12 chunks against 0x51 SUCCESS: whichever fires first
-        // terminates the loop. Polling loop with cooperative yields is
-        // simpler than two-channel `select { ... }` and lets us log
-        // per-event.
-        val collectStart = System.currentTimeMillis()
-        val ctx = currentCoroutineContext()
-        while (ctx.isActive && !forceCompleted) {
-            if (working.isComplete) {
-                Log.d(TAG, "collectChunks complete (contiguous full): ${working.contiguousFilledBytes}/${working.totalSize} after $chunksProcessed chunks")
-                return true
-            }
-            val now = System.currentTimeMillis()
-            if (now - collectStart > captureTimeoutMs) {
-                Log.w(TAG, "collectChunks hard timeout after $chunksProcessed chunks, " +
-                    "filled=${working.contiguousFilledBytes}/${working.totalSize}")
-                fail("传输超时", retryable = true)
-                return false
-            }
-            // Race: wait for the next event — either an FA12 chunk or
-            // a 0x51 status notification — whichever arrives first
-            // inside `chunkStallMs`. We use `withTimeoutOrNull` over
-            // two `first()` calls in sequence (FA12 has priority since
-            // the bulk of events are chunks). When the FA12 wait
-            // times out, peek the 0x51 flow non-blockingly via a
-            // dedicated observer launched once at the top of this
-            // loop — see `statusObserver` below.
-            val chunkPayload: ByteArray? = withTimeoutOrNull(chunkStallMs) {
-                bluetoothController.fa12Notifications.first()
-            }
-            if (chunkPayload != null) {
-                val chunk = GlassesPhotoProtocol.parsePhotoChunk(chunkPayload)
-                if (chunk == null) {
-                    Log.w(TAG, "parsePhotoChunk returned null for size=${chunkPayload.size}")
-                    continue
-                }
-                if (chunk.offset + chunk.data.size > working.totalSize) {
-                    Log.d(TAG, "resizing stream: old=${working.totalSize} new=${chunk.offset + chunk.data.size}")
-                    working = GlassesPhotoStream(chunk.offset + chunk.data.size)
-                    onTotalSizeResized(working.totalSize, working)
-                }
-                working.addChunk(chunk)
-                chunksProcessed++
-                if (chunksProcessed <= 3 || chunksProcessed % 20 == 0) {
-                    Log.d(TAG, "chunk #$chunksProcessed offset=${chunk.offset} size=${chunk.data.size} " +
-                        "filled=${working.contiguousFilledBytes}/${working.totalSize} highest=${working.highestWrittenOffset}")
-                }
-                _state.value = GlassesCaptureState.Capturing(
-                    CaptureProgress(
-                        stage = CaptureProgress.Stage.ReceivingChunks,
-                        bytesReceived = working.contiguousFilledBytes,
-                        totalBytes = working.totalSize,
-                        elapsedMs = now - startedMs,
-                    ),
-                )
-            } else if (statusFlag == StatusFlag.SUCCESS) {
-                Log.d(TAG, "0x51 SUCCESS — force-complete with " +
-                    "${working.contiguousFilledBytes}/${working.totalSize} bytes filled (${chunksProcessed} chunks)")
-                // Pad unfilled prefix with 0xFF so OCR sees a
-                // well-formed JPEG header. Without padding the
-                // assembled buffer is a mosaic of received
-                // chunks with literal zero bytes where the
-                // firmware dropped a 240-byte block; some OCR
-                // frontends reject that as a malformed JPEG.
-                working.fillGapsWith(0xFF.toByte())
-                forceCompleted = true
-            } else if (statusFlag == StatusFlag.FAILED) {
-                Log.w(TAG, "0x51 FAILED during transfer")
-                fail("眼镜报告传图失败", retryable = true)
-                return false
-            }
-            // Otherwise: stall, neither chunk nor status — next
-            // iteration will retry until captureTimeoutMs.
-        }
-        statusObserverJob.cancel()
-        return forceCompleted
-    }
-
-    private enum class StatusFlag { NONE, SUCCESS, FAILED }
 
     // ────────────────────────────────────────────────────────────────────
     // Helpers
