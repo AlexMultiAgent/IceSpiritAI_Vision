@@ -59,14 +59,32 @@ class GlassesDeviceTest {
 
     @Test
     fun namePrefix_isStable() {
-        // Tests against silent refactor of the prefix.
+        // Pin the spec-contract prefix so a silent refactor is caught.
         assertEquals("Glass-D15", GlassesDevice.NAME_PREFIX)
     }
 
     @Test
-    fun nameFilter_acceptsPrefixMatch() {
-        val name = "Glass-D15 V2.4.5"
-        assertTrue(name.startsWith(GlassesDevice.NAME_PREFIX))
+    fun namePrefixes_containsBothShippedVariants() {
+        // Pin the dual-prefix contract — adding a new OEM / firmware
+        // revision should be a deliberate, test-visible change rather
+        // than a silent expansion.
+        assertTrue(
+            "Glass-D15 must remain an accepted prefix (spec contract)",
+            "Glass-D15" in GlassesDevice.NAME_PREFIXES,
+        )
+        assertTrue(
+            "Glasses-A must remain an accepted prefix (field hardware)",
+            "Glasses-A" in GlassesDevice.NAME_PREFIXES,
+        )
+    }
+
+    @Test
+    fun nameFilter_acceptsBothShippedVariants() {
+        // Spec hardware (`Glass-D15 V2.4.5`) AND field hardware
+        // (`Glasses-A88`) must both pass the scan / bonded-device
+        // filter. First observed 2026-09-14 (commit `552a8a7`).
+        assertTrue(GlassesDevice.nameMatches("Glass-D15 V2.4.5"))
+        assertTrue(GlassesDevice.nameMatches("Glasses-A88"))
     }
 
     @Test
@@ -76,14 +94,22 @@ class GlassesDeviceTest {
             "Galaxy Watch5",
             "AirPods Pro",
             "Glass-D14",          // older model — different prefix
-            "GLASS-D15",          // case-sensitive: firmware advertises uppercase first letter
+            "GLASS-D15",          // case-sensitive: firmware advertises with mixed case
+            "Glasses-B200",       // near-miss for `Glasses-A` but a different OEM
         )
         candidates.forEach {
             assertFalse(
                 "$it should not match",
-                it.startsWith(GlassesDevice.NAME_PREFIX),
+                GlassesDevice.nameMatches(it),
             )
         }
+    }
+
+    @Test
+    fun nameFilter_rejectsNullAndBlank() {
+        assertFalse(GlassesDevice.nameMatches(null))
+        assertFalse(GlassesDevice.nameMatches(""))
+        assertFalse(GlassesDevice.nameMatches("   "))
     }
 
     @Test

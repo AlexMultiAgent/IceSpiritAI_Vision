@@ -15,7 +15,8 @@ import kotlinx.coroutines.flow.callbackFlow
 
 /**
  * BLE scan wrapper that surfaces **only** devices whose advertised name
- * starts with [GlassesDevice.NAME_PREFIX].
+ * matches one of the accepted smart-glasses broadcast prefixes
+ * (see [GlassesDevice.NAME_PREFIXES] / [GlassesDevice.nameMatches]).
  *
  * The Android BLE stack's `BluetoothLeScanner.startScan()` callback is
  * fire-and-forget — results arrive on the main thread one `ScanResult`
@@ -69,7 +70,7 @@ class GlassesScan(private val context: Context) {
                 val name = result.scanRecord?.deviceName
                     ?: device.name
                     ?: return
-                if (!name.startsWith(GlassesDevice.NAME_PREFIX)) return
+                if (!GlassesDevice.nameMatches(name)) return
                 seen[device.address] = GlassesDevice(
                     address = device.address,
                     name = name,

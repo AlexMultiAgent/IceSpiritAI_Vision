@@ -38,12 +38,12 @@
 | `GlassesPhotoStream.kt` | JPEG 块拼装 + CRC32 + 缺失范围检测 + 单测 21 项 |
 | `GlassesReceiveTap.kt` | 通知流的**单次长订阅**投递原语(`Channel(UNLIMITED)`),FA12/0x51 零丢失 + 单测 7 项 |
 | `GlassesDevice.kt` + `GlassesDeviceStore.kt` | 已配对眼镜数据 + SharedPreferences 持久化 |
-| `GlassesScan.kt` | `BluetoothLeScanner` 封装,按 `Glass-D15` 名称前缀过滤 |
+| `GlassesScan.kt` | `BluetoothLeScanner` 封装,按 `GlassesDevice.NAME_PREFIXES` 双前缀(`Glass-D15` / `Glasses-A`)过滤 |
 | `BluetoothController.kt` | 单 GATT 连接编排(MTU 协商 / 服务发现 / CCCD 写入 / 通知转发)|
 | `GlassesPhotoCaptureRepository.kt` | 拍照状态机:Connecting → MTU → Services → Notifies → Ready → Capturing → Success |
 | `ui/GlassesCaptureOverlay.kt` | Compose overlay(连接进度 / 拍照进度 / 失败重试) |
 
-**配对模型**:配对在**系统蓝牙设置**里完成(用户一次性操作),App 不调用 `createBond()`,只通过 OS 已存的 pairing keys 自动 secure connect。`GlassesScan` 按 name 前缀 `Glass-D15` 过滤 + 自动从 `GlassesDeviceStore` 拿上次地址重连。
+**配对模型**:配对在**系统蓝牙设置**里完成(用户一次性操作),App 不调用 `createBond()`,只通过 OS 已存的 pairing keys 自动 secure connect。`GlassesScan` 按 `GlassesDevice.NAME_PREFIXES`(`["Glass-D15", "Glasses-A"]`)双前缀过滤 —— spec 文档硬件名是 `Glass-D15`,实际出货固件广播名是 `Glasses-A88`,两者都接收。新 OEM/固件加一行即可;自动从 `GlassesDeviceStore` 拿上次地址重连。
 
 **单连接限制(v1)**:同一时刻只持一个 `BluetoothGatt` 引用(plan §D1)。`BluetoothController.connect()` 在覆盖前会 `gatt?.close()` 释放无线电 slot,避免 reference leak。如要支持"一手机多眼镜"是 v2 范畴(每个眼镜一个 Controller + Repository 实例)。
 

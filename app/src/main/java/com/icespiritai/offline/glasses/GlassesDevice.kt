@@ -28,21 +28,38 @@ data class GlassesDevice(
 ) {
     companion object {
         /**
-         * Substring the device's advertised name must contain to be
-         * considered the glasses (vs unrelated peripherals).
+         * Broadcast-name prefixes that identify a peripheral as our
+         * smart-glasses (vs unrelated devices like smart watches /
+         * fitness bands). Spec hardware advertises as `Glass-D15`
+         * (per `docs/glass/AI识图传图提速_App连接参数配合.md`); the
+         * firmware actually shipped on the device under test advertises
+         * as `Glasses-A88` (first observed 2026-09-14, commit `552a8a7`).
          *
-         * Originally hardcoded to `"Glass-D15"` (the firmware spec reference
-         * in `docs/glass/AI识图传图提速_App连接参数配合.md`). Real-device
-         * smoke test on 2026-09-14 (commit `552a8a7`) discovered the
-         * user's actual glasses advertise as `"Glasses-A88"` — a different
-         * OEM / firmware revision than the spec assumed. Loosened to
-         * `"Glasses-A"` (matches both `Glass-D15` AND `Glasses-A88`) so
-         * the smoke test pipeline can be exercised against the available
-         * hardware without renaming the device in system Bluetooth
-         * settings. Production deployments should pin this back to the
-         * exact OEM prefix once the model line is confirmed.
+         * Both prefixes are accepted by [nameMatches] so the app does
+         * not silently filter out hardware the user paired in system
+         * Settings. New OEM / firmware revisions can be added here as a
+         * one-line change.
          */
-        const val NAME_PREFIX: String = "Glasses-A"
+        val NAME_PREFIXES: List<String> = listOf("Glass-D15", "Glasses-A")
+
+        /**
+         * Spec-contract prefix. Kept as the first entry of
+         * [NAME_PREFIXES] and as the canonical reference for callers
+         * that want to display the spec name; new scan / filter code
+         * should use [nameMatches] instead of this single prefix.
+         */
+        const val NAME_PREFIX: String = "Glass-D15"
+
+        /**
+         * Return `true` if [name] starts with any accepted
+         * smart-glasses broadcast prefix. [name] is the Bluetooth
+         * device name string from a scan record or bonded-device list.
+         * `null` / blank → `false`.
+         */
+        fun nameMatches(name: String?): Boolean {
+            if (name.isNullOrBlank()) return false
+            return NAME_PREFIXES.any { name.startsWith(it) }
+        }
 
         /**
          * Above this age (ms), a previously-seen device is treated as
@@ -53,8 +70,8 @@ data class GlassesDevice(
 
         /**
          * Look up a bonded smart-glasses device via the OS Bluetooth
-         * stack, returning `null` if no BondedDevice name starts with
-         * [NAME_PREFIX].
+         * stack, returning `null` if no BondedDevice name matches any
+         * accepted smart-glasses prefix (see [NAME_PREFIXES]).
          *
          * **Why this exists** (smoke test 2026-09-14, commit `552a8a7`):
          * `GlassesDeviceStore.loadLastPaired()` is the per-app
@@ -70,22 +87,21 @@ data class GlassesDevice(
          * This helper breaks the deadlock by reading the OS-level
          * `BluetoothAdapter.bondedDevices` list (which the system keeps
          * across `pm clear` and across app uninstalls) and returning
-         * the first device whose name matches our prefix. The caller
-         * should persist the result via [GlassesDeviceStore.saveLastPaired]
-         * so subsequent launches bypass this fallback.
+         * the first device whose name matches our prefix list. The
+         * caller should persist the result via
+         * [GlassesDeviceStore.saveLastPaired] so subsequent launches
+         * bypass this fallback.
          *
          * `null` is returned in three cases:
          *   - BluetoothAdapter unavailable (emulator / device without BT)
          *   - Bluetooth radio off
-         *   - No BondedDevice name starts with [NAME_PREFIX]
+         *   - No BondedDevice name matches any accepted prefix
          */
         fun findBondedDevice(context: Context): GlassesDevice? {
             val adapter = BluetoothAdapter.getDefaultAdapter() ?: return null
             if (!adapter.isEnabled) return null
             return adapter.bondedDevices
-                ?.firstOrNull { btDevice ->
-                    (btDevice.name ?: "").startsWith(NAME_PREFIX)
-                }
+                ?.firstOrNull { btDevice -> nameMatches(btDevice.name) }
                 ?.let { btDevice ->
                     GlassesDevice(
                         address = btDevice.address,
