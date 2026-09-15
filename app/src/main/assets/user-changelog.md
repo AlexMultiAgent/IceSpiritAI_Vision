@@ -1,5 +1,31 @@
 # 用户更新日志
 
+## v0.4.1 — 2026-09-16
+
+**维护版:清掉 baseline `f7a8d47` 的 3 项 unit test 漂移 + docs/glasses/ 子系统 KDoc 引用全部对齐到正确路径**(无新功能,无新规则,仅卫生项)。
+
+### 修复 (Test 漂移)
+
+- **`AdSignageTextFixtureRegressionTest`**:v0.1.64 新增 `ad_signage_art43_consent_required`(《广告法》§43 未经同意发送广告)后,`text_finance_dzp_01.md` + `text_finance_szb_01.md` 两个 fixture 的 `originalAdText` 含「短信群发」「扫码进群」这些 keyword,会同时命中金融规则和这条新广告法规则(合法的双规则命中 — 这两个词确实是两个法条同时管的),但 fixture 的「预期命中规则」frontmatter 漏更新,set 严格不等于导致测试 fail。两条 fixture 各加一条 `ad_signage_art43_consent_required: Warning`。
+- **`ChangelogScreenTest` shipping version pin**:测试断言 bundled `user-changelog.md` 第一段必须等于当前 shipping version,但从 v0.3.0 起没人更新 pin(bump 跟 pin 走散)。从 `v0.3.0` 改到 `v0.4.0`。每次 release 都要 bump。
+- **`UpdateRepositoryStallTest.markCancelled` full-suite 失败单独跑通过**:`_state.value = ...` 走 `Dispatchers.Main` 派发 subscriber notifications;没有 `@Before setMain(...)` + `@After resetMain()`,前一个测试 setMain 后没 resetMain 把状态留给下一个测试,full-suite 排序踩中。补标准守卫(CLAUDE.md §"Unit test 踩坑" 已记同款 gotcha)。
+
+### 修复 (Docs 引用)
+
+- **`docs/glass/` → `docs/glasses/` 路径 8 处**:4f3ced1 入库的 `AI识图传图提速_App连接参数配合.md` 实际目录是复数 `docs/glasses/`,但源码 KDoc + `AndroidManifest.xml` + `strings.xml` + 测试 KDoc 共 8 处用了单数 `docs/glass/`(不存在路径)。一并修正,git grep 验证空。
+- **`docs/glasses/AI识图传图-App端接收处理说明.md` 入库**:草稿已在 working tree 但未 commit;`GlassesPhotoProtocol.kt:196` + `GlassesReceiveTap.kt:26` + `GlassesPhotoCaptureRepository.kt:372` 隐式引用 yuan 实现路径,别人 clone 后这些 KDoc 引用是悬空的。commit 上游。doc 自述历史参考(yuan/glass_test 双模实现),类名跟当前 IceSpiritAI_Vision 布局不同,但 §2.3 Step 4 契约层引用仍 valid。
+
+### 验证
+
+- 4 个 commit(均已 push):`e616c4a test` / `9e6ba71 docs` / `0cdfcdc fix(docs)` / `a9ad054 chore(gitignore)`,作者 `AlexMultiAgent`,无 Co-Authored-By trailer。
+- `./gradlew :app:testDebugUnitTest`(shell profile)**1040 tests / 0 fail / 2 skip** —baseline `f7a8d47` 之后首次干净。`AdSignageText` / `ChangelogScreen` / `UpdateRepositoryStall.markCancelled` 全部回到通过状态。
+- `git grep -l 'docs/glass/AI' app/src/` 空,`git grep -l 'docs/glasses/AI' app/src/` 10 处全部 valid。
+- `app/build.gradle.kts versionCode 75→76` + `versionName 0.4.0→0.4.1`,与本条目同步。
+
+### 注意
+
+- v0.4.0 期间真机验证用 MAC `60:09 Glasses-A88`,re-pair 后挂的是 `60:0B`(用户 unpair + re-pair 后另一台),所以 v0.4.0 的 `docs/smoke/2026-09-15-ble-fix-verify/logcat_v2.txt` 是新 MAC 数据。`docs/smoke/*/logcat*.txt` 现已 gitignore,本地留存。
+
 ## v0.4.0 — 2026-09-15
 
 **重写智能眼镜 BLE 拍照传图管线 —— 之前一拍照就卡死直到 90 s 超时,现在 1.7-2.1 s 出图**。根因有两个:(1) `0x33 Response` 被仓库误读成"传图完成信号",触发 `fillGapsWith(0xFF)` + `forceCompleted=true` 产出一张全 `0xFF` 的伪 JPEG,OCR 必然失败;(2) `SharedFlow.first()` 的"订阅→取一个→退订"语义对 `replay=0` 流是漏块陷阱 —— `tryEmit` 仍返回 `true` 但值已丢,所以头部块永远收不到(`filled=0` 从头到尾不变),`assemble()` 抛异常被吞,FA11 `0x03` 永远写不出去。逐项修法见下方。
