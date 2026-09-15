@@ -61,31 +61,34 @@ fun GlassesCaptureOverlay(
 
     val context = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) {
-        // Auto-reconnect to the last-paired device. If none exists,
-        // the overlay will surface that as a Failed state.
-        val lastPaired = deviceStore.loadLastPaired() ?: run {
+        // Resolve which device to talk to. Order of preference (smoke 21
+        // 2026-09-15: the persisted `lastPaired` address is unreliable —
+        // the user can swap glasses, the OS pairing record can be
+        // deleted out from under us, and `GlassesDeviceStore` only
+        // updates on a successful `onConnectionStateChange`, never on
+        // pair churn. Falling back to `findBondedDevice(context)` is the
+        // single source of truth: the OS BondedDevices list reflects
+        // the *current* paired device, which is what BLE secure-connect
+        // will actually authenticate against).
+        val bonded = com.icespiritai.offline.glasses.GlassesDevice
+            .findBondedDevice(context)
+        val resolvedDevice = bonded
+            ?: deviceStore.loadLastPaired()?.let { lastPaired ->
+                com.icespiritai.offline.glasses.GlassesDevice(
+                    address = lastPaired,
+                    name = com.icespiritai.offline.glasses.GlassesDevice.NAME_PREFIX,
+                    lastSeenMs = System.currentTimeMillis(),
+                )
+            }
+        if (resolvedDevice == null) {
             repository.reset()
             return@LaunchedEffect
         }
-        // Resolve the actual advertised name from OS BondedDevices
-        // instead of hardcoding "Glass-D15" — the firmware spec doc
-        // (`docs/glasses/AI识图传图提速_App连接参数配合.md`) uses that
-        // ID as an EXAMPLE, not a fixed product name. Real devices may
-        // advertise as "Glasses-A88" / "Glass-XYZ" / anything matching
-        // the NAME_PREFIX. Fall back to the prefix as a generic label
-        // when the OS can't resolve the name (shouldn't normally happen).
-        val resolvedName = com.icespiritai.offline.glasses.GlassesDevice
-            .findBondedDevice(context)
-            ?.takeIf { it.address == lastPaired }
-            ?.name
-            ?: com.icespiritai.offline.glasses.GlassesDevice.NAME_PREFIX
-        val device = com.icespiritai.offline.glasses.GlassesDevice(
-            address = lastPaired,
-            name = resolvedName,
-            lastSeenMs = System.currentTimeMillis(),
-        )
+        // Refresh the persisted address so the *next* launch (when the
+        // OS list is in flux again) has a current value.
+        deviceStore.saveLastPaired(resolvedDevice.address)
         try {
-            repository.ensureConnected(device)
+            repository.ensureConnected(resolvedDevice)
             // Auto-start the capture once Ready.
             val captured = repository.capture()
             if (captured != null) onCaptured(captured)

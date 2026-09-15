@@ -327,8 +327,12 @@ class BluetoothController(
      * Write an FA11 control opcode (resend / CRC / cancel) to FA11.
      * Suspends until the OS confirms.
      */
-    suspend fun writeFa11(payload: ByteArray): Boolean =
-        writeCharacteristic(FA11_CHAR_UUID, payload)
+    suspend fun writeFa11(payload: ByteArray): Boolean {
+        Log.d(TAG, "FA11 write size=${payload.size} raw=" + payload.joinToString("") { "%02x".format(it.toInt() and 0xFF) })
+        val ok = writeCharacteristic(FA11_CHAR_UUID, payload)
+        Log.d(TAG, "FA11 write ok=$ok")
+        return ok
+    }
 
     /**
      * Close the GATT handle and reset to Idle. Idempotent. After this,
@@ -514,7 +518,11 @@ class BluetoothController(
             when (characteristic.uuid) {
                 FFF2_CHAR_UUID -> {
                     val ok = _fff0Notify.tryEmit(data)
-                    Log.d(TAG, "FFF2 notify size=${data.size} tryEmit=$ok")
+                    Log.d(
+                        TAG,
+                        "FFF2 notify size=${data.size} tryEmit=$ok raw=" +
+                            data.joinToString("") { "%02x".format(it.toInt() and 0xFF) },
+                    )
                 }
                 FA12_CHAR_UUID -> {
                     val ok = _fa12Notify.tryEmit(data)

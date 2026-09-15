@@ -2,6 +2,7 @@ package com.icespiritai.offline.glasses
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -18,17 +19,18 @@ import org.junit.Test
 class GlassesPhotoProtocolTest {
 
     // ────────────────────────────────────────────────────────────────────
-    // FFF0 / 0x33 capture request frame builder
+    // FFF0 / 0x33 capture request frame builder (Glasses-A88 V2.4.5 verified)
     // ────────────────────────────────────────────────────────────────────
 
     @Test
     fun buildCaptureRequestFrame_defaultQuality_matchesSpec() {
         // 55 AA | seq | 33 | 01 | 0001 | quality(80)
+        // (OEM 0x50 was rejected by V2.4.5 firmware with err=0x01)
         val frame = GlassesPhotoProtocol.buildCaptureRequestFrame(seq = 0x07)
         val expected = byteArrayOf(
             0x55, 0xAA.toByte(), // magic
             0x07,               // seq
-            0x33,               // cmd
+            0x33,               // cmd = aiPhotoBleCmd (V2.4.5 verified)
             0x01,               // type=Request
             0x01, 0x00,         // payload length u16 LE = 1
             0x50,               // quality = 80
@@ -330,5 +332,91 @@ class GlassesPhotoProtocolTest {
     fun u32LeAt_maxUnsignedValue() {
         val bytes = byteArrayOf(0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte())
         assertEquals(-1, GlassesPhotoProtocol.u32LeAt(bytes, 0))
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // 0x33 capture-command ack detector (smoke 22, 2026-09-15)
+    // ────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun isCaptureAckSuccess_acceptsErrZero() {
+        // 55 AA | seq | 33 | 02 (RESPONSE) | 01 00 (len=1) | 00 (err=0)
+        val ack = byteArrayOf(
+            0x55, 0xAA.toByte(),
+            0x07,                   // seq
+            0x33,                   // cmd = aiPhotoBleCmd
+            0x02,                   // type = RESPONSE
+            0x01, 0x00,             // payload length u16 LE = 1
+            0x00,                   // err = 0 → accepted
+        )
+        assertTrue(GlassesPhotoProtocol.isCaptureAckSuccess(ack))
+    }
+
+    @Test
+    fun isCaptureAckSuccess_rejectsErrNonZero() {
+        // err=0x01 means the firmware rejected (low battery / busy).
+        val ack = byteArrayOf(
+            0x55, 0xAA.toByte(),
+            0x07, 0x33, 0x02,
+            0x01, 0x00,
+            0x01,                   // err = 1 → rejected
+        )
+        assertFalse(GlassesPhotoProtocol.isCaptureAckSuccess(ack))
+    }
+
+    @Test
+    fun isCaptureAckSuccess_rejectsRequestFrame() {
+        // A 0x33 *request* frame has type=0x01 — not an ack.
+        val request = byteArrayOf(
+            0x55, 0xAA.toByte(),
+            0x07, 0x33, 0x01,         // type = REQUEST, not RESPONSE
+            0x01, 0x00,
+            0x50,
+        )
+        assertFalse(GlassesPhotoProtocol.isCaptureAckSuccess(request))
+    }
+
+    @Test
+    fun isCaptureAckSuccess_rejectsWrongMagic() {
+        // 66 BB instead of 55 AA → reject.
+        val bad = byteArrayOf(
+            0x66, 0xBB.toByte(),
+            0x07, 0x33, 0x02,
+            0x01, 0x00,
+            0x00,
+        )
+        assertFalse(GlassesPhotoProtocol.isCaptureAckSuccess(bad))
+    }
+
+    @Test
+    fun isCaptureAckSuccess_rejectsWrongPayloadLength() {
+        // payload length u16 LE must equal 1, not 2.
+        val bad = byteArrayOf(
+            0x55, 0xAA.toByte(),
+            0x07, 0x33, 0x02,
+            0x02, 0x00,             // len = 2 (not 1)
+            0x00, 0x00,
+        )
+        assertFalse(GlassesPhotoProtocol.isCaptureAckSuccess(bad))
+    }
+
+    @Test
+    fun isCaptureAckSuccess_rejectsOtherCmdBytes() {
+        // 0x51 START status notification has the same shape but
+        // different cmd — must not be misclassified as a 0x33 ack.
+        val status = byteArrayOf(
+            0x55, 0xAA.toByte(),
+            0x07, 0x51, 0x02,         // cmd = 0x51, not 0x33
+            0x01, 0x00,
+            0x00,
+        )
+        assertFalse(GlassesPhotoProtocol.isCaptureAckSuccess(status))
+    }
+
+    @Test
+    fun isCaptureAckSuccess_rejectsShortFrame() {
+        // Less than 8 bytes → malformed, not an ack.
+        val tooShort = byteArrayOf(0x55, 0xAA.toByte(), 0x07, 0x33, 0x02, 0x01)
+        assertFalse(GlassesPhotoProtocol.isCaptureAckSuccess(tooShort))
     }
 }

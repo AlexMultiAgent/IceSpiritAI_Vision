@@ -258,11 +258,12 @@ PhotoCaptureService.captureAndRecognize()
 
 | 命令 | 值 | 方向 | 含义 |
 |---|---|---|---|
-| AI 识图拍照 | **0x33** | App→眼镜 Request(0x01) | payload：1 字节 quality（App 固定 **80**） |
+| AI 识图拍照（主路径） | **0x33** | App→眼镜 Request(0x01) | payload：1 字节 quality（App 固定 **80**）。OEM 官方 APP (`com.deepvision_tek.glass_front` 3.1.00) `BluetoothController.requestAiPhotoCapture()` 主入口用此命令，配套 `prepareMediaCaptureCoexistence("ai_photo")` + `ensureBindPairingBeforeGatt` + `ensureClassicBondForAcl`。v0.3.5 起冰灵锐目采用此命令 |
+| AI 拍照（BLE 通道） | **0x33** | App→眼镜 Request(0x01) | OEM 官方暴露为 `requestAiPhotoBleCapture()`，是 0x33 的 fallback/次路径（命名 `aiPhotoBleCmd`）。V2.4.5 固件 0x33 命令下只回 0x51 START 但 FA12 一块不到，疑似需要经典蓝牙 ACL bond |
 | 0x33 Response | type=0x02 | 眼镜→App | 0=接受；非 0=拒绝（低电/OTA/忙等），可 400ms 后重试一次 |
 | 状态 | **0x51** | 眼镜→App Notify | 见下表 |
 | 普通拍照 | 0x30 | App→眼镜 | `captureOnly()` 用，非识物主路径 |
-| 旧 AI+FTP | 0x50 | App→眼镜 | 识物主路径**不再使用** |
+| 旧 AI+FTP | 0x33 之前曾误标 | App→眼镜 | 识物主路径**不再使用**（0x33 在 OEM 实际上是 aiPhotoRequestCmd，不是 legacy FTP） |
 
 **0x51 status（首字节）**：
 
@@ -302,7 +303,7 @@ PhotoCaptureService.captureAndRecognize()
 | **BLE FA10（现行识物）** | 0x33 | `captureAndRecognize` **唯一**传图 | 本文提速重点 |
 | SPP / GFSP | 普通拍照 + 无内存机 | `captureOnly()` | RFCOMM；magic GFSP/GFSA |
 | FTP | 普通拍照 PHOTO_READY | `captureOnly()` 有内存机 | 账号等见固件文档 |
-| 旧 0x50 AI+FTP | 仍可能残留 API | **识物不再调用** | — |
+| 旧 0x33 AI+FTP | 仍可能残留 API | **识物不再调用** | — |
 
 固件实测分辨率常约 **640×480**，JPEG 约 20–30KB。
 

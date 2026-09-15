@@ -30,7 +30,19 @@ object GlassesPhotoProtocol {
     const val FFF0_MAGIC_BYTE_0: Byte = 0x55
     const val FFF0_MAGIC_BYTE_1: Byte = 0xAA.toByte()
 
-    /** AI 识图拍照 command code (App → Glass, type=Request). */
+    /**
+     * AI 识图拍照 command code (App → Glass, type=Request).
+     *
+     * **0x33 — verified against Glasses-A88 V2.4.5 (2026-09-15).**
+     * Decompiling the OEM glasses app (`com.deepvision_tek.glass_front`
+     * 3.1.00) revealed a second entry `aiPhotoRequestCmd = 0x50`
+     * (`BluetoothController.requestAiPhotoCapture`) which we tried but
+     * the user's firmware rejects with `55 aa 00 50 02 01 00 01`
+     * (reject code 0x01). The user's V2.4.5 firmware only accepts the
+     * older `aiPhotoBleCmd = 0x33`. Sticking with 0x33 — it's what the
+     * firmware speaks. The OEM's 0x50 entry is firmware-version-gated
+     * to newer revisions (not documented in `docs/glasses/`).
+     */
     const val CMD_AI_CAPTURE: Byte = 0x33
 
     /** Status notify command code (Glass → App, type=Notify). */
@@ -159,6 +171,32 @@ object GlassesPhotoProtocol {
         frame[6] = 0x00                  // payload length u16 LE: high byte
         frame[7] = quality
         return frame
+    }
+
+    /**
+     * Detect a 0x33 capture-command acknowledgement from the firmware
+     * (smoke 22 2026-09-15). Once the App sends `55 AA seq 33 01 01 00
+     * quality`, the firmware responds with the **same** cmd byte but
+     * type=0x02 (RESPONSE) and a 1-byte `err` payload: `0x00` accepted,
+     * `0x01` rejected (typically "low battery" or "busy" — see doc §6.1).
+     *
+     * Once the firmware has acked the capture command it has also
+     * committed to sending 0x51 START + FA12 chunks (or 0x51 FAILED on
+     * capture-time error). The ack is therefore the right "photo
+     * pipeline is alive" sentinel — the chunk collector observes it so
+     * the resend watchdog can stop burning FA11 writes the moment the
+     * firmware stops responding (which is what really happens on this
+     * V2.4.5 hardware: firmware drops ~30 % of FA12 blocks and
+     * silently stops replying to FA11 op2 retransmit requests).
+     */
+    fun isCaptureAckSuccess(payload: ByteArray): Boolean {
+        if (payload.size != 8) return false
+        if (payload[0] != FFF0_MAGIC_BYTE_0 || payload[1] != FFF0_MAGIC_BYTE_1) return false
+        if (payload[3] != CMD_AI_CAPTURE) return false
+        if (payload[4] != TYPE_RESPONSE) return false
+        // payload length u16 LE == 1
+        if (payload[5] != 0x01.toByte() || payload[6] != 0x00.toByte()) return false
+        return payload[7] == 0x00.toByte()  // err = 0 → accepted
     }
 
     /**

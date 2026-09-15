@@ -44,7 +44,8 @@ class GlassesPhotoStream(val totalSize: Int) {
     private var contiguousBytes: Int = 0
 
     /** Highest byte offset the caller has successfully written, or `-1` if no chunks yet. */
-    private var highestWrittenOffset: Int = -1
+    var highestWrittenOffset: Int = -1
+        private set
 
     /**
      * Result of [addChunk].
@@ -214,6 +215,26 @@ class GlassesPhotoStream(val totalSize: Int) {
         highestWrittenOffset = -1
         // Don't zero `buffer` — overwrite happens on next addChunk, and
         // zeroing a multi-MB buffer on every reset is wasted work.
+    }
+
+    /**
+     * Fill every unfilled byte with [value]. Used by the repository when
+     * 0x51 SUCCESS arrives before every byte was received (Glass-D15 /
+     * Glasses-A88 V2.4.5 firmware drops ~30 % of blocks on first-pass
+     * and doesn't reliably retransmit on op2 — zhang reference just
+     * ships the partial buffer). OCR frontends reject a JPEG whose
+     * SOI/EOI markers are corrupted; 0xFF padding in the missing
+     * regions keeps the header/trailer intact while the body is
+     * mangled — which is at least deterministic, instead of whatever
+     * happens to be in the freshly-allocated ByteArray.
+     */
+    fun fillGapsWith(value: Byte) {
+        for (i in 0 until totalSize) {
+            if (!received[i]) buffer[i] = value
+        }
+        // After padding every missing byte, the contiguous prefix is
+        // the whole buffer.
+        contiguousBytes = totalSize
     }
 
     private fun advanceContiguousCursor() {
