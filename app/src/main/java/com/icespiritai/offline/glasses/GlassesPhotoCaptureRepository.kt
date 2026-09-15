@@ -181,17 +181,26 @@ class GlassesPhotoCaptureRepository(
         val ready = _state.value as? GlassesCaptureState.Ready
             ?: return fail("未连接眼镜", retryable = false).let { null }
 
-        // Priority choice (2026-09-15 smoke 6-9): the firmware DOES
-        // meet spec §1.2 (verified at smoke 8: 154 chunks in 1.5 s =
-        // 102 chunks/s ≈ 10 ms/block when HIGH is requested). The
-        // ~28 % loss we observed is Android L2CAP saturation, not a
-        // firmware bug. We use HIGH and rely on the fanout resend
-        // (4 op2 writes per stall cycle, see collectChunks) to
-        // recover dropped blocks. The spec's 1.4 s goal is the ideal
-        // case (0 % loss); in practice the resend phase takes the
-        // bulk of the time. The hard cap (captureTimeoutMs) bounds
-        // the total to 90 s — see tuning notes.
-        bluetoothController.requestPriority(android.bluetooth.BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+        // Priority: use BALANCED (intv=32, ~40 ms) — the current
+        // observable state per spec §2.2 ("Android 常按 BALANCED 策略
+        // 回 intv=32,导致 turbo 未生效"). Smoke 4-13 (2026-09-14/15,
+        // nova 6 + Glasses-A88 V2.4.5) confirmed:
+        //   - Our HIGH request gets queued but Android often grants
+        //     intv=32 anyway (per spec §2.2 + §3.3.4 fallback)
+        //   - HIGH when granted (8 ms) → 35 % L2CAP loss per spec
+        //     §2.3; our fanout=8 + 24-round resend ceiling can't
+        //     recover the 28-35 % drops within 90 s (firmware V2.4.5
+        //     only re-sends 1-3 chunks per op2 write and won't
+        //     re-send missing blocks it never had in its buffer)
+        //   - The "A2DP contention" theory was wrong — phone audio
+        //     to glasses works fine, A2DP is unrelated
+        // So we use BALANCED (~3.6 s, 0 % loss per spec §2.3) as
+        // the baseline. The 1.4 s HIGH goal (spec §1.2) is parked
+        // until the firmware cuts its block-interval macro to 10 ms
+        // (requires paired App + firmware release; our App code
+        // already calls requestPriority(HIGH) inside the overlay
+        // pre-warm hook on the next pairing cycle).
+        bluetoothController.requestPriority(android.bluetooth.BluetoothGatt.CONNECTION_PRIORITY_BALANCED)
 
         val captureDevice = ready.device
         val startedMs = System.currentTimeMillis()
