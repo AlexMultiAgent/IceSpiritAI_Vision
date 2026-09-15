@@ -18,7 +18,7 @@ package com.icespiritai.offline.glasses
  * Everything here is pure data + `ByteArray` math. No Android, no Bluetooth,
  * no coroutines, no `Context` — directly unit-testable on the JVM.
  *
- * Reference: `docs/glass/AI识图传图提速_App连接参数配合.md` §6 BLE / FA10 协议细节.
+ * Reference: `docs/glasses/AI识图传图提速_App连接参数配合.md` §6 BLE / FA10 协议细节.
  */
 object GlassesPhotoProtocol {
 

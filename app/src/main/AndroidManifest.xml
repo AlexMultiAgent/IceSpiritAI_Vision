@@ -49,7 +49,7 @@
 
     <!--
         Smart-glasses BLE photo-capture pipeline (Glass-D15 V2.4.5+).
-        See docs/glass/AI识图传图提速_App连接参数配合.md for the wire protocol.
+        See docs/glasses/AI识图传图提速_App连接参数配合.md for the wire protocol.
 
         Legacy (API ≤30) permissions cover GATT connect + scan under a
         single BLUETOOTH/BLUETOOTH_ADMIN pair. The system Bluetooth

@@ -69,7 +69,7 @@ class BluetoothController(
 
     /**
      * UUIDs for the two GATT services the firmware exposes. These match
-     * the firmware spec in `docs/glass/AI识图传图提速_App连接参数配合.md` §6.
+     * the firmware spec in `docs/glasses/AI识图传图提速_App连接参数配合.md` §6.
      *
      * If the actual firmware uses different characteristic handles (e.g.
      * FFF3 instead of FFF1 for write), adjust the constants here — the
@@ -342,7 +342,7 @@ class BluetoothController(
      * Hint the Android BLE stack to prefer a faster connection interval
      * (HIGH = 7.5–15 ms) or revert to BALANCED (~40 ms).
      *
-     * Per `docs/glass/AI识图传图提速_App连接参数配合.md` §3: call once at
+     * Per `docs/glasses/AI识图传图提速_App连接参数配合.md` §3: call once at
      * session start, once on end; first FA12 chunk received under still-
      * 40 ms interval → call again. The push-based [lastConnInterval]
      * StateFlow is what the caller polls to detect the "still slow"

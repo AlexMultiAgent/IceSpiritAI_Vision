@@ -114,7 +114,7 @@ class GlassesPhotoCaptureRepository(
     }
 
     // ────────────────────────────────────────────────────────────────────
-    // Tunables — see `docs/glass/AI识图传图提速_App连接参数配合.md` §9
+    // Tunables — see `docs/glasses/AI识图传图提速_App连接参数配合.md` §9
     // ────────────────────────────────────────────────────────────────────
 
     private val captureTimeoutMs = 90_000L

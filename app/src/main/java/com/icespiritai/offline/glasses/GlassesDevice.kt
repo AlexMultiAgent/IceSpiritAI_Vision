@@ -31,7 +31,7 @@ data class GlassesDevice(
          * Broadcast-name prefixes that identify a peripheral as our
          * smart-glasses (vs unrelated devices like smart watches /
          * fitness bands). Spec hardware advertises as `Glass-D15`
-         * (per `docs/glass/AI识图传图提速_App连接参数配合.md`); the
+         * (per `docs/glasses/AI识图传图提速_App连接参数配合.md`); the
          * firmware actually shipped on the device under test advertises
          * as `Glasses-A88` (first observed 2026-09-14, commit `552a8a7`).
          *

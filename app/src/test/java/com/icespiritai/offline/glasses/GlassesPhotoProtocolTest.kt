@@ -13,7 +13,7 @@ import org.junit.Test
  * mocks needed — every constant and parser/builder is exercised against
  * hand-crafted byte arrays.
  *
- * Byte layouts verified against `docs/glass/AI识图传图提速_App连接参数配合.md`
+ * Byte layouts verified against `docs/glasses/AI识图传图提速_App连接参数配合.md`
  * §6 BLE / FA10 协议细节.
  */
 class GlassesPhotoProtocolTest {
