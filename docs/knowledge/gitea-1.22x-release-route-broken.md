@@ -61,7 +61,25 @@ local APK size = 59124492 bytes,remote Content-Length = 59124492 bytes,**完全�
 |---|---:|---|---|---|
 | `icespiritai-vision.apk` | 59124492 | c06d767b-... | `releases/download/latest/icespiritai-vision.apk` (或 `/attachments/<uuid>`) | 200 OK ✓ |
 | `vision-latest.json` | 4086 | e7d69bec-... | `releases/download/latest/vision-latest.json` | 200 OK ✓ |
-| `icespiritai-vision-update.apk` | 16919936 | 23a672c7-... | (旧版本残留) | (历史) |
+| `icespiritai-vision-update.apk` | 16919936 | 23a672c7-... | (旧版本残留) | **2026-09-16 已删除**,见 §2.4 |
+
+### §2.4 `icespiritai-vision-update.apk` 清理(2026-09-16)
+
+§2.3 表里第 3 行那个 2026-08-17 的残留资产已删除。删除依据与事后复核:
+
+| 项 | 值 |
+|---|---|
+| Asset id | 135 |
+| 大小 / sha256 | 16919936 B / `d26f564887ea03f0f7a2b62dcff7efac5267cee42bb5f6fa2097b54a1b85fc2f` |
+| 身份(`aapt2 dump badging`) | `com.icespiritai.vision` versionCode=1 versionName=0.1.0 |
+| 代码引用 | 无 —— 全仓只有本文档提到该文件名;client 走 `vision-latest.json` → `apkUrl` |
+| 字节留档 | 与 `发布版历史存档/icespiritai-vision-v0.1.0.apk` 大小+sha256 完全一致(该目录未纳入 git,故留档为**本机副本**) |
+| 删除方式 | `DELETE /api/v1/repos/giteaadmin/vision-app/releases/187/assets/135` → `204 No Content` |
+
+删除后复核:`GET /releases/tags/latest` 只剩 `icespiritai-vision.apk` + `vision-latest.json` 两个资产;
+被删资产的 URL 返回 `404`;`icespiritai-vision.apk` 仍可下载(range 请求 `206`);
+`vision-latest.json` 仍报 `versionCode 78 / versionName 0.4.3 / apkSha256 efb72810…`,与本地
+release-staging 包一致 —— **in-app 更新通道未受影响**。
 
 ## §3 之前误诊的原因
 
