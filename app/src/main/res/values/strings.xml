@@ -46,6 +46,7 @@
     <string name="glasses_connect_dropped">蓝牙连接已断开,正在重连…</string>
     <string name="glasses_ready">眼镜已就绪</string>
     <string name="glasses_capturing">拍照中…</string>
+    <string name="glasses_capture_repairing">补传缺块中…(眼镜漏发,正在逐块补回)</string>
     <string name="glasses_capture_progress">已接收 %1$d / %2$d 字节</string>
     <string name="glasses_capture_success">拍照完成,用时 %1$d ms</string>
     <string name="glasses_capture_failed">拍照失败:%1$s</string>

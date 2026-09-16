@@ -95,7 +95,15 @@ class GlassesPhotoCaptureRepository(
         val totalBytes: Int?,
         val elapsedMs: Long,
     ) {
-        enum class Stage { SendingCommand, WaitingForStart, ReceivingChunks, Verifying }
+        /**
+         * [Repairing] and [ReceivingChunks] are the same transport state
+         * (FA12 blocks coming in) split by whether the glasses dropped part
+         * of the burst and the App is now asking for the gaps one batch at a
+         * time. The distinction is user-facing only: without it the overlay
+         * reports 「拍照中…」 at a crawl for as long as the repair takes
+         * (2026-09-16 field runs: 11-22 s on a 48 KB photo).
+         */
+        enum class Stage { SendingCommand, WaitingForStart, ReceivingChunks, Repairing, Verifying }
     }
 
     private val _state = MutableStateFlow<GlassesCaptureState>(GlassesCaptureState.Idle)
@@ -121,15 +129,47 @@ class GlassesPhotoCaptureRepository(
     private val chunkStallMs = 3_500L
 
     /**
-     * Per-round wait once a FA11 op2 resend has been requested — spec
-     * §2.3 Step 6 (单轮等待 ~2.5 s), shorter than the initial
-     * [chunkStallMs] silence detector because at that point we know the
-     * firmware still has the session alive.
+     * Per-cycle wait once repair has started, i.e. the window a batch of
+     * FA11 op2 requests has to produce blocks.
+     *
+     * The OEM's `withTimeoutOrNull(2500)` (spec §2.3 Step 6 "单轮等待
+     * ~2.5 s") assumes one request restores the rest of the file. V2.4.5
+     * answers with 1-3 blocks instead, and does it in ~20-80 ms (2026-09-16
+     * field logs: op2 at 19:40:40.186 → block applied at .263), so 2.5 s per
+     * request capped repair at ~0.3 block/s and could never close the tens
+     * to hundreds of gaps a lossy burst leaves behind. 250 ms is ~3x the
+     * observed reply latency while keeping cycles tight; the abort decision
+     * is made on progress ([FA12_REPAIR_NO_PROGRESS_MS]), not on this wait.
+     *
+     * Kept short on purpose: replies to a batch keep arriving after this
+     * window (V2.4.5 queues them behind its ATT responses), so a long wait
+     * would idle the link. Anything that lands late is still applied by the
+     * next cycle's drain, and a request whose block arrives late is simply
+     * re-asked next cycle — the stream reports the repeat as a duplicate.
      */
-    private val resendWaitMs = 2_500L
+    private val resendWaitMs = 250L
 
-    /** FA11 op2 resend rounds per session (spec §2.3 Step 6 最大轮次 ≤24). */
-    private val maxResendRounds = 24
+    /**
+     * FA11 op2 requests issued per repair cycle, spaced
+     * [resendStrideBytes] apart — see [FA12_REPAIR_BATCH] / [FA12_REPAIR_STRIDE_BYTES].
+     */
+    private val resendBatchSize = FA12_REPAIR_BATCH
+    private val resendStrideBytes = FA12_REPAIR_STRIDE_BYTES
+
+    /**
+     * How long a session with blocks may stop filling gaps before the App
+     * gives up on it — see [FA12_REPAIR_NO_PROGRESS_MS].
+     */
+    private val repairNoProgressMs = FA12_REPAIR_NO_PROGRESS_MS
+
+    /**
+     * Repair cycles allowed per session — a guard against spamming op2 into
+     * a firmware that keeps answering too slowly to matter, not the primary
+     * budget: [repairNoProgressMs] ends a stalled session in ~10 s, and the
+     * OEM's "≤24" (spec §2.3 Step 6) counted single requests, so the same
+     * number of *cycles* buys `resendBatchSize`× the repair.
+     */
+    private val maxRepairCycles = 64
 
     private val captureSeq = AtomicInteger(0)
     private var activeCaptureJob: Job? = null
@@ -542,10 +582,14 @@ class GlassesPhotoCaptureRepository(
             fa12 = fa12Tap,
             status = status,
             writeFa11 = bluetoothController::writeFa11,
-            onProgress = { filled, total ->
+            onProgress = { filled, total, repairing ->
                 _state.value = GlassesCaptureState.Capturing(
                     CaptureProgress(
-                        stage = CaptureProgress.Stage.ReceivingChunks,
+                        stage = if (repairing) {
+                            CaptureProgress.Stage.Repairing
+                        } else {
+                            CaptureProgress.Stage.ReceivingChunks
+                        },
                         bytesReceived = filled,
                         totalBytes = total,
                         elapsedMs = System.currentTimeMillis() - startedMs,
@@ -558,8 +602,11 @@ class GlassesPhotoCaptureRepository(
             onFirstBlock = bluetoothController::boostPriorityIfFirstFa12StillSlow,
             chunkStallMs = chunkStallMs,
             resendWaitMs = resendWaitMs,
-            maxResendRounds = maxResendRounds,
+            maxRepairCycles = maxRepairCycles,
             timeoutMs = captureTimeoutMs,
+            resendBatchSize = resendBatchSize,
+            resendStrideBytes = resendStrideBytes,
+            repairNoProgressMs = repairNoProgressMs,
         )) {
             is Fa12Collection.Complete -> stream = outcome.stream
             is Fa12Collection.CompletedWithGaps -> stream = outcome.stream

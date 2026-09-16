@@ -204,7 +204,17 @@ fun GlassesCaptureOverlay(
                     }
 
                     is GlassesPhotoCaptureRepository.GlassesCaptureState.Capturing -> {
-                        Text(text = stringResource(R.string.glasses_capturing))
+                        Text(
+                            text = stringResource(
+                                if (s.progress.stage ==
+                                    GlassesPhotoCaptureRepository.CaptureProgress.Stage.Repairing
+                                ) {
+                                    R.string.glasses_capture_repairing
+                                } else {
+                                    R.string.glasses_capturing
+                                },
+                            ),
+                        )
                         Spacer(Modifier.height(12.dp))
                         val total = s.progress.totalBytes ?: 0
                         if (total > 0) {

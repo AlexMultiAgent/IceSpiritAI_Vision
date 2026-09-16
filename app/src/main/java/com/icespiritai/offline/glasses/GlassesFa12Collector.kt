@@ -98,6 +98,57 @@ internal class StatusFrames(private val tap: ReceiveTap<ByteArray>) {
 internal const val FA12_NO_SIGNAL_ABORT_ROUNDS = 3
 
 /**
+ * How many FA11 `0x02` requests one repair cycle may issue.
+ *
+ * The single-request-per-round shape (one op2, then a 2.5 s wait) comes
+ * from the OEM app and assumes the firmware answers a resend with the
+ * whole rest of the file. V2.4.5 does not: 2026-09-16 field logs show
+ * **1-3 blocks per op2**, so that shape moved the contiguous prefix by
+ * 240-720 B per 2.5 s (~0.3 block/s) — far too slow to repair the tens to
+ * hundreds of blocks missing from a lossy burst, which is why the session
+ * died with 「眼镜未响应补发请求」 while the glasses were in fact answering
+ * every request. Batching distinct offsets spends the same round trip on
+ * up to [FA12_REPAIR_BATCH] blocks.
+ *
+ * Sized from the measured cost of a request: each FA11 write is a
+ * write-with-response round trip, ~30 ms on nova 6, and V2.4.5 answers
+ * roughly one block per request. 20 requests therefore take ~600 ms of
+ * link time and pull in ~20 blocks, which is the range the firmware can
+ * sustain without the app's own cycle wait (2026-09-16: 8 per 400 ms
+ * cycle repaired 49 KB at ~10 blocks/s, i.e. the pipe sat idle between
+ * batches).
+ */
+internal const val FA12_REPAIR_BATCH = 20
+
+/**
+ * Spacing between the offsets requested inside one cycle.
+ *
+ * Requests walk the missing ranges with this stride, so one cycle asks for
+ * blocks the previous request may already have covered. Requests at 30 ms
+ * each still cost far less than the 2.5 s the old shape spent per single
+ * block, and any offset that turns out to be filled already is dropped by
+ * [GlassesPhotoStream.addChunk] as a duplicate.
+ *
+ * 480 B (2 blocks) is the midpoint of the 1-3 blocks per request V2.4.5
+ * was measured answering, so consecutive requests in one cycle should never
+ * ask for the same block twice.
+ */
+internal const val FA12_REPAIR_STRIDE_BYTES = 480
+
+/**
+ * Give up on a session that has blocks but has stopped filling gaps for
+ * this long.
+ *
+ * Replaces the OEM's "24 rounds × 2.5 s ≈ 60 s" wait, which measured the
+ * wrong thing: with one request per round it counted requests, not the
+ * firmware's willingness to answer. Ten seconds of no forward progress is
+ * already ~30 unanswered batches, well past the ~80 ms the glasses need
+ * per reply, and it keeps the user's retry prompt inside the ~10 s the
+ * zero-block path already takes.
+ */
+internal const val FA12_REPAIR_NO_PROGRESS_MS = 10_000L
+
+/**
  * Drain FA12 blocks from [fa12] (and `0x51` frames from [status]) until
  * [stream] is covered, the firmware ends it, or a budget runs out.
  *
@@ -109,25 +160,42 @@ internal const val FA12_NO_SIGNAL_ABORT_ROUNDS = 3
  * assumed constant.
  *
  * @param writeFa11 sends a FA11 control packet; returns false when the
- *   stack rejected it. Only ever called after a full [chunkStallMs] of
- *   silence — spec §2.3 Step 5 forbids writing while blocks are still
- *   flowing, because FA11 writes starve FA12 notifies.
- * @param onProgress reports contiguous bytes for the overlay's progress.
+ *   stack rejected it. The first op2 of a session waits out a full
+ *   [chunkStallMs] of silence (spec §2.3 Step 5 forbids writing while
+ *   blocks are still flowing, because FA11 writes starve FA12 notifies);
+ *   once repairing, cycles use [resendWaitMs], which is sized to the
+ *   ~20-80 ms the firmware actually takes to serve an op2 rather than to
+ *   the OEM's 2.5 s round timeout.
+ * @param onProgress reports contiguous bytes for the overlay's progress,
+ *   plus whether the session is currently repainting gaps (so the overlay
+ *   can say so instead of looking stuck on a half-filled progress line).
  * @param onFirstBlock fires once, on the first block of the session, so the
  *   caller can re-push HIGH if the link parameter update never landed
  *   (spec §3.3.3, OEM `maybeRetryAiPhotoHighOnFirstChunk`).
+ * @param resendBatchSize FA11 op2 requests issued per repair cycle — see
+ *   [FA12_REPAIR_BATCH] for why this is a batch and not a single request.
+ * @param resendStrideBytes spacing between the offsets requested in one
+ *   cycle — see [FA12_REPAIR_STRIDE_BYTES].
+ * @param repairNoProgressMs give up when blocks have arrived but gaps stop
+ *   closing for this long — see [FA12_REPAIR_NO_PROGRESS_MS].
+ * @param maxRepairCycles cap on repair cycles per session — a request-spam
+ *   guard, not the primary budget: [repairNoProgressMs] is what ends a
+ *   session whose firmware has stopped answering.
  */
 internal suspend fun collectFa12Chunks(
     stream: GlassesPhotoStream,
     fa12: ReceiveTap<ByteArray>,
     status: StatusFrames,
     writeFa11: suspend (ByteArray) -> Boolean,
-    onProgress: (contiguousBytes: Int, totalBytes: Int) -> Unit,
+    onProgress: (contiguousBytes: Int, totalBytes: Int, repairing: Boolean) -> Unit,
     onFirstBlock: () -> Unit = {},
     chunkStallMs: Long,
     resendWaitMs: Long,
-    maxResendRounds: Int,
+    maxRepairCycles: Int,
     timeoutMs: Long,
+    resendBatchSize: Int = FA12_REPAIR_BATCH,
+    resendStrideBytes: Int = FA12_REPAIR_STRIDE_BYTES,
+    repairNoProgressMs: Long = FA12_REPAIR_NO_PROGRESS_MS,
     clock: () -> Long = System::currentTimeMillis,
 ): Fa12Collection {
     val tag = "GlassesCapture"
@@ -135,6 +203,18 @@ internal suspend fun collectFa12Chunks(
     var working = stream
     var blocks = 0
     var resendRounds = 0
+    /**
+     * When the last real block landed. Drives [repairNoProgressMs]: a
+     * session that has received blocks but stops filling gaps is finished,
+     * no matter how many requests we still have in budget.
+     */
+    var lastProgressAt = collectStart
+    /**
+     * True once this session has started asking for missing blocks. Purely
+     * for the overlay's wording — the collector's own decisions never read
+     * it, since [lastProgressAt] is the honest signal there.
+     */
+    var repairing = false
     var paddedWithGaps = false
     var paddedBytes = 0
     var terminal: GlassesPhotoProtocol.StatusNotify? = null
@@ -178,13 +258,24 @@ internal suspend fun collectFa12Chunks(
             Log.w(tag, "resizing stream: old=${working.totalSize} new=${chunk.offset + chunk.data.size}")
             working = working.grownTo(chunk.offset + chunk.data.size)
         }
-        working.addChunk(chunk)
+        val result = working.addChunk(chunk)
         if (blocks == 0) {
             // Exactly once per session, which is what lets the caller skip
             // the OEM's `aiPhotoPriorityFa12RetryUsed` latch field entirely.
             onFirstBlock()
         }
         blocks++
+        // Any accepted block moved the picture forward. Duplicates and
+        // out-of-order re-deliveries (`AddResult.Duplicate` /
+        // `OutOfOrder`) are the ones that must not refresh the no-progress
+        // budget, or a firmware stuck resending one block we already have
+        // would look productive forever.
+        when (result) {
+            is GlassesPhotoStream.AddResult.Added,
+            is GlassesPhotoStream.AddResult.Complete,
+            -> lastProgressAt = clock()
+            else -> Unit
+        }
         if (blocks <= 3 || blocks % 20 == 0) {
             Log.d(
                 tag,
@@ -193,7 +284,36 @@ internal suspend fun collectFa12Chunks(
                     "highest=${working.highestWrittenOffset}",
             )
         }
-        onProgress(working.contiguousFilledBytes, working.totalSize)
+        onProgress(working.contiguousFilledBytes, working.totalSize, repairing)
+    }
+
+    /**
+     * Ask the firmware to retransmit up to [count] distinct missing blocks,
+     * starting at the lowest gap at or after [from].
+     *
+     * One FA11 op2 moves the picture by 1-3 blocks on V2.4.5, so a cycle that
+     * asks once leaves the repair at ~0.3 block/s. Walking the gaps with
+     * [stride] spends the same wall-clock on up to [count] blocks and keeps
+     * the firmware's answers flowing while the next request is in flight.
+     *
+     * Deliberately no wait between requests: replies are notifications, so
+     * they land in [fa12]'s unbounded inbox whether or not this loop is
+     * parked, and the caller's cycle wait picks them up. Requesting an
+     * offset that a previous reply has already covered is harmless — the
+     * stream reports the repeat as a duplicate.
+     */
+    suspend fun requestMissingBlocks(from: Int, count: Int, stride: Int): Int {
+        var cursor = from
+        var requested = 0
+        while (requested < count && !working.isComplete) {
+            val gap = working.nextMissingRangeFrom(cursor) ?: break
+            if (!writeFa11(GlassesPhotoProtocol.buildFa11Resend(gap.first))) {
+                Log.w(tag, "FA11 op2 write rejected by the stack (request #${requested + 1})")
+            }
+            requested++
+            cursor = gap.first + stride
+        }
+        return requested
     }
 
     while (true) {
@@ -269,16 +389,23 @@ internal suspend fun collectFa12Chunks(
             else -> Unit
         }
 
-        // Shorter wait once a resend is outstanding (spec §2.3 Step 6
-        // 单轮等待 ~2.5 s vs the 停包判定 ~3.5 s that opens a session).
-        val payload = fa12.receiveWithin(if (resendRounds > 0) resendWaitMs else chunkStallMs)
+        // Two different silences, two different windows:
+        //   - before the first repair, the firmware may just be pausing
+        //     inside its burst (2026-09-16 logs show 0.7-2.1 s lulls
+        //     between sub-bursts), and spec §2.3 Step 5 forbids writing
+        //     while blocks are still flowing, so use the 停包判定 window;
+        //   - while repairing, the glasses answer a FA11 op2 in ~20-80 ms
+        //     (same logs: op2 write at 19:40:40.186, request served at
+        //     .263), so waiting the OEM's 2.5 s per round only throttled
+        //     the repair to ~0.3 block/s.
+        val waitMs = if (resendRounds > 0) resendWaitMs else chunkStallMs
+        val payload = fa12.receiveWithin(waitMs)
         if (payload != null) {
             applyBlock(payload)
             continue
         }
 
-        // Silent for one full window: ask the glasses to retransmit from
-        // the first byte we are still missing (spec §2.3 Step 6).
+        // Silent for one full window: ask the glasses to retransmit.
         val missing = working.firstMissingRange()
         if (missing == null) continue
         if (blocks == 0 && resendRounds >= FA12_NO_SIGNAL_ABORT_ROUNDS) {
@@ -286,23 +413,44 @@ internal suspend fun collectFa12Chunks(
             // spending the whole resend budget (official AI_PHOTO_RETRANS_ABORT).
             return abandon("未收到图片分片数据(FA12)，请确认眼镜已连接后重试")
         }
-        if (resendRounds >= maxResendRounds) {
+        if (blocks > 0 && clock() - lastProgressAt > repairNoProgressMs) {
+            // Blocks did arrive — the channel works — but the gaps have
+            // stopped closing. Saying "the glasses did not answer the
+            // resend request" here was wrong (they answer every one) and
+            // cost the user up to 60 s before the retry prompt.
+            val missingBytes = working.totalSize - working.contiguousFilledBytes
             Log.w(
                 tag,
-                "no FA12 after $resendRounds op2 resends — giving up " +
+                "no FA12 progress for ${clock() - lastProgressAt}ms over $resendRounds repair " +
+                    "cycles — giving up (filled=${working.contiguousFilledBytes}/" +
+                    "${working.totalSize}, missing=$missingBytes)",
+            )
+            return abandon("传图未完成（缺 $missingBytes/${working.totalSize} 字节）")
+        }
+        if (resendRounds >= maxRepairCycles) {
+            Log.w(
+                tag,
+                "no FA12 after $resendRounds op2 batched resends — giving up " +
                     "(filled=${working.contiguousFilledBytes}/${working.totalSize})",
             )
             return abandon("眼镜未响应补发请求")
         }
         resendRounds++
+        repairing = true
+        // Tell the UI before the round trip, not after: the point of the
+        // flag is that the wait the user is about to have is explainable.
+        onProgress(working.contiguousFilledBytes, working.totalSize, repairing)
         Log.w(
             tag,
-            "FA12 silent — FA11 op2 #$resendRounds from ${missing.first} " +
+            "FA12 silent — FA11 op2 batch #$resendRounds from ${missing.first} " +
                 "(filled=${working.contiguousFilledBytes}/${working.totalSize} " +
                 "missing=${missing.first}..${missing.last})",
         )
-        if (!writeFa11(GlassesPhotoProtocol.buildFa11Resend(missing.first))) {
-            Log.w(tag, "FA11 op2 write rejected by the stack (round $resendRounds)")
-        }
+        val requested = requestMissingBlocks(missing.first, resendBatchSize, resendStrideBytes)
+        Log.d(
+            tag,
+            "FA11 op2 batch #$resendRounds: $requested request(s) for " +
+                "${working.totalSize - working.contiguousFilledBytes} missing byte(s)",
+        )
     }
 }

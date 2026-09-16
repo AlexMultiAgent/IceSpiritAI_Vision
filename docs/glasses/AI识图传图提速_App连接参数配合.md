@@ -359,8 +359,10 @@ PhotoCaptureService.captureAndRecognize()
 | **App 等终态** | **~90s**(`captureTimeoutMs`) | **本仓 90 s flat**,**未采用** OEM 的 25 s + 15 s grace(`PHOTO_BLE_APP_TIMEOUT_MS`);本仓判断 90 s 是更宽容业务超时,真机 1.7-2.1 s 出图场景不触及 |
 | ~~有进度宽限~~ | **N/A** | OEM 有 ~15 s grace,本仓没有 |
 | 停包判定 | ~3.5s | `chunkStallMs = 3_500L`,触发 FA11 op2 补洞 |
-| 补洞等待 | ~2.5s / 轮 | `resendWaitMs = 2_500L` |
-| 补洞轮次 | ≤24 | `maxResendRounds = 24`(对齐 OEM `AI_PHOTO_RETRANS_ABORT`) |
+| 补洞批量 | ≤20 个 op2 / 轮 | `resendBatchSize = FA12_REPAIR_BATCH = 20`,缺口内按 `FA12_REPAIR_STRIDE_BYTES = 480` 步进;**V2.4.5 每个 op2 只回 1~3 块**(2026-09-16 真机逐轮实测),OEM 的「一轮一个 op2」在本固件上只有 ~0.3 块/s |
+| 补洞等待 | 250ms / 轮 | `resendWaitMs = 250L`(OEM 单轮等待 2.5 s 假设「回剩下整段」;实测应答在 20–80 ms 内,长等待只会让链路空转) |
+| 补洞轮次 | ≤64 轮(护栏) | `maxRepairCycles = 64`,仅防请求刷屏;真正判死的是下一条 |
+| **补洞无进展判死** | 10s | `repairNoProgressMs = FA12_REPAIR_NO_PROGRESS_MS = 10_000L`:已有块但连续 10 s 没补回任何字节才放弃,文案「传图未完成（缺 N/M 字节）」 |
 | **零块早停** | 3 轮 | `FA12_NO_SIGNAL_ABORT_ROUNDS = 3`,一块都没到时 3 轮即止(对齐 OEM `AI_PHOTO_RETRANS_ABORT pkts0`) |
 | HIGH 会话 | capture 入口 → HIGH;finally → BALANCED | **`aiPhotoPriorityHighRequested` 外部锁本仓未采用** — 当前仅拍照入口调 `requestPriority()`,无第二个调用方需锁;HIGH 期间外部仍可调,实测不影响 |
 | 首块补 HIGH | `boostPriorityIfFirstFa12StillSlow` | 阈值 `lastBleConnInterval ≥ 17`(OEM `PHOTO_BLE_FAST_INTERVAL_MAX=16`);**实测 nova 6 报 `interval=12`,不触发**;`onConnectionUpdated` 隐藏 API 在本 ROM 正常派发(`FA12 first block, interval=` 日志判别) |
@@ -374,7 +376,7 @@ PhotoCaptureService.captureAndRecognize()
 | 0x33 quality | 80 |
 | 识图压缩 | 边长 ~640 / Q≈55(本仓走本地 PP-OCRv6_small,不是云端 vision API) |
 | 等 BLE 回图 | 90s(业务) |
-| 端到端 | BLE 1.7-2.1 s(真机:41715/50715 bytes,1.7-2.1 s 出图,见 `docs/smoke/2026-09-15-ble-fix-verify/logcat_v2.txt`) |
+| 端到端 | BLE 1.7-2.1 s(真机:41715/50715 bytes,1.7-2.1 s 出图,见 `docs/smoke/2026-09-15-ble-fix-verify/logcat_v2.txt`);**2026-09-16 复测**:同机同固件突发丢失 75-87 %,批量补洞后 48-57 KB 照片 19.4-22.3 s 收齐(见 `docs/smoke/2026-09-16-ble-photo-repair/README.md`) |
 
 ---
 

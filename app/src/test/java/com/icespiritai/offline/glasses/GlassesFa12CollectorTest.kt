@@ -124,16 +124,21 @@ private class Rig(scope: kotlinx.coroutines.CoroutineScope) {
  *   - it answers a FA11 `0x02` with only the few blocks it still has;
  *   - it gives up with `0x51 FAILED` roughly 8 s after we stop confirming.
  *
+ * The 2026-09-16 field logs added a fifth: on a lossy burst it hands back
+ * **1-3 blocks per op2** — not the rest of the file the OEM's 2.5 s per
+ * round assumes — so the repair has to batch requests
+ * ([FA12_REPAIR_BATCH]) or it crawls at ~0.3 block/s.
+ *
  * Waits run on `runTest`'s virtual time, so the production budgets
- * (3.5 s stall / 2.5 s per resend round / 24 rounds / 90 s hard timeout)
- * are exercised without the suite taking minutes.
+ * (3.5 s stall / 400 ms per repair cycle / 10 s without progress / 90 s hard
+ * timeout) are exercised without the suite taking minutes.
  */
 class GlassesFa12CollectorTest {
 
     private companion object {
         const val STALL = 3_500L
-        const val RESEND_WAIT = 2_500L
-        const val MAX_ROUNDS = 24
+        const val RESEND_WAIT = 400L
+        const val MAX_REPAIR_CYCLES = 64
         const val TIMEOUT = 90_000L
     }
 
@@ -142,20 +147,27 @@ class GlassesFa12CollectorTest {
         rig: Rig,
         totalSize: Int,
         chunkStallMs: Long = STALL,
-        maxResendRounds: Int = MAX_ROUNDS,
+        maxRepairCycles: Int = MAX_REPAIR_CYCLES,
+        resendBatchSize: Int = FA12_REPAIR_BATCH,
+        resendStrideBytes: Int = FA12_REPAIR_STRIDE_BYTES,
+        repairNoProgressMs: Long = FA12_REPAIR_NO_PROGRESS_MS,
         timeoutMs: Long = TIMEOUT,
+        onProgress: (contiguousBytes: Int, totalBytes: Int, repairing: Boolean) -> Unit = { _, _, _ -> },
         clock: () -> Long = System::currentTimeMillis,
     ): Fa12Collection = collectFa12Chunks(
         stream = GlassesPhotoStream(totalSize),
         fa12 = rig.fa12Tap,
         status = rig.statusFrames,
         writeFa11 = rig::writeFa11,
-        onProgress = { _, _ -> },
+        onProgress = onProgress,
         onFirstBlock = rig.onFirstBlock,
         chunkStallMs = chunkStallMs,
         resendWaitMs = RESEND_WAIT,
-        maxResendRounds = maxResendRounds,
+        maxRepairCycles = maxRepairCycles,
         timeoutMs = timeoutMs,
+        resendBatchSize = resendBatchSize,
+        resendStrideBytes = resendStrideBytes,
+        repairNoProgressMs = repairNoProgressMs,
         clock = clock,
     )
 
@@ -235,16 +247,136 @@ class GlassesFa12CollectorTest {
     @Test
     fun resendBudgetExhaustionFailsInsteadOfBurningTheWholeTimeout() = runTest {
         // A firmware that never answers op2 must end quickly and truthfully.
+        // Each cycle asks for the two missing offsets a stride apart
+        // (240, 720), so the cycle budget is spent on batched requests.
         val image = picture(1_000)
         val rig = Rig(backgroundScope)
         assertTrue(rig.status.tryEmit(startFrame(1_000)))
         rig.fa12.pushRange(image, 0, BLOCK)      // the rest never arrives
 
-        val outcome = runCollector(rig, totalSize = 1_000, maxResendRounds = 3)
+        val outcome = runCollector(rig, totalSize = 1_000, maxRepairCycles = 3)
 
         assertTrue("expected Failed, got $outcome", outcome is Fa12Collection.Failed)
         assertEquals("眼镜未响应补发请求", (outcome as Fa12Collection.Failed).reason)
-        assertEquals(3, rig.op2Offsets.size)
+        assertEquals(listOf(240, 720, 240, 720, 240, 720), rig.op2Offsets)
+    }
+
+    @Test
+    fun oneCycleRepairsManyBlocksBecauseTheFirmwareAnswersOneOp2PerBlock() = runTest {
+        // The 2026-09-16 shape: a burst lands the head and the tail but
+        // leaves a wide hole, and each op2 is answered with exactly one
+        // block. One request per round (the pre-fix code) moved the prefix
+        // 240 B per 2.5 s; a cycle has to ask for several offsets.
+        val image = picture(2_400)
+        val rig = Rig(backgroundScope)
+        rig.onOp2 = { from -> rig.fa12.pushRange(image, from, from + BLOCK) }
+        assertTrue(rig.status.tryEmit(startFrame(2_400)))
+        rig.fa12.pushRange(image, 0, BLOCK)          // 240..2_399 never arrived
+
+        val outcome = runCollector(rig, totalSize = 2_400)
+
+        outcome as Fa12Collection.Complete
+        // Cycle 1 asks 240/720/1200/1680/2160 (the last gap starts at
+        // 2160 and the next stride lands past the end), cycle 2 fills the
+        // 480/960/1440/1920 remainders — 9 blocks in 2 cycles.
+        assertEquals(
+            listOf(240, 720, 1200, 1680, 2160, 480, 960, 1440, 1920),
+            rig.op2Offsets,
+        )
+        assertEquals(2, outcome.resendRounds)
+        assertArrayEquals(image, outcome.stream.assemble())
+    }
+
+    @Test
+    fun aBatchIsCappedSoOneCycleCannotFloodTheFirmware() = runTest {
+        // A 30 KB hole is ~128 missing blocks. The batch size, not the gap
+        // size, decides how many op2 writes leave in one cycle.
+        val image = picture(30_000)
+        val rig = Rig(backgroundScope)
+        assertTrue(rig.status.tryEmit(startFrame(30_000)))
+        rig.fa12.pushRange(image, 0, BLOCK)
+
+        val outcome = runCollector(rig, totalSize = 30_000, maxRepairCycles = 1)
+
+        assertTrue("expected Failed, got $outcome", outcome is Fa12Collection.Failed)
+        assertEquals(FA12_REPAIR_BATCH, rig.op2Offsets.size)
+        // Stride 480 B apart, starting at the first hole.
+        assertEquals(
+            (0 until FA12_REPAIR_BATCH).map { BLOCK + it * FA12_REPAIR_STRIDE_BYTES },
+            rig.op2Offsets,
+        )
+    }
+
+    @Test
+    fun repairKeepsAskingWhileTheFirmwareKeepsAnswering() = runTest {
+        // Progress, not the cycle counter, is what keeps a session alive:
+        // this firmware answers every other request, so the 10 s no-progress
+        // window must reset and the repair must run past a small cycle cap.
+        val image = picture(2_400)
+        val rig = Rig(backgroundScope)
+        var answered = 0
+        rig.onOp2 = { from ->
+            answered++
+            if (answered % 2 == 0) rig.fa12.pushRange(image, from, from + BLOCK)
+        }
+        assertTrue(rig.status.tryEmit(startFrame(2_400)))
+        rig.fa12.pushRange(image, 0, BLOCK)
+
+        val outcome = runCollector(rig, totalSize = 2_400, maxRepairCycles = 64)
+
+        outcome as Fa12Collection.Complete
+        assertTrue("expected more than one cycle, got ${outcome.resendRounds}", outcome.resendRounds > 1)
+        assertArrayEquals(image, outcome.stream.assemble())
+    }
+
+    @Test
+    fun repairPhaseIsReportedToTheUiSoTheWaitIsExplainable() = runTest {
+        // Without this flag the overlay says 「拍照中…」 while the App spends
+        // 11-22 s asking for dropped blocks one batch at a time (2026-09-16
+        // field runs) — indistinguishable from a hang.
+        val image = picture(1_000)
+        val rig = Rig(backgroundScope)
+        rig.onOp2 = { from -> rig.fa12.pushRange(image, from, from + BLOCK) }
+        assertTrue(rig.status.tryEmit(startFrame(1_000)))
+        rig.fa12.pushRange(image, 0, BLOCK)
+        rig.fa12.pushRange(image, 480, 1_000)   // 240..479 never sent
+        val repairingFlags = ArrayList<Boolean>()
+
+        val outcome = runCollector(
+            rig,
+            totalSize = 1_000,
+            onProgress = { _, _, repairing -> repairingFlags.add(repairing) },
+        )
+
+        outcome as Fa12Collection.Complete
+        assertEquals("the burst phase must not be reported as repair", false, repairingFlags.first())
+        assertTrue("the repair phase must be reported", repairingFlags.contains(true))
+    }
+
+    @Test
+    fun repairThatStopsPayingOffEndsWithTheIncompleteMessage() = runTest {
+        // Blocks arrived (so the channel is alive) but the gaps stop
+        // closing. The old path kept saying 「眼镜未响应补发请求」 60 s later
+        // even though the glasses answered every request; the honest
+        // answer is "the picture is incomplete", and it must arrive in
+        // seconds, not a minute.
+        val image = picture(2_400)
+        val rig = Rig(backgroundScope)
+        assertTrue(rig.status.tryEmit(startFrame(2_400)))
+        rig.fa12.pushRange(image, 0, BLOCK)
+        var now = 0L
+
+        val outcome = runCollector(
+            rig,
+            totalSize = 2_400,
+            // 5 s per clock read, so the no-progress budget is spent after a
+            // couple of repair cycles of *virtual* wait time.
+            clock = { now += 5_000L; now },
+        )
+
+        outcome as Fa12Collection.Failed
+        assertEquals("传图未完成（缺 2160/2400 字节）", outcome.reason)
+        assertTrue("must not burn the 90 s timeout", rig.op2Offsets.size < 32)
     }
 
     @Test
@@ -256,7 +388,7 @@ class GlassesFa12CollectorTest {
         assertTrue(rig.status.tryEmit(startFrame(600)))
         assertTrue(rig.fa12.tryEmit(block(0, ByteArray(BLOCK) { 1 })))
 
-        val outcome = runCollector(rig, totalSize = 600, maxResendRounds = 1)
+        val outcome = runCollector(rig, totalSize = 600, maxRepairCycles = 1)
 
         assertTrue("the ack must not complete a transfer, got $outcome", outcome is Fa12Collection.Failed)
     }
@@ -386,7 +518,11 @@ class GlassesFa12CollectorTest {
             "unexpected reason: ${outcome.reason}",
             outcome.reason.contains("未收到图片分片"),
         )
-        assertEquals(FA12_NO_SIGNAL_ABORT_ROUNDS, rig.op2Offsets.size)
+        assertEquals(
+            "each early-abort cycle still batches its offsets (0, 480, 960)",
+            List(FA12_NO_SIGNAL_ABORT_ROUNDS) { listOf(0, 480, 960) }.flatten(),
+            rig.op2Offsets,
+        )
     }
 
     @Test
