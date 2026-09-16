@@ -62,6 +62,19 @@
     <string name="settings_glasses_action_forget">清除记忆</string>
     <string name="settings_glasses_action_forget_confirm">确定要清除已记住的眼镜配对?下次拍照需要重新连接。</string>
     <string name="settings_glasses_pairing_hint">已启用但未配对,请先去系统蓝牙设置配对眼镜。</string>
+    <!-- v0.4.3 (2026-09-16 crash report): pre-flight prompts for the 「眼镜」
+         button. These replace the bare-noun Toast that used to stand in for
+         "no glasses paired" — and, before the fix, the SecurityException
+         that killed the process on Android 12+ when the OS bonded-device
+         list was read without BLUETOOTH_CONNECT granted. -->
+    <string name="glasses_not_paired_prompt">未检测到已配对的智能眼镜。请先在系统蓝牙设置中配对眼镜,再回到首页点击「眼镜」拍照。</string>
+    <string name="glasses_notice_permission_title">需要蓝牙权限</string>
+    <string name="glasses_permission_denied_prompt">连接智能眼镜需要「附近的设备」权限。点击「继续授权」后请选择「允许」。</string>
+    <string name="glasses_permission_denied_forever_prompt">蓝牙权限已被拒绝。请到系统「应用信息 → 权限 → 附近的设备」中手动开启后重试。</string>
+    <string name="glasses_action_grant">继续授权</string>
+    <string name="glasses_action_open_app_settings">去应用设置</string>
+    <string name="settings_glasses_permission_missing">未授权蓝牙权限</string>
+    <string name="settings_glasses_permission_hint">已启用但未授权蓝牙权限,请点击下方按钮授权。</string>
     <!-- Severity section header in the result panel: "违规 (3)" / "警告 (2)" / "信息 (1)" -->
     <string name="result_section_header">%1$s (%2$d)</string>
     <string name="tab_ad_law">广告招牌</string>

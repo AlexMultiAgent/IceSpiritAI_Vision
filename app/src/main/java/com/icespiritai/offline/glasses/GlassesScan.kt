@@ -36,6 +36,16 @@ import kotlinx.coroutines.flow.callbackFlow
  * scanner stops when the collector cancels — no leaks across
  * configuration changes, no zombie scans if the user navigates away
  * mid-discovery.
+ *
+ * **NOT WIRED IN v0.4.3.** This class is not invoked from any UI path
+ * as of `v0.4.3` — the smart-glasses capture flow relies entirely on
+ * paired devices via [GlassesDevice.bondedSnapshot] + [GlassesTarget].
+ * Ble scan would only be needed for "unpaired, must discover" flows,
+ * which v1 doesn't expose. Kept here as a v2 affordance; do NOT
+ * invoke [scan] from production code without first wiring the UI and
+ * resolving the pre-API-31 `ACCESS_FINE_LOCATION` permission gap
+ * ([ScanException.MissingPermission] returns on every scan attempt on
+ * API ≤30 devices because `AndroidManifest.xml` does not declare it).
  */
 class GlassesScan(private val context: Context) {
 

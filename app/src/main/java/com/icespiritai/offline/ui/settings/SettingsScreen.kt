@@ -1,7 +1,6 @@
 package com.icespiritai.offline.ui.settings
 
-import android.content.Intent
-import android.provider.Settings
+import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -31,18 +30,24 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.icespiritai.offline.AppGraph
 import com.icespiritai.offline.BuildConfig
 import com.icespiritai.offline.R
-import com.icespiritai.offline.glasses.GlassesDeviceStore
+import com.icespiritai.offline.glasses.GlassesDevice
+import com.icespiritai.offline.glasses.GlassesSystemIntents
+import com.icespiritai.offline.glasses.GlassesTarget
+import com.icespiritai.offline.glasses.resolveGlassesTarget
 import com.icespiritai.offline.settings.SettingsRepository
 import com.icespiritai.offline.settings.SettingsSnackbar
 import com.icespiritai.offline.settings.SettingsViewModel
@@ -186,12 +191,24 @@ fun SettingsScreen(
             Card(modifier = Modifier.fillMaxWidth()) {
                 val glassesEnabled by viewModel.enableGlassesCapture.collectAsStateWithLifecycle()
                 val glassesCtx = LocalContext.current
-                // Read on every composition; in-memory SharedPreferences is
-                // cheap and re-rendering the whole card on a switch flip is
-                // fine for this infrequent path. If a future v2 needs live
-                // updates without a state change, swap to a Flow.
-                val paired = remember(glassesEnabled) {
-                    AppGraph.glassesDeviceStore(glassesCtx).loadLastPaired()
+                // v0.4.3: status comes from the SAME resolver the capture
+                // path uses, so this card can no longer contradict what
+                // tapping 「眼镜」 does. Before the fix it read only the
+                // app's own SharedPreferences, which meant a glasses already
+                // paired in system Bluetooth still showed 「未配对智能眼镜」
+                // until the app had connected once — the state the crash
+                // report's screenshot was taken in.
+                var glassesStatus by remember(glassesEnabled) {
+                    mutableStateOf(glassesSettingsStatus(glassesCtx))
+                }
+                // Re-derive on every resume. The two actions this card
+                // offers both leave the app (system Bluetooth settings, app
+                // permission page), and a status line that is still red
+                // after the user did what it asked is worse than no status
+                // at all.
+                LifecycleResumeEffect(glassesEnabled) {
+                    glassesStatus = glassesSettingsStatus(glassesCtx)
+                    onPauseOrDispose { }
                 }
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -212,36 +229,55 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
+                    val status = glassesStatus
                     Text(
-                        text = paired?.let {
-                            stringResource(R.string.settings_glasses_paired, it)
-                        } ?: stringResource(R.string.settings_glasses_not_paired),
+                        text = when (status) {
+                            is GlassesSettingsStatus.Ready ->
+                                stringResource(R.string.settings_glasses_paired, status.address)
+                            GlassesSettingsStatus.PermissionMissing ->
+                                stringResource(R.string.settings_glasses_permission_missing)
+                            GlassesSettingsStatus.BluetoothOff ->
+                                stringResource(R.string.glasses_bluetooth_off)
+                            GlassesSettingsStatus.BluetoothUnavailable ->
+                                stringResource(R.string.glasses_no_adapter)
+                            GlassesSettingsStatus.NotPaired ->
+                                stringResource(R.string.settings_glasses_not_paired)
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (glassesEnabled && paired == null) {
+                    if (glassesEnabled && status.needsAction) {
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = stringResource(R.string.settings_glasses_pairing_hint),
+                            text = when (status) {
+                                GlassesSettingsStatus.PermissionMissing ->
+                                    stringResource(R.string.settings_glasses_permission_hint)
+                                else -> stringResource(R.string.settings_glasses_pairing_hint)
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
-                    val ctx = LocalContext.current
-                    TextButton(onClick = {
-                        val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        try {
-                            ctx.startActivity(intent)
-                        } catch (_: android.content.ActivityNotFoundException) {
-                            ctx.startActivity(
-                                Intent(Settings.ACTION_SETTINGS)
-                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                            )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(
+                            onClick = {
+                                GlassesSystemIntents.openBluetoothSettings(glassesCtx)
+                            },
+                        ) {
+                            Text(stringResource(R.string.settings_glasses_action_pair))
                         }
-                    }) {
-                        Text(stringResource(R.string.settings_glasses_action_pair))
+                        // Pairing does not help when the *permission* is the
+                        // blocker, so offer the page that does.
+                        if (status is GlassesSettingsStatus.PermissionMissing) {
+                            TextButton(
+                                onClick = {
+                                    GlassesSystemIntents.openAppSettings(glassesCtx)
+                                },
+                            ) {
+                                Text(stringResource(R.string.glasses_action_open_app_settings))
+                            }
+                        }
                     }
                 }
             }
@@ -447,5 +483,63 @@ private fun FeatureVisibilityRow(
             checked = checked,
             onCheckedChange = onCheckedChange,
         )
+    }
+}
+
+/**
+ * What the 智能眼镜 card can say about the current setup.
+ *
+ * Four states rather than the pre-v0.4.3 boolean, because the boolean lied
+ * twice: it reported 「未配对」 for a device that *was* paired in system
+ * Bluetooth (the app only looked at its own remember-last-address store),
+ * and it had no way to say 「未授权蓝牙权限」 at all — the state that
+ * actually blocked the user in the 2026-09-16 crash report.
+ */
+private sealed interface GlassesSettingsStatus {
+
+    data class Ready(val address: String) : GlassesSettingsStatus
+
+    data object NotPaired : GlassesSettingsStatus
+
+    data object PermissionMissing : GlassesSettingsStatus
+
+    data object BluetoothOff : GlassesSettingsStatus
+
+    data object BluetoothUnavailable : GlassesSettingsStatus
+
+    /**
+     * Should the card print the red "do something" hint?
+     *
+     * False for [BluetoothUnavailable] — a device with no Bluetooth radio
+     * cannot be fixed by pairing, so pointing at Bluetooth settings would
+     * be noise.
+     */
+    val needsAction: Boolean
+        get() = when (this) {
+            is Ready, BluetoothUnavailable -> false
+            NotPaired, PermissionMissing, BluetoothOff -> true
+        }
+}
+
+/**
+ * Derive the card's status from the same pure resolver the capture path
+ * uses — one source of truth, so the card and the 「眼镜」 button can never
+ * disagree about whether capture is possible.
+ */
+private fun glassesSettingsStatus(context: Context): GlassesSettingsStatus {
+    val target = runCatching {
+        resolveGlassesTarget(
+            lastPairedAddress = AppGraph.glassesDeviceStore(context).loadLastPaired(),
+            snapshot = GlassesDevice.bondedSnapshot(context),
+            nowMs = System.currentTimeMillis(),
+        )
+    }.getOrElse { GlassesTarget.NotPaired }
+
+    return when (target) {
+        is GlassesTarget.Ready -> GlassesSettingsStatus.Ready(target.device.address)
+        GlassesTarget.ConnectPermissionMissing -> GlassesSettingsStatus.PermissionMissing
+        GlassesTarget.BluetoothOff -> GlassesSettingsStatus.BluetoothOff
+        GlassesTarget.BluetoothUnavailable -> GlassesSettingsStatus.BluetoothUnavailable
+        GlassesTarget.NotPaired -> GlassesSettingsStatus.NotPaired
     }
 }

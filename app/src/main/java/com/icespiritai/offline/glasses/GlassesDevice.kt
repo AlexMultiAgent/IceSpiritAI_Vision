@@ -1,7 +1,12 @@
 package com.icespiritai.offline.glasses
 
+import android.Manifest
 import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.content.ContextCompat
 
 /**
  * A nearby Bluetooth LE device that **might** be the glasses.
@@ -69,46 +74,100 @@ data class GlassesDevice(
         const val STALE_THRESHOLD_MS: Long = 30_000L
 
         /**
-         * Look up a bonded smart-glasses device via the OS Bluetooth
-         * stack, returning `null` if no BondedDevice name matches any
-         * accepted smart-glasses prefix (see [NAME_PREFIXES]).
+         * Read the OS bonded-device list as a [BondedSnapshot] — the raw
+         * material for [resolveGlassesTarget].
          *
-         * **Why this exists** (smoke test 2026-09-14, commit `552a8a7`):
-         * `GlassesDeviceStore.loadLastPaired()` is the per-app
-         * SharedPreferences that records the address of the most recent
-         * successful connect. It's only written from
-         * [BluetoothController]'s `STATE_CONNECTED` callback — so on a
-         * **first launch** (or after `adb shell pm clear`), the store is
-         * empty even though the user has already paired the glasses in
-         * system Settings. The original HomeScreen guard
-         * (`if (loadLastPaired() == null) Toast + return`) created a
-         * chicken-and-egg: no entry → can't connect → no entry.
+         * **Why the OS list is read at all** (smoke test 2026-09-14,
+         * commit `552a8a7`): `GlassesDeviceStore.loadLastPaired()` only
+         * records an address after a successful connect, so on a **first
+         * launch** (or after `adb shell pm clear`) it is empty even though
+         * the user has already paired the glasses in system Settings. The
+         * OS list — which survives `pm clear` and app uninstalls — is what
+         * breaks that chicken-and-egg.
          *
-         * This helper breaks the deadlock by reading the OS-level
-         * `BluetoothAdapter.bondedDevices` list (which the system keeps
-         * across `pm clear` and across app uninstalls) and returning
-         * the first device whose name matches our prefix list. The
-         * caller should persist the result via
-         * [GlassesDeviceStore.saveLastPaired] so subsequent launches
-         * bypass this fallback.
+         * **This function is the v0.4.3 crash site's replacement.** The
+         * previous implementation called `adapter.bondedDevices` and
+         * `device.name` directly. Both require `BLUETOOTH_CONNECT` on
+         * API 31+, and the permission was never requested at runtime, so
+         * the call threw `SecurityException` on the main thread inside the
+         * 「眼镜」 button's `onClick` → process death. On the Android 10
+         * smoke device the legacy `BLUETOOTH` permission covered it, which
+         * is why every pre-v0.4.3 smoke run passed.
          *
-         * `null` is returned in three cases:
-         *   - BluetoothAdapter unavailable (emulator / device without BT)
-         *   - Bluetooth radio off
-         *   - No BondedDevice name matches any accepted prefix
+         * Three independent guards now stand between the UI and that
+         * exception, in order of cheapness:
+         *
+         *  1. an explicit `checkSelfPermission` before touching the
+         *     adapter — reports `connectPermissionGranted = false` instead
+         *     of relying on the platform to throw;
+         *  2. a `try/catch (SecurityException)` around the whole read,
+         *     because ROMs differ in *which* call they enforce: some
+         *     throw on `isEnabled`, some on `bondedDevices`, some only on
+         *     the per-device `name` / `address` getters;
+         *  3. per-device `try/catch` inside [toGlassesDevice] so one
+         *     unreadable entry does not discard the whole list.
+         *
+         * Never throws. Callers get a snapshot they can hand to the pure
+         * resolver, which is what makes the "no glasses paired" path
+         * testable without a Bluetooth stack.
          */
-        fun findBondedDevice(context: Context): GlassesDevice? {
-            val adapter = BluetoothAdapter.getDefaultAdapter() ?: return null
-            if (!adapter.isEnabled) return null
-            return adapter.bondedDevices
-                ?.firstOrNull { btDevice -> nameMatches(btDevice.name) }
-                ?.let { btDevice ->
-                    GlassesDevice(
-                        address = btDevice.address,
-                        name = btDevice.name ?: NAME_PREFIX,
-                        lastSeenMs = System.currentTimeMillis(),
+        fun bondedSnapshot(context: Context): BondedSnapshot {
+            val adapter = try {
+                BluetoothAdapter.getDefaultAdapter()
+            } catch (e: Throwable) {
+                // Defensive: no known ROM throws here, but this is the first
+                // line of the flow that used to kill the process, so it does
+                // not get to be the exception.
+                null
+            } ?: return BondedSnapshot.NO_ADAPTER
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.BLUETOOTH_CONNECT,
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                return BondedSnapshot.PERMISSION_MISSING
+            }
+
+            return try {
+                if (!adapter.isEnabled) {
+                    BondedSnapshot.BLUETOOTH_OFF
+                } else {
+                    BondedSnapshot(
+                        bondedGlasses = adapter.bondedDevices
+                            .orEmpty()
+                            .mapNotNull(::toGlassesDevice),
                     )
                 }
+            } catch (e: SecurityException) {
+                // The explicit check above should have caught this; keep the
+                // fallback so a permission revoked mid-flight (or an OEM
+                // enforcing a permission we do not know about) degrades to
+                // the permission prompt instead of a crash.
+                BondedSnapshot.PERMISSION_MISSING
+            }
+        }
+
+        /**
+         * Map one OS device to [GlassesDevice], or null when it is not a
+         * smart-glasses or the platform refuses to hand over its
+         * name/address.
+         */
+        private fun toGlassesDevice(btDevice: BluetoothDevice): GlassesDevice? = try {
+            val deviceName = btDevice.name
+            val deviceAddress = btDevice.address
+            if (deviceName == null || deviceAddress == null || !nameMatches(deviceName)) {
+                null
+            } else {
+                GlassesDevice(
+                    address = deviceAddress,
+                    name = deviceName,
+                    lastSeenMs = System.currentTimeMillis(),
+                )
+            }
+        } catch (e: SecurityException) {
+            null
         }
     }
 }

@@ -1,6 +1,8 @@
 package com.icespiritai.offline.glasses.ui
 
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -18,84 +20,145 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.icespiritai.offline.R
+import com.icespiritai.offline.glasses.GlassesDevice
+import com.icespiritai.offline.glasses.GlassesDeviceStore
+import com.icespiritai.offline.glasses.GlassesPermissions
 import com.icespiritai.offline.glasses.GlassesPhotoCaptureRepository
+import com.icespiritai.offline.glasses.GlassesSystemIntents
+import com.icespiritai.offline.glasses.GlassesTarget
+import com.icespiritai.offline.glasses.resolveGlassesTarget
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 /**
- * Minimal Compose overlay driving the smart-glasses capture pipeline.
+ * Compose overlay driving the smart-glasses capture pipeline.
  *
- * **Wiring assumption.** The caller has already verified:
- *   - the glasses are paired in OS Bluetooth settings
- *   - the user has granted `BLUETOOTH_SCAN` + `BLUETOOTH_CONNECT` runtime permissions
+ * **Wiring assumption (v1).** The caller has already verified:
+ *   - the glasses are paired in OS Bluetooth settings, and
+ *   - `BLUETOOTH_CONNECT` is granted (see [GlassesPermissions]).
  *
- * On first composition the overlay triggers an auto-reconnect to the
- * last-paired device (read via [GlassesDeviceStore]). Once connected,
- * it auto-starts the capture. On `Success`, [onCaptured] fires with the
- * JPEG FileProvider URI and the caller is expected to feed it into
+ * The overlay still re-derives both, because a self-contained pre-flight is
+ * what turns "we assumed the caller checked" into "the user gets a prompt".
+ * When the target cannot be resolved it shows a [GlassesNoticeDialog]
+ * instead of the capture dialog — see the v0.4.3 note below.
+ *
+ * Once a target is resolved the overlay auto-connects and auto-starts the
+ * capture. On `Success`, [onCaptured] fires with the JPEG FileProvider URI
+ * and the caller is expected to feed it into
  * [com.icespiritai.offline.IceSpiritVisionViewModel.startAnalysis].
+ *
+ * **v0.4.3 fix (2026-09-16 crash report).** Before this version the
+ * unresolved-device branch did `repository.reset()` and rendered the
+ * `Idle` arm — a dead-end dialog reading 「搜索附近的眼镜」 with no close
+ * button; the resolver above it called `BluetoothAdapter.bondedDevices`
+ * unguarded, which is a `SecurityException` on Android 12+ without
+ * `BLUETOOTH_CONNECT`. Now:
+ *
+ *  - resolution goes through the shared pure resolver
+ *    ([resolveGlassesTarget]) over a guard-safe snapshot;
+ *  - every failure becomes a notice with the action that fixes it
+ *    (去蓝牙设置配对 / 继续授权 / 去应用设置);
+ *  - 重试 re-runs the *whole* session (resolve → connect → capture) rather
+ *    than reconnecting blindly to `loadLastPaired()`, which used to
+ *    `return@launch` silently when the store was empty.
  *
  * **v1 limitation.** Single-device flow. Multi-glasses picker is a v2
  * follow-up (see plan §"Multi-glasses note").
  *
- * **v1 limitation.** No in-overlay BLE scan — the user must pair in
- * system Settings first. Per the recommendation in the response to the
- * user clarifying "BLE 连接 ≠ 免配对", this is intentional for v1.
+ * **v1 limitation.** No in-overlay BLE *scan* — the user pairs in system
+ * Settings first. Per the recommendation in the response to the user
+ * clarifying "BLE 连接 ≠ 免配对", this is intentional for v1.
  */
 @Composable
 fun GlassesCaptureOverlay(
     repository: GlassesPhotoCaptureRepository,
-    deviceStore: com.icespiritai.offline.glasses.GlassesDeviceStore,
-    scope: kotlinx.coroutines.CoroutineScope,
+    deviceStore: GlassesDeviceStore,
+    scope: CoroutineScope,
     onCaptured: (Uri) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val state by repository.state.collectAsState()
+    val context = LocalContext.current
 
-    val context = androidx.compose.ui.platform.LocalContext.current
-    LaunchedEffect(Unit) {
-        // Resolve which device to talk to. Order of preference (smoke 21
-        // 2026-09-15: the persisted `lastPaired` address is unreliable —
-        // the user can swap glasses, the OS pairing record can be
-        // deleted out from under us, and `GlassesDeviceStore` only
-        // updates on a successful `onConnectionStateChange`, never on
-        // pair churn. Falling back to `findBondedDevice(context)` is the
-        // single source of truth: the OS BondedDevices list reflects
-        // the *current* paired device, which is what BLE secure-connect
-        // will actually authenticate against).
-        val bonded = com.icespiritai.offline.glasses.GlassesDevice
-            .findBondedDevice(context)
-        val resolvedDevice = bonded
-            ?: deviceStore.loadLastPaired()?.let { lastPaired ->
-                com.icespiritai.offline.glasses.GlassesDevice(
-                    address = lastPaired,
-                    name = com.icespiritai.offline.glasses.GlassesDevice.NAME_PREFIX,
-                    lastSeenMs = System.currentTimeMillis(),
-                )
-            }
-        if (resolvedDevice == null) {
-            repository.reset()
-            return@LaunchedEffect
+    /**
+     * Non-null while a pre-flight problem is blocking the session. Lives
+     * outside the repository's state machine on purpose: the repository
+     * describes *BLE session* state, and "the user never got as far as a
+     * session" is not one of its stages.
+     */
+    var preflight by remember { mutableStateOf<GlassesNotice?>(null) }
+
+    fun resolveTarget(): GlassesTarget = runCatching {
+        resolveGlassesTarget(
+            lastPairedAddress = deviceStore.loadLastPaired(),
+            snapshot = GlassesDevice.bondedSnapshot(context),
+            nowMs = System.currentTimeMillis(),
+        )
+    }.getOrElse { GlassesTarget.NotPaired }
+
+    suspend fun runSession() {
+        val target = resolveTarget()
+        if (target !is GlassesTarget.Ready) {
+            preflight = target.noticeOrNull() ?: GlassesNotice.NotPaired
+            return
         }
-        // Refresh the persisted address so the *next* launch (when the
-        // OS list is in flux again) has a current value.
-        deviceStore.saveLastPaired(resolvedDevice.address)
+        preflight = null
+        // Refresh the persisted address so the next launch starts from the
+        // device we are about to actually talk to.
+        deviceStore.saveLastPaired(target.device.address)
         try {
-            repository.ensureConnected(resolvedDevice)
+            repository.ensureConnected(target.device)
             // Auto-start the capture once Ready.
-            val captured = repository.capture()
-            if (captured != null) onCaptured(captured)
+            repository.capture()?.let(onCaptured)
         } catch (e: Throwable) {
-            // Repository has already transitioned state to Failed; let
-            // the UI render that.
+            // Repository has already transitioned state to Failed; let the
+            // UI render that.
         }
+    }
+
+    // The home screen gates on the permission before opening this overlay,
+    // so this launcher is the belt-and-braces path for a caller that
+    // doesn't (and for the notice's 「继续授权」 button).
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        if (grants.values.all { it }) scope.launch { runSession() }
+    }
+
+    LaunchedEffect(Unit) { runSession() }
+
+    val notice = preflight
+    if (notice != null) {
+        GlassesNoticeDialog(
+            notice = notice,
+            onDismiss = onDismiss,
+            onOpenBluetoothSettings = {
+                GlassesSystemIntents.openBluetoothSettings(context)
+            },
+            onRequestPermission = {
+                val missing = GlassesPermissions.missing(context)
+                if (missing.isEmpty()) {
+                    scope.launch { runSession() }
+                } else {
+                    permissionLauncher.launch(missing.toTypedArray())
+                }
+            },
+            onOpenAppSettings = {
+                GlassesSystemIntents.openAppSettings(context)
+            },
+        )
+        return
     }
 
     Dialog(
@@ -176,16 +239,13 @@ fun GlassesCaptureOverlay(
                             if (s.retryable) {
                                 Button(onClick = {
                                     scope.launch {
-                                        val lastPaired = deviceStore.loadLastPaired() ?: return@launch
-                                        val device = com.icespiritai.offline.glasses.GlassesDevice(
-                                            address = lastPaired,
-                                            name = com.icespiritai.offline.glasses.GlassesDevice.NAME_PREFIX,
-                                            lastSeenMs = System.currentTimeMillis(),
-                                        )
                                         repository.reset()
-                                        repository.ensureConnected(device)
-                                        val captured = repository.capture()
-                                        if (captured != null) onCaptured(captured)
+                                        // Re-resolve instead of trusting the
+                                        // persisted address: the failure may
+                                        // be "the remembered glasses is gone",
+                                        // in which case the OS bonded list is
+                                        // the only thing that knows better.
+                                        runSession()
                                     }
                                 }) {
                                     Text(stringResource(R.string.glasses_action_retry))

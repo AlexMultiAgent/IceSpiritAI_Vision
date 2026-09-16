@@ -50,9 +50,15 @@ import com.icespiritai.offline.domain.ViolationReport
 import com.icespiritai.offline.domain.severityRank
 import com.icespiritai.offline.AppGraph
 import com.icespiritai.offline.export.ExportAction
-import com.icespiritai.offline.glasses.GlassesDeviceStore
-import com.icespiritai.offline.glasses.GlassesPhotoCaptureRepository
+import com.icespiritai.offline.glasses.GlassesDevice
+import com.icespiritai.offline.glasses.GlassesPermissions
+import com.icespiritai.offline.glasses.GlassesSystemIntents
+import com.icespiritai.offline.glasses.GlassesTarget
+import com.icespiritai.offline.glasses.resolveGlassesTarget
 import com.icespiritai.offline.glasses.ui.GlassesCaptureOverlay
+import com.icespiritai.offline.glasses.ui.GlassesNotice
+import com.icespiritai.offline.glasses.ui.GlassesNoticeDialog
+import com.icespiritai.offline.glasses.ui.noticeOrNull
 import com.icespiritai.offline.settings.SettingsRepository
 import com.icespiritai.offline.tts.TtsState
 import java.io.File
@@ -252,48 +258,100 @@ fun HomeScreen(
         }
     }
 
-    // Smart-glasses capture overlay state — set to true by the
-    // CaptureBar's `onGlassesCapture` callback; cleared by the
-    // overlay's onDismiss / onCaptured.
+    // ── Smart-glasses capture (v0.4.3: permission gate + no-crash entry) ──
+    //
+    // State: [glassesOverlayVisible] drives the capture dialog;
+    // [glassesNotice] carries every "you cannot capture yet, here is why"
+    // outcome. Exactly one of them is ever non-default — a resolved target
+    // opens the overlay, anything else raises a notice.
     var glassesOverlayVisible by remember { mutableStateOf(false) }
+    var glassesNotice by remember { mutableStateOf<GlassesNotice?>(null) }
     val glassesRepository = remember { AppGraph.glassesPhotoCaptureRepository(context) }
     val glassesDeviceStore = remember { AppGraph.glassesDeviceStore(context) }
     // v0.4.0: opt-in toggle. Source of truth is SettingsViewModel +
     // DataStore; VM mirrors it onto a StateFlow for cheap Compose reads.
     val glassesEnabled by viewModel.enableGlassesCapture.collectAsState()
 
+    fun resolveGlassesTargetSafely(): GlassesTarget =
+        // Not defensive decoration: the v0.4.2 crash was an uncaught
+        // SecurityException thrown from exactly this chain, on the main
+        // thread, inside a Compose onClick — which no UI can survive. The
+        // individual calls are guarded (see GlassesDevice.bondedSnapshot),
+        // and this wrapper is the invariant: the tap produces a prompt for
+        // *any* failure, including ones a future refactor introduces.
+        runCatching {
+            resolveGlassesTarget(
+                lastPairedAddress = glassesDeviceStore.loadLastPaired(),
+                snapshot = GlassesDevice.bondedSnapshot(context),
+                nowMs = System.currentTimeMillis(),
+            )
+        }.getOrElse { GlassesTarget.NotPaired }
+
+    fun startGlassesCapture() {
+        when (val target = resolveGlassesTargetSafely()) {
+            is GlassesTarget.Ready -> {
+                // Persist the bootstrap-resolved address so the next launch
+                // can skip the OS lookup (v0.4.0 behaviour, kept).
+                if (glassesDeviceStore.loadLastPaired() != target.device.address) {
+                    glassesDeviceStore.saveLastPaired(target.device.address)
+                }
+                glassesNotice = null
+                glassesOverlayVisible = true
+            }
+            else -> glassesNotice = target.noticeOrNull() ?: GlassesNotice.NotPaired
+        }
+    }
+
+    // Runtime permission gate (v0.4.3). `BLUETOOTH_CONNECT` was declared in
+    // the manifest but never requested; on API 31+ every Bluetooth
+    // device-identity API is enforced against it, so the first call threw
+    // SecurityException. Requested lazily here — on the tap that needs it —
+    // per the minimal-scope decision documented on GlassesPermissions
+    // (CONNECT only in v1; SCAN stays declared for the v2 in-app pairing).
+    val glassesPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        if (grants.values.all { it }) {
+            startGlassesCapture()
+        } else {
+            // `shouldShowRequestPermissionRationale` is false both before the
+            // first ask and after a permanent denial, so it only means
+            // "permanent" here — after a request has just been refused.
+            glassesNotice = if (
+                GlassesPermissions.shouldShowRationale(
+                    context,
+                    Manifest.permission.BLUETOOTH_CONNECT,
+                )
+            ) {
+                GlassesNotice.PermissionDenied
+            } else {
+                GlassesNotice.PermissionDeniedForever
+            }
+        }
+    }
+
+    fun requestGlassesPermission() {
+        val missing = GlassesPermissions.missing(context)
+        if (missing.isEmpty()) {
+            startGlassesCapture()
+        } else {
+            glassesPermissionLauncher.launch(missing.toTypedArray())
+        }
+    }
+
     fun launchGlassesCapture() {
         // Defensive guard 1: switch off. CaptureBar shouldn't render the
         // button when this is false, but a deep-link / replay could still
         // route here. Silently no-op rather than surface an error.
         if (!glassesEnabled) return
-        // Resolve the target device in priority order:
-        //   1. App's own store (happy path — captures user-overridden
-        //      address across launches)
-        //   2. OS BondedDevices list with NAME_PREFIX match (first-launch
-        //      bootstrap; survives `pm clear` and app uninstall)
-        //   3. Bail with a Toast pointing at system Settings
-        val resolvedDevice = glassesDeviceStore.loadLastPaired()?.let { addr ->
-            com.icespiritai.offline.glasses.GlassesDevice(
-                address = addr,
-                name = com.icespiritai.offline.glasses.GlassesDevice.NAME_PREFIX,
-                lastSeenMs = System.currentTimeMillis(),
-            )
-        } ?: com.icespiritai.offline.glasses.GlassesDevice.findBondedDevice(context)
-        if (resolvedDevice == null) {
-            Toast.makeText(
-                context,
-                R.string.settings_glasses_not_paired,
-                Toast.LENGTH_LONG,
-            ).show()
-            return
-        }
-        // Persist the bootstrap-resolved address so the next launch can
-        // skip the OS lookup.
-        if (glassesDeviceStore.loadLastPaired() == null) {
-            glassesDeviceStore.saveLastPaired(resolvedDevice.address)
-        }
-        glassesOverlayVisible = true
+        // Defensive guard 2: the invariant this whole change exists for —
+        // a Compose onClick must not be able to take the process down. The
+        // realistic failure here is `ActivityResultLauncher.launch` throwing
+        // because the host lifecycle is already torn down; the permission
+        // notice is the closest honest thing to show for "we could not get
+        // the permission".
+        runCatching { requestGlassesPermission() }
+            .onFailure { glassesNotice = GlassesNotice.PermissionMissing }
     }
 
     fun reset() {
@@ -452,6 +510,31 @@ fun HomeScreen(
                 // (smoke 2026-09-15 §P1 #3).
                 glassesRepository.cancel()
                 glassesOverlayVisible = false
+            },
+        )
+    }
+
+    // Pre-flight notice (v0.4.3). Replaces the bare-noun Toast that used to
+    // stand in for "no glasses paired" — and, before the fix, the
+    // SecurityException that killed the process when the OS bonded-device
+    // list was read on Android 12+ without BLUETOOTH_CONNECT granted.
+    glassesNotice?.let { notice ->
+        GlassesNoticeDialog(
+            notice = notice,
+            onDismiss = { glassesNotice = null },
+            onOpenBluetoothSettings = {
+                GlassesSystemIntents.openBluetoothSettings(context)
+                glassesNotice = null
+            },
+            onRequestPermission = {
+                // Close the notice first: leaving it up would stack it under
+                // the system permission dialog.
+                glassesNotice = null
+                requestGlassesPermission()
+            },
+            onOpenAppSettings = {
+                GlassesSystemIntents.openAppSettings(context)
+                glassesNotice = null
             },
         )
     }
