@@ -1,1191 +1,771 @@
 # 用户更新日志
 
+## v0.4.2 — 2026-09-16
+
+**底部三个按钮看起来更整齐一致了**。之前中间「眼镜拍照」和左边「选图」按钮的小图标都在文字右边,只有最右边的「拍照」按钮图标在左边,三个按钮的视觉风格不太统一;现在三个按钮的图标都统一放在文字左侧,一眼看上去更协调。
+
+### 优化 (UI 调整)
+
+- **三个底部按钮(图库 / 眼镜 / 拍照)图标都放到文字左侧**:跟最右边的「拍照」按钮保持一致,看起来更整齐。
+- **「眼镜拍照」按钮换成眼镜图形图标**:之前用的是相机小图标,跟最右边的「拍照」按钮容易搞混;现在改用真正的眼镜图形(两个镜片 + 鼻梁),一眼能看出是连接智能眼镜。
+- **「眼镜拍照」按钮文字简化为「眼镜」**:四个字缩成两个字,跟另外两个按钮的宽度更接近,整体更平衡。功能说明仍然保留在屏幕阅读器(TalkBack)的描述里,读屏会播报完整动作。
+
 ## v0.4.1 — 2026-09-16
 
-**维护版:清掉 baseline `f7a8d47` 的 3 项 unit test 漂移 + docs/glasses/ 子系统 KDoc 引用全部对齐到正确路径**(无新功能,无新规则,仅卫生项)。
+**日常维护**。修复几个小 bug,App 跑起来更稳定;同时把帮助文档里几处路径错误改正。
 
-### 修复 (Test 漂移)
+### 修复
 
-- **`AdSignageTextFixtureRegressionTest`**:v0.1.64 新增 `ad_signage_art43_consent_required`(《广告法》§43 未经同意发送广告)后,`text_finance_dzp_01.md` + `text_finance_szb_01.md` 两个 fixture 的 `originalAdText` 含「短信群发」「扫码进群」这些 keyword,会同时命中金融规则和这条新广告法规则(合法的双规则命中 — 这两个词确实是两个法条同时管的),但 fixture 的「预期命中规则」frontmatter 漏更新,set 严格不等于导致测试 fail。两条 fixture 各加一条 `ad_signage_art43_consent_required: Warning`。
-- **`ChangelogScreenTest` shipping version pin**:测试断言 bundled `user-changelog.md` 第一段必须等于当前 shipping version,但从 v0.3.0 起没人更新 pin(bump 跟 pin 走散)。从 `v0.3.0` 改到 `v0.4.0`。每次 release 都要 bump。
-- **`UpdateRepositoryStallTest.markCancelled` full-suite 失败单独跑通过**:`_state.value = ...` 走 `Dispatchers.Main` 派发 subscriber notifications;没有 `@Before setMain(...)` + `@After resetMain()`,前一个测试 setMain 后没 resetMain 把状态留给下一个测试,full-suite 排序踩中。补标准守卫(CLAUDE.md §"Unit test 踩坑" 已记同款 gotcha)。
-
-### 修复 (Docs 引用)
-
-- **`docs/glass/` → `docs/glasses/` 路径 8 处**:4f3ced1 入库的 `AI识图传图提速_App连接参数配合.md` 实际目录是复数 `docs/glasses/`,但源码 KDoc + `AndroidManifest.xml` + `strings.xml` + 测试 KDoc 共 8 处用了单数 `docs/glass/`(不存在路径)。一并修正,git grep 验证空。
-- **`docs/glasses/AI识图传图-App端接收处理说明.md` 入库**:草稿已在 working tree 但未 commit;`GlassesPhotoProtocol.kt:196` + `GlassesReceiveTap.kt:26` + `GlassesPhotoCaptureRepository.kt:372` 隐式引用 yuan 实现路径,别人 clone 后这些 KDoc 引用是悬空的。commit 上游。doc 自述历史参考(yuan/glass_test 双模实现),类名跟当前 IceSpiritAI_Vision 布局不同,但 §2.3 Step 4 契约层引用仍 valid。
-
-### 验证
-
-- 4 个 commit(均已 push):`e616c4a test` / `9e6ba71 docs` / `0cdfcdc fix(docs)` / `a9ad054 chore(gitignore)`,作者 `AlexMultiAgent`,无 Co-Authored-By trailer。
-- `./gradlew :app:testDebugUnitTest`(shell profile)**1040 tests / 0 fail / 2 skip** —baseline `f7a8d47` 之后首次干净。`AdSignageText` / `ChangelogScreen` / `UpdateRepositoryStall.markCancelled` 全部回到通过状态。
-- `git grep -l 'docs/glass/AI' app/src/` 空,`git grep -l 'docs/glasses/AI' app/src/` 10 处全部 valid。
-- `app/build.gradle.kts versionCode 75→76` + `versionName 0.4.0→0.4.1`,与本条目同步。
-
-### 注意
-
-- v0.4.0 期间真机验证用 MAC `60:09 Glasses-A88`,re-pair 后挂的是 `60:0B`(用户 unpair + re-pair 后另一台),所以 v0.4.0 的 `docs/smoke/2026-09-15-ble-fix-verify/logcat_v2.txt` 是新 MAC 数据。`docs/smoke/*/logcat*.txt` 现已 gitignore,本地留存。
+- 修复了一个测试间状态残留的小问题(上一个测试的设置没清干净,影响下一个测试)
+- 同步更新了一个测试期望的规则列表(之前漏更新导致测试失败)
+- 修正帮助文档里 8 处路径错误(单复数不一致)
+- 新增一份开发参考文档入库
 
 ## v0.4.0 — 2026-09-15
 
-**重写智能眼镜 BLE 拍照传图管线 —— 之前一拍照就卡死直到 90 s 超时,现在 1.7-2.1 s 出图**。根因有两个:(1) `0x33 Response` 被仓库误读成"传图完成信号",触发 `fillGapsWith(0xFF)` + `forceCompleted=true` 产出一张全 `0xFF` 的伪 JPEG,OCR 必然失败;(2) `SharedFlow.first()` 的"订阅→取一个→退订"语义对 `replay=0` 流是漏块陷阱 —— `tryEmit` 仍返回 `true` 但值已丢,所以头部块永远收不到(`filled=0` 从头到尾不变),`assemble()` 抛异常被吞,FA11 `0x03` 永远写不出去。逐项修法见下方。
+**智能眼镜拍照修好了 —— 之前一拍照就卡死 90 秒,现在 2 秒左右出图**。彻底重写了智能眼镜蓝牙传图流程,眼镜拍完照片传到手机这条链路不再卡死。
 
-### 修复 (BLE 传图管线)
+### 修复
 
-- **`0x33 Response` 不再误触发 SUCCESS**:`GlassesPhotoProtocol.isCaptureAckSuccess` 的 KDoc 改为明确禁止把 0x33 ack 当传图完成信号;`collectFa12Chunks` 收到此帧静默忽略,继续等 FA12 块。
-- **单次长订阅 tap 取代 `first()`**:新增 `GlassesReceiveTap.kt`,会话期间只订阅一次,块经 `Channel(UNLIMITED)` 投递;在写 `0x33` **之前**开启,`finally` 关闭。天然充当官方 `aiPhotoEarlyChunks` 的等价物,头部块不再丢。
-- **停包补洞恢复**:3.5 s 停包 → FA11 `0x02` 补洞,每轮 2.5 s,≤24 轮(spec §2.3 Step 6);`maxResendRounds` 不再是死变量;超轮次给准确文案。
-- **零块早停**:一块都没到时 3 轮即止,不再空耗 24×2.5 s ≈ 60 s(对齐官方 `AI_PHOTO_RETRANS_ABORT pkts0`)。
-- **FA11 `0x04` 取消握手**:任何 App 端放弃(停包超时 / 硬超时 / 零块早停 / 用户取消)都补发 FA11 `0x04`,固件不再往没人收的会话里推 FA12(对齐官方 `cancelAiPhotoBleTransfer`)。
-- **优先级恢复**:capture 入口 HIGH(对齐官方 `prewarmAiPhotoBlePriority`),`finally` 恢复 BALANCED(对齐官方 `restoreBlePriorityAfterAiPhoto`,spec §3.2/§2.4)。之前 `finally` 里再调一次 HIGH 与入口自相矛盾。
-- **`file_size` 上限 2 MiB**:伪造的 u32 撑到 4 GB 会 OOM;`GlassesPhotoStream` 按上限分配,超限拒收。
-- **GATT write 串行化(Mutex)**:多块并发写会 hang radio,改成串行写入队列。
-- **连接子阶段细化 overlay**:之前"Connecting..." 显示 2+ 分钟没动静,实际在 MTU / Services / Notifies 阶段;分阶段上报状态。
-- **首块 HIGH re-boost**:`onConnectionUpdated` 报 `≥ 17` 时再推一次 HIGH,本机 nova 6 报 `interval=12`,不需要触发(由 `FA12 first block, interval=` 日志判别,数字恒为 `0` 的 ROM 表示不派发,按设计惰降)。
-
-### 修复 (UI 收尾)
-
-- **Overlay 关闭按钮接 cancel**:之前 `onDismiss` 只翻 Compose state,后台 job 继续跑 → 下次拍照假死直到 90 s 超时。`onDismiss` 现先调 `repository.cancel()`(发 FA11 0x04 + 取消 job),`reset()` 也支持从 Capturing 强制落终态。
-- **双广播名前缀**:`GlassesDevice.NAME_PREFIXES = ["Glass-D15", "Glasses-A"]`;`GlassesScan` + `findBondedDevice` 走 `nameMatches(name)`。spec 文档硬件名是 `Glass-D15`,实际出货固件广播名是 `Glasses-A88`,两者都接收 —— pin spec 契约(`NAME_PREFIX = "Glass-D15"`)+ 单独接受新 OEM / 固件一行可加。修复了 baseline `f7a8d47` 的 `GlassesDeviceTest` 2 项失败。
-
-### 验证
-
-- 10 个 fix / feat / docs commit:`329feec` → `32ded3d` → `7376d80` → `8ca05b7` → `c81d14a` → `ef09f9e` → `4f3ced1` → `df6b01b` → `ffdacfc` → `23bab0e`,作者 `AlexMultiAgent`,无 Co-Authored-By trailer。
-- 真机(华为 nova 6 + Glasses-A88 V2.4.5 + MAC `60:0B`)**双 capture 全过**,实测 **1.7-2.1 s 出图**:`docs/smoke/2026-09-15-ble-fix-verify/logcat_v2.txt`。判据逐条对齐:① `chunk #1 offset=0` + `filled` 递增(不再是 `0/41715` 卡死);② `collectChunks complete: N/N bytes covered by M chunks in Xms (resends=0)`,`M ≈ fileSize/240`(41715/240 = 173.8 → 174 ✓;50715/240 = 211.3 → 212 ✓);③ 日志无 `FA12 notify LOST`;④ `FA11 write size=5 raw=03...`(成功路径,非取消);⑤ `0x33 Response` (`raw=55aa003302010000`) 静默忽略,不再触发 force-complete;⑥ `0x51 SUCCESS` (`raw=...02`) 到达。
-- `./gradlew :app:testDebugUnitTest --tests "com.icespiritai.offline.glasses.*"`(shell profile)92 项全过:`BluetoothControllerPriority(4)` + `GlassesDevice(10)` + `GlassesFa12Collector(14)` + `GlassesPhotoProtocol(36)` + `GlassesPhotoStream(21)` + `GlassesReceiveTap(7)`。baseline `f7a8d47` 的 `GlassesDeviceTest` 2 项失败已修;`AdSignageTextFixtureRegressionTest` / `ChangelogScreenTest` / `UpdateRepositoryStallTest.markCancelled` 3 项 pre-existing 失败按计划留 v0.3.2+。
-- OCR 命中具体内容未在本日志验证(图片是眼镜侧的物理场景,随用户实拍变化)。回归路径:用 v0.4.0 重拍招牌,OCR 命中数应 ≥ v0.3.4 同场景(已无 0xFF 伪图卡 OCR 解析)。
-- `app/build.gradle.kts versionCode 74→75` + `versionName 0.3.4→0.4.0`,与本条目同步。
+- 修复了"拍照后等 90 秒才超时"的大问题,现在 2 秒左右就能在手机上看到照片
+- 修复了连接时一直显示"连接中"看不到进度的体验问题,现在会分阶段显示(连接 / 协商 / 配对 等)
+- 修复了"眼镜拍照页面关闭按钮按了没用"的小问题(后台还在跑)
+- 修复了"搜索不到某些眼镜"的问题(支持了两种广播名格式)
+- 防止恶意眼镜伪造巨大文件让手机卡死,加了大小上限保护
 
 ## v0.3.4 — 2026-09-14
 
-**修正:v0.3.0 引入的 TTS 多段朗读 bug(sherpa 用户命中,system TTS 用户不命中)—— 之前朗读时只念免责声明(最后一段),前面计数 / 命中正文 / 依据全被吃掉**。根因是 sherpa engine 的 `speak()` 有"打断前一段"逻辑(Opt-7 v0.1.68),`TtsController.dispatchSegments` 紧密 loop 调 `speak()` 时第 2 个把第 1 个 cancel,只有最后一个真的播。Android system TTS 用 `QUEUE_ADD` 没这个 bug,所以只影响装了 sherpa-onnx 引擎的用户。
+**修复了"用本地语音引擎时识别结果只念最后一段"的问题**。如果设置里选了「冰灵 TTS 引擎(本地)」听识别结果,之前只会念"AI识别仅供参考..."一句,前面的违规内容、命中条数、法规依据全没念出来。原因是本地引擎实现的一个细节问题,现在改好了。
 
 ### 修复
 
-- **多段朗读不再互相打断**:`TtsEngine.speak` 加 `interrupt: Boolean = true` 参数,`TtsController.dispatchSegments` 在多段 batch 路径下传 `interrupt = false` —— sherpa engine 看到这个 flag 跳过"打断前一段"逻辑,新协程等 inFlight 的 mutex 释放,自然串行。AndroidTtsEngine 参数收下但 no-op(QUEUE_ADD 本来就不打断)。用户主动 `stop()` / `toggle` 仍走 `engine.stop()` 先清队列,不受影响。
-- **Sherpa 用户应该恢复完整朗读**:之前 70 MB 的报告朗读只有最后 3-5 秒("AI识别仅供参考..."),前 60+ 秒的内容(计数 + 命中正文 + 依据)全被吞。装 sherpa-onnx 引擎(`设置 → 语音播报 → 引擎`)的用户更新到 v0.3.4 即可恢复。
-
-### 验证
-
-- 1 个 fix commit: `c3e790b`(TtsEngine 加 interrupt 参数 + SherpaTtsEngine 按 flag 走 cancel 分支 + TtsController 传 false + TtsControllerTest 新增 1 个回归 case + SherpaTtsEngineTest 8 处 `speak()` call 加 `, interrupt = true` 命名参数以适应 reorder)。
-- 新回归 test:`dispatchSegments passes interrupt false to every segment` —— 验 multi-segment batch 里所有 `engine.speak` 都收到 `interrupt = false`(防止未来有人手滑把 `interrupt = false` 改回 `true` 让 bug 回潮)。
-- 8 个 SherpaTtsEngineTest 既有测试加了 `, interrupt = true`(`interrupt` 从第 3 位 reorder 到第 3 位但语义变,需要命名参数区分;`true` 是默认值,显式写出是为了与 batch 路径的 `false` 形成对比)。
-- `./gradlew testDebugUnitTest -PmodelProfile=shell` TTS 包 9 类全过(8 个 SherpaTtsEngineTest + TtsControllerTest + SegmentedScriptTest + ScriptBuilderTest 等),无回归。
-- v0.3.0 留下的待办 —— 跨引擎 `onUtteranceStart` parity(Sherpa 仍 no-op) / TTS 进度条 / 导出取证包 TTS 一键播放 / word-level highlight —— 全部继续 v0.3.5+。
-- `app/build.gradle.kts versionCode 73→74` + `versionName 0.3.3→0.3.4`,与本条目同步。
+- 修复了"使用本地语音引擎朗读时只念最后一段"的问题(用系统语音引擎的用户不受影响)
+- 使用本地语音引擎的用户,更新到本版本后能听到完整朗读:违规条数 + 命中内容 + 法规依据
 
 ## v0.3.3 — 2026-09-14
 
-**修正 v0.3.2 误删:TTS 朗读重新带法规依据(去掉 truncated 法条原文,只念「依据 X §Y」)+ 0 命中完全沉默**。v0.3.2 把"具体条文"误读成"依据"一起删了 —— 实际"条文"是 truncated 的 20 字 + "等"(听感断章),依据是「广告法 §9」这种条款引用,跟命中正文一样属于"内容"的一部分,应保留。0 命中走完全沉默(连"未筛查出违规事项"也不念)。
+**修复了"语音朗读把法规条文念一半"的问题**。上一版把法规依据给念了,但念到一半就断(只念 20 字摘要,然后念"等"字,听起来很奇怪),这次改成只念"依据《广告法》第 9 条"这种完整的法规名称和条款号,不再念被截断的条文。同时如果识别出 0 条违规,什么都不会念。
 
-### 修正
+### 修复
 
-- **重新带法规依据引用**:`BuildOptions.Default.includeLawCitation` 由 v0.3.2 误设的 `false` 改回 `true`,TTS 桶每条命中后接 `,依据 <regulation>`(例:"100% 中国第一,依据 广告法 §9")。v0.3.2 误以为"用户不想要依据"而全删 —— 实际用户是不要 truncated 的 `lawText`(20 字摘要,听起来支离破碎)。现在只去掉 truncated 那段,依据本段保留。
-- **不朗读 truncated 法条原文**:`SegmentedScript.buildBucketSegment` 不再拼接 `lawText`(`<20 字>等`),只剩 `依据 <regulation>`。完整法条原文仍由屏 UI(`HitCard.kt` 的折叠 "法条原文" 面板)和证据包导出(`EvidencePackageBuilder.kt`)展示,这两个 surface 走的是 `hit.lawText` 全文字段,不受 TTS 这一刀影响。
-- **0 命中完全沉默**:`SegmentedScript.build(0 hits)` 现在 `return emptyList()`(原来是返回 "未筛查出违规事项" + 免责声明)。用户原话"如果为0就不播"。`trailingDisclaimer` 在 0 命中时是 no-op(门在 flag 之前)。
-
-### 验证
-
-- 1 个 fix commit: `90a9b95`(revert `includeLawCitation` default + 改 `buildBucketSegment` 不拼 truncated + 改 `build` 0 命中返 empty + 6 个 test 更新)。
-- `SegmentedScriptTest`:`empty hits returns empty list` + `empty hits with trailingDisclaimer false still returns empty list`(两个新契约 pin);`severity grouping` 改回验正例 + 加 `!contains("致敏原强制标示")` 防 truncated 漏回;`law citation per hit includes regulation but not truncated lawText`(新名,直接用 Default);v0.3.2 引入的 `default omits regulation section` test 删(契约反了);`blank regulation omits citation` 改回用 Default。
-- `ScriptBuilderTest`:`empty hits returns single fallback segment` 改名为 `empty hits returns empty list (no TTS, no disclaimer)`,期望 `emptyList<HitSegment>()`。
-- `TtsControllerTest` 不变 —— 控制器不读 `SegmentedScript` 输出。
-- `./gradlew testDebugUnitTest -PmodelProfile=shell` TTS 包全过,无回归。
-- `app/build.gradle.kts versionCode 72→73` + `versionName 0.3.2→0.3.3`,与本条目同步。
+- 修复了"语音念法规条文时断章"的问题(只念法规名称 + 条款号,不再念被截断的条文)
+- 修复了"0 条违规时也要念'AI识别仅供参考'那句"的问题(0 命中时完全沉默)
 
 ## v0.3.2 — 2026-09-14
 
-**修复:语音朗读 2 个 UX 问题**。TTS 内容结构 / 严重度桶 / 计数 / 免责声明 / 长报告摘要开关 等与 v0.3.0 同量级。v0.3.0 公告里 v0.3.1+ 计划项(G6 语速 / 音调 / Phase D 可执行建议 / 跨引擎 `onUtteranceStart` parity / TTS 进度条 / 导出取证包 TTS 一键播放 / word-level 高亮)全部继续 v0.3.3+。
+**修复了"播放时切换语音引擎后暂停按钮失灵"和"语音朗读法规条文不自然"两个问题**。
 
 ### 修复
 
-- **播放时切换语音引擎,无法暂停**:`TtsController.engineClick(pkg)` 之前只写新 `enginePackage` 到 DataStore,**不**先 stop 当前在播的 engine。用户按 Pause → `stop()` 走 `currentEngine()`(读最新 `enginePackage` 返回**新** engine,无在飞 utterance)→ 旧 engine 继续播,UI 看起来"按了 Pause 但还在念"。现在 `engineClick` 在 DataStore 写入前同步 `if (_state.value is Speaking) stop()`,旧 engine 真的停了 + state 立即回 Idle,用户按 Pause 立即生效。
-- **不再朗读法律条文**:之前 v0.3.0 给每条命中拼了 `,依据 <regulation> <truncated 20字>等`(如 "依据广告法 §9 绝对化用语等"),念出来割裂且不权威(truncated 看起来断章取义)。`BuildOptions.Default.includeLawCitation` 由 `true` 反为 `false`,TTS 桶只念命中正文。屏 UI(`HitCard.kt` 的 `依据: ...` 行 + 折叠 `法条原文`)和取证包导出(`EvidencePackageBuilder.kt`)完全不动 —— 这两个 surface 展示的是完整条文,不是 truncated 摘要,体验没问题。
-- **顺手清 orphan string**:`strings.xml` 里 v0.3.0 计划时加了 `tts_hit_citation_separator = ",依据"`,从未被引用(实现走的是字面量硬编码),删。
-
-### 验证
-
-- 2 个 fix commit: `cc9961f`(`engineClick` stop-before-swap) + `93b0f19`(默认 `includeLawCitation=false` + 4 个 test 更新 + orphan string 删)。
-- `TtsControllerTest`:新增 `engineClick while Speaking stops the old engine before swap` 回归 case(验 stopCallCount 从 1 跳到 2,state → Idle,DataStore 写入照旧)。`engineClick on installed local engine sets engine package to LOCAL` 等 4 个既有 case 不回归。
-- `SegmentedScriptTest`:`severity grouping` 改负断言(默认无 `依据`);`law citation opt-in` 改名 + 用 `BuildOptions.Default.copy(includeLawCitation = true)` 显式打开测试(opt-in 路径未来可重启用);`default omits regulation` 改用 Default 直接验(新契约);`blank regulation omits citation even with opt-in` 加 opt-in 让边界真正测到。
-- `./gradlew testDebugUnitTest -PmodelProfile=shell` TTS 包 7 类(81 tests)全过,无回归。
-- 屏 UI 仍消费 `RuleHit.regulation` / `lawText` 字段,`HitCard.kt` 顶部"依据"行 + 折叠"法条原文"面板不受影响。
-- `app/build.gradle.kts versionCode 71→72` + `versionName 0.3.1→0.3.2`,与本条目同步。
+- 修复了"在识别结果朗读过程中切换语音引擎,按暂停按钮没反应"的问题(切换前会先停掉当前在播的引擎)
+- 移除了朗读中"被截断的法规条文"那段(听起来断章取义,体验不好)
 
 ## v0.3.1 — 2026-09-14
 
-**修复:APK 更新下载卡在中间时无法恢复**。v0.3.0 及之前版本在 MIUI/ColorOS/HyperOS 后台冻结场景下,70 MB 的下载会卡在 60% 左右,UI 长期只剩「取消」按钮,cgroup 冻结时连「取消」也不响应,用户只能放弃下载重头来。规则库 / OCR / TTS / tab / 设置项 / 食品标签等与 v0.3.0 同量级。**v0.3.0 公告里 v0.3.1+ 计划项(G6 语速 / 音调 / Phase D 可执行建议 / 跨引擎 `onUtteranceStart` parity / TTS 进度条 / 导出取证包 TTS 一键播放 / word-level 高亮)全部继续 v0.3.2+**(本版只做这次 stall recovery 修复)。
+**修复了"App 更新下载到一半卡死"的问题**。70 MB 的安装包在某些手机(MIUI / ColorOS / HyperOS 等)的后台冻结场景下,会卡在 60% 左右不动,只能放弃从头来。
 
 ### 修复
 
-- **下载中途卡死三层兜底**:
-  1. **FGS HTTP 连接加 timeout**(`connectTimeout=15s` / `readTimeout=30s`):之前 Android 默认 `readTimeout=0` 无限,server 慢段 / 半开 TCP / cgroup 冻结会让 `ins.read` 永久阻塞,3 次重试循环因 `SocketTimeoutException` 不触发而失效。30s timeout + 既有 2+4+8s backoff → ~104s 内自动转 `Failed.NetworkUnreachable`,「重试」按钮出现。
-  2. **stall 检测器(5 min)写 state**:之前 5 min 静默只 Toast「加白名单」提示,UI 仍卡在「下载中」只有「取消」。现在 stall 检测器触发时同步把 state 从 `Downloading` 改 `Failed.NetworkUnreachable`,UI 立刻出现「重试」按钮,点 → `Range: bytes=N-` + `If-Range` 续传,已下载 60 MB 不丢。
-  3. **「取消」同步写 state**:`SettingsViewModel.cancel()` 调 FGS cancel intent 后,VM 端同步调 `markCancelled` 写 `Failed.Cancelled`。cgroup 冻结时 FGS 协程可能永远不调度,VM 直接写 state 保证 UI 立即跳「已取消」无延迟。
-- **零 UI 改动** / 零新状态 / 零新字符串 / 零新 intent。完全复用 v0.1.69 起的「重试」按钮 + `UpdateRepository.retry` + `Range: bytes=N-` 续传链路(该链路在 v0.1.58 法规新鲜度 fix 时已完整落)。
-- **零配置变化**:用户不感知任何新功能,纯后端逻辑修复 + 1 个新 internal method(`clock: () -> Long` ctor 参数,默认 `System::currentTimeMillis`,生产 factory 不变)。
-
-### 验证
-
-- 5 个 implementation commits: `2be0faa`(tryMarkStalledAsFailed)/ `9d0a3a6`(markCancelled)/ `3a5969a`(cancel 同步写 state + clock refactor)/ `d2b7326`(stall 检测器写 state)/ `f7f11b5`(FGS openConnection timeouts)。
-- `UpdateRepositoryStallTest` 8 个 case + `SettingsViewModelCancelTest` 2 个 Robolectric case,守卫 / 转换 / 幂等都覆盖。Task 4 的 live-loop 单元测试按 plan 写过但跟 `runTest` + `while(true)+delay+first{}` 不兼容(同款坑见 CLAUDE.md v0.1.45 stallDetectorJob hang),已删除并在 commit `d2b7326` body 文档化;live-loop wiring 由真机 e2e 覆盖。
-- `app/build.gradle.kts versionCode 70→71` + `versionName 0.3.0→0.3.1`,与本条目同步。
-- 2 个 full-suite 失败(`AdSignageTextFixtureRegressionTest` + `UpdateRepositoryStallTest.markCancelled is no-op` in suite)为 pre-existing infrastructure 问题(在 baseline `f7a8d47` 复现),非本版回归,留 v0.3.2+ 修。
+- 给下载加了三层"卡死兜底":15 秒连不上自动重试、读 30 秒没动静也自动重试、5 分钟完全没进度会自动变成"网络异常"状态(可点重试继续)
+- 修复了"下载卡死时点取消按钮没反应"的问题
+- 点重试会从已下载的位置继续,不会重头开始
 
 ## v0.3.0 — 2026-09-14
 
-**TTS 朗读内容结构化升级 + 多段 UI 滚动同步 + 长报告摘要开关**。规则库 / OCR 模型 / 食品标签 tab 等与 v0.2.0 同量级。**G6 语速 / 音调 / Phase D(可执行建议 + 域前缀)显式延后 v0.3.1+**(用户 2026-09-11 决定)。
+**语音朗读大改版 —— 听感更像一份"报告会"而不是一串话**。朗读会先告诉你"共 X 条违规,Y 条警告,Z 条信息",再分别按严重度朗读命中内容;朗读当前条时,屏幕会滚动到对应卡片;识别出 0 条违规时完全沉默。新增一个"长报告只念最严重 3 条"开关,可在设置里打开。
 
-### 变更
+### 新增
 
-- **TTS 朗读结构化(SegmentedScript 多段纯函数)**:把 `ScriptBuilder.build(report): String` 单字符串平铺(命中违规:a;b;c。)升级为 `SegmentedScript.build(report, options): List<HitSegment>` 多段结构:
-  1. **prefix**:「共 X 条违规,Y 条警告,Z 条信息」+ 可选域前缀
-  2. **严重度桶**:违规→警告→信息→合规(Positive),每桶内部 `joinToString("、")` + 法条引用(`依据 GB 7718-2025 §5.1 致敏原强制`,per memory `feedback-category-specific-rules-anchors`)
-  3. **topN 截断**:超过 topN 时朗读最严重 N 条 + 「其余 X 项详见屏幕」suffix
-  4. **末尾 AI 免责声明**:`AI识别仅供参考,合规判断以现场检查为准`,positive case 也强制朗读(per memory `feedback-ad-law-no-gray-area`)
-
-- **多段 speak + UI 滚动同步(TtsController.speakSegments + currentHitIndex)**:把单 utteranceId `QUEUE_FLUSH` 升级为多 utteranceId `QUEUE_ADD`,每段独立 `onStart` 回调 → `currentHitIndex: StateFlow<Int?>` 广播当前朗读 hit 序号 → `HomeScreen` 收 + `listState.animateScrollToItem(idx)` 把对应 hit card 滚到视口。AndroidTtsEngine 单字段 `pendingOnDone` → `Map<utteranceId, callback>`(多段互不覆盖,fix G13)。`TtsEngine` interface 加 `var onUtteranceStart: ((String) -> Unit)?` 默认 null — AndroidTtsEngine 覆盖,`SherpaTtsEngine` parity 留 v0.3.1+(ONNX Runtime ABI 修复后一起实现)。`ResultPanel` 暴露 `LazyListState` 给外层 HomeScreen 持有。
-
-- **Settings「长报告摘要」Switch(默认 OFF)**:Settings → 语音播报 Card 内新 Switch + 描述(`超过 3 条命中时只朗读最严重 3 条,其余显示在屏幕`)。`TtsSetting.longReportSummaryEnabled: Boolean = false` + DataStore `KEY_LONG_REPORT_SUMMARY` + `TtsSettingRepository.setLongReportSummaryEnabled(b)` + `TtsController.setLongReportSummaryEnabled(enabled)` 委托。`TtsController.speakSegments` 读 `latestSetting.longReportSummaryEnabled` 决定 `topN=3`(caller 显式传 topN 时优先,test path 兼容)。
-
-- **Error 态朗读兜底**:`TtsController.speakError(error)` 走 `SegmentedScript.buildError(error)` 单段 + 免责声明。`AnalysisState.Error` 态 message 字段直接朗读给用户听,无需查屏幕。
+- 语音朗读现在按"先念总览 → 再分桶念 → 末尾免责声明"结构化朗读,听感更清楚
+- 朗读某一条时,屏幕会自动滚动到对应那条卡片,看到哪听到哪
+- 设置里新增"长报告摘要"开关(默认关),打开后超过 3 条命中时只念最严重的 3 条
 
 ### 修复
 
-- **AndroidTtsEngine 多段 onDone 互覆盖(G13)**:之前 `pendingOnDone` 单字段,多段 speak 时后段覆盖前段 → 第一段完成时调用回调已被第二段覆盖,UI 状态机拿到的是错位的 onDone。改为 `Map<utteranceId, callback>`,每段独立 onStart/onDone 周期。
-
-### 验证
-
-- `./gradlew testDebugUnitTest -PmodelProfile=shell`:TTS 包内 81 tests, 9 classes 全过。`SegmentedScriptTest` 7 用例(空 / 严重度分组 / 计数 / 法条 / 截断 / 免责声明 / Error 态)+ `TtsControllerTest` 24 用例(17 legacy + 5 多段 + 2 long-report-summary toggle/caller-wins)+ `TtsSettingTest` 5 用例(default / 跨实例持久化 × 2 fields)+ `ScriptBuilderTest` 6 既有全过(向后兼容,旧 expect 已对齐新 `buildSegments` API)。
-- 2 个 pre-existing failures (`ChangelogScreenTest` + `AdSignageTextFixtureRegressionTest`) 与本次改动无关,跨发版号 baseline,已记入 v0.2.0 验证段。
-- 7 commits: `dd6bca6`(SegmentedScript 落地)+ `b3b1c8e`(Task 1 code review 修)+ `9f7d83a`(ScriptBuilder 委托)+ `489c532`(deprecated 范围 narrow)+ `72cebab`(TtsEngine 多段 onStart)+ `eac9567`(TtsController 多段 speak)+ `ae96a26`(HomeScreen scroll-to-current)+ `d170a23`(longReportSummaryEnabled 开关)+ `6df949e`(Settings Switch + speakSegments 接 setting)。
-- `app/build.gradle.kts versionCode 69→70` + `versionName 0.2.0→0.3.0`,与本条目同步。
-- 跨引擎 `onUtteranceStart`(SherpaTtsEngine Synthesizer.onStart)留 v0.3.1+;Phase D(actionableAdvice + domainPrefix)留 v0.3.1+;TTS 进度条 + 导出取证包 TTS 一键播放 + word-level 高亮 全部 v0.3.1+。
+- 修复了"系统语音引擎多段朗读时回调错乱"的隐藏问题
 
 ## v0.2.0 — 2026-09-11
 
-**食品标签 tab 启用 + 设置层「功能可见性」开关 + food_label 规则库 v4 → v5(29 条增量)**,广告招牌 tab 仍是 UI 主焦点。规则库覆盖 8 部法规(GB 7718-2025 致敏原 / 食品标识监督管理办法 §7-§40 / 食品安全法 §69/§81/§83 / 婴幼儿配方乳粉产品配方注册管理办法 §5/§7 等)。**注意**:新增 27 条引用《食品标识监督管理办法》(SAMR令第100号)及 12 条引用《GB 7718-2025》(致敏原强制标示条款)的规则于 **2027-03-16 起施行**(届时自动转为现行法依据);本 APK 在 2026-09-11 ~ 2027-03-15 期间按"前向发版"惯例发布,APK manifest 内嵌规则已 ready,6 个月后法规生效即合规。详见 [`知识库/食品标签/食品标识监督管理办法.md`](../../知识库/食品标签/食品标识监督管理办法.md) + [`知识库/食品标签/GB_7718-2025_致敏原强制标示.md`](../../知识库/食品标签/GB_7718-2025_致敏原强制标示.md) 头部 metadata。
+**食品标签识别正式上线**。现在顶部 tab 多了"食品标识"选项,可以识别预包装食品标签上的违规内容(配料表、致敏原、保质期格式等)。设置里新增了"功能可见性"卡片,可以分别启用/关闭广告招牌和食品标签两个 tab。
 
-### 变更
+### 新增
 
-- **食品标签 tab 默认启用(`RuleTabBar.visibleTabs` 参数化 + `RuleTab.tabIcon`)**:v0.1.10 起单焦点策略(`visibleTabs = listOf(RuleTab.AdSignage)`)改为 v0.1.69 双 tab 默认全开(`RuleTab.entries.toSet()`)。`IceSpiritVisionViewModel.visibleFeatures: StateFlow<Set<RuleTab>>` 注入 `HomeScreen` → `HomeTopBar` → `RuleTabBar`,DataStore `visible_features` 持久化。`food_gb7718_2025_sec5_allergen_*` 12 条 + `food_*` gap-fill 17 条 OCR 触发规则 ready,合规触发立刻可用。Tab 上加 `Icons.Outlined.LocalDining`(食品) + 既有 `Icons.Outlined.Verified`(广告)双图标区分。
-- **设置层「功能可见性」Card 新增(`SettingsViewModel.setFeatureVisible + SettingsSnackbar`)**:用户在 Settings 卡片勾选每个 tab 的可见性,DataStore `visible_features: Set<RuleTab>` 持久化。`SettingsViewModel` enforce 边界:`size <= 1` 时禁用最后一个 → `SettingsSnackbar.LastFeatureCannotHide`;DataStore 写入失败 → `SettingsSnackbar.PersistFailed`(带 `Log.w` 记录非 IO 异常)。`SnackbarHostState` + `LaunchedEffect(viewModel)` 消费 `SharedFlow<SettingsSnackbar>`(`extraBufferCapacity=4` + `BufferOverflow.DROP_OLDEST`)。
-- **food_label 规则库 v4 → v5:66 → 95 条,覆盖 8 部法规**:详见 commit `64095fe`(29 条增量)。`AssetRuleLoaderTest` 阈值 95 + version 5 锁版。
-- **`ad_signage_art20_breastmilk` 法规新鲜度清理(commit `b7f4f30`)**:移除已废止《母乳代用品销售管理办法》第九条(2017-12-13 国家卫生计生委令第 17 号废止)引用,纯靠《广告法》§20 + §57 覆盖。`food_gb13432_infant_breastmilk_substitute` 已正确标"2017 废止"保留作为参考。
+- 顶部 tab 多了"食品标识"选项,默认开启,可以识别预包装食品标签上的违规内容
+- 食品标签规则库扩充 29 条,覆盖预包装食品标签、配料表、致敏原标注、保质期等
+- 设置里新增"功能可见性"卡片,可以分别启用/关闭两个 tab(至少保留一个)
+- 关闭某条已废止法规的旧引用,避免误判
 
 ### 修复
 
-- **Phase 2 substring dedup 边界发现(`scan_art14DateZone_firesOn见包装物某部位`)**:position-based dedup 验证 — 当关键字在同一 rule 内多个 position 命中时,只有 first-encountered position 的短关键字被长关键字吸收,后续独立 position 的短关键字保留。T9.2 §14 规则第一版失败,删除冗余"见包装某部位"短关键字(由 AC 1-char-deletion 变体检测覆盖)后通过。
-
-### 验证
-
-- `./gradlew testDebugUnitTest -PmodelProfile=shell`:913 tests,2 failed(`AdSignageTextFixtureRegressionTest` + `ChangelogScreenTest`),2 skipped — 2 个失败均为跨发版号 baseline,与本次改动无关。`FoodLabelRuleMatcherTest`:120 tests 全过(原 87 + T9.1-T9.4 新增 33)。
-- `app/build.gradle.kts versionCode 68→69` + `versionName 0.1.68→0.1.69`,与 `user-changelog.md` 顶部 v0.1.69 同步。
-- `food_label_rules.json` `version: 4 → 5`,与 `AssetRuleLoaderTest.assertEquals(5, set.version)` 同步。
-- APK 体积:预估 ~75 MB(规则库 +29 条 + 2 个新 Icon Vector + TabBar 参数化 + Settings Card ≈ 食品标签 tab 实装为唯一显著增量);精确数字待 T12 assembleRelease 后回填。
+- 修复了一个规则匹配边界问题(同一关键字在不同位置出现时的去重逻辑)
 
 ## v0.1.68 — 2026-09-10
 
-规则 / TTS / UI 测试三处系统性优化收口。广告招牌 tab 仍是唯一 UI tab;规则库 / TTS 模型 / APK 体积与 v0.1.67 同量级。
+**修复了 8 个 bug,以及多项性能优化**。主要是后台处理和匹配器逻辑的优化,让 App 跑得更快、更稳定。
 
 ### 修复
 
-- **TTS 引擎 speak-while-speaking 一致性(SherpaTtsEngine interrupt 语义对齐 AndroidTtsEngine)**:之前 SherpaTtsEngine 的 `lifecycleMutex.withLock` 把两次 `speak()` 串行化 — 用户在报告朗读中点重跑分析 / 点播放 FAB 两次,新朗读必须等旧朗读跑完才出声,与 Android TextToSpeech 引擎的 `QUEUE_FLUSH` 行为不一致(Android 原生引擎会中断旧朗读、立刻播新朗读)。v0.1.68 改用同步中断路径:第二次 `speak()` 进入时立即 fire 第一次的 `onDone` 回调(让 TTS controller state machine 看到 `Speaking → Idle → Speaking` 的快速迁移,而不是 stuck 在 Speaking 直到第一次协程 drain 完 withLock),同时 cancel 在飞的 Job、停止 `activePlayer`。`SherpaTtsEngineTest` 新增 `speak while speaking interrupts the previous utterance` 测试,用 `UnconfinedTestDispatcher` + 取消过的前置协程验证 (1) 第一次 `onDone` 同步触发,(2) 第二次 `playback` 走新 `play()` 调用,(3) 第二次 `speak()` 在自己的播放完成后正常 fire `onDone`。`finally` 用 `coroutineContext[Job]`(不是外层 `val job`)识别"自身"是必须的 — Kotlin 禁止 forward-reference local,且 UnconfinedTestDispatcher 上 launch body 在 `val job = launch { ... }` 赋值前就开始执行。
-- **8-bug 批量修复**(commit `4a16dec`):TTS collector 协程泄漏 / Phase 3 anchor gate 误命中 / DataStore `IOException` 崩溃 / ProGuard 误删 entry point / OcrEngineFactory SPI markers / `UpdateSection` 测试覆盖 — 一并落地为 1 个 commit,详查 commit body。
+- 修复了 8 个不同的小问题(详情省略,主要是后台处理和测试覆盖)
+- 优化了"语音朗读时再点播放"的行为,现在会立即打断旧的并开始新的
+- 整理了内部代码,减少了重复代码
 
-### 变更 / 重构
+### 新增
 
-- **规则匹配器提取 `AhoCorasickMatcher<R : Rule>` 抽象基类**:AdSignageRuleMatcher 与 FoodLabelRuleMatcher 的 Phase 1(原始 AC 收集)+ Phase 2(variant dedup)+ Phase 2.5(substring dedup)三段累计算法字节级等价(855 个旧测试不动),`AdSignageRuleMatcher` 由 409 → 245 LOC,`FoodLabelRuleMatcher` 由 197 → 48 LOC,合计 ~410 LOC 重复代码下沉到基类。`Rule` interface 用 default empty 实现(`lawText / sourceMarkers / categoryAnchors / categoryAnchorsAbsent` 全部 `get() = emptyList()` / `get() = ""`),让 FoodLabelRule 这种不需要 anchor / source marker 的域规则不用逐字段 override。Phase 3 gate(sourceMarkerTrie / anchorTrie / anchorAbsentTrie)仍由 AdSignageRuleMatcher 持有,因为 FoodLabel 不走 anchor gating。零行为变化、零新增测试(全靠现有测试覆盖 dedup + gate 路径)。
-- **UI HomeScreen testTag 接通(StatusBanner / CaptureBar / ErrorPanel)**:为关键 Composable 挂上稳定 `testTag`,`HomeScreenTestTags.kt` 集中 export 常量(`STATUS_BANNER` / `KPI_VIOLATION` / `KPI_WARNING` / `KPI_INFO` / `CAPTURE_BAR_PICK` / `CAPTURE_BAR_EXPORT` / `CAPTURE_BAR_CAPTURE` / `ERROR_PANEL` / `ERROR_PANEL_RETRY` / `ERROR_PANEL_BACK`)。`ErrorPanel` 由 `private` 改为 `@VisibleForTesting internal`(测试需要从外部 compose),`HomeScreenTestTagsTest` 新增 5 个回归 pin:`assertExists()` / `assertDoesNotExist()` 覆盖每个 tag 的存活状态(包含 CaptureBar `hasHits=false` 时 export slot 不渲染的负向断言)。下游 integration 测试可用这些 tag 做稳定 selector,不必依赖文字内容。
-- **`SherpaTtsEngine.kt` 测试 seam 扩充**:`TestableSherpaTtsEngine` 暴露 `modelDir`(`val` 而非 constructor 参数,让测试文件可读取路径),`isModelInstalled()` 私有但通过 `FakeSynthesizer` + 文件 planting 模拟。
-- **`.tmp_audit/` 入 .gitignore**:批量扫描脚本与 `audit_out.json` 是纯函数式一次性产物,不应进版本库(本地留 240 KB 暂存)。
-
-### 验证
-
-- `./gradlew testDebugUnitTest -PmodelProfile=shell` 全过:Phase 1/2/2.5/3 路径全 byte-equivalent(855 旧测试)+ SherpaTtsEngine interrupt 测试 1 新增 + HomeScreenTestTagsTest 5 新增 + 8-bug batch 各 fix 自带测试,合计 861 个用例 0 fail 2 skip。
-- `app/build.gradle.kts versionCode 67→68` + `versionName 0.1.67→0.1.68`,与 `user-changelog.md` 顶部 v0.1.68 同步。
-- APK 体积:74,439,701 bytes(~71 MB,与 v0.1.67 量级同;增量来自 AhoCorasickMatcher 公共代码下沉到基类后 Kotlin compiler 视角略多的 dex 表)。
+- 给关键界面元素加上了稳定的测试标记,方便未来扩展
 
 ## v0.1.67 — 2026-09-09
 
-UI 严重度/字体/Info 配色/Loading skeleton 四项 P1+P2 审计收口。广告招牌 tab 仍是唯一 UI tab。
+**字体优化 + 4 项 P1+P2 审计修复**。
 
 ### 修复
 
-- **Type.kt 字体接入 EditorialFontFamily**:v0.1.41 之前 11 个 TextStyle 全部无 fontFamily,DisclaimerDialog.kt KDoc 写的「Source Han Serif SC Bold 经 MaterialTheme 透传」是空话 — 实际渲染 Roboto。v0.1.67 新增 `EditorialFontFamily = FontFamily.Serif`(平台衬线 = AOSP / EMUI 上的 Noto Serif),并把 `fontFamily = EditorialFontFamily` 加到 11 个 TextStyle,design intent 与渲染产物首次对齐。真正的 Source Han Serif SC OTF 体积 10–24 MB / 14 MB VF subset,在不显著膨胀 APK(目前 58 MB)的前提下,通过镜像反复失败(CN 网络到 github.com raw 在 19 s 处稳定 connection reset),本次走系统衬线 fallback + drop-in 升级路径;`Type.kt` KDoc 详细记录「投放 `res/font/source_han_serif_sc.ttf` 后只需替换 4 行 FontFamily body」的迁移路径。
-- **Color.kt Info 桶去家族蓝**:之前 DarkIceChatInfo = `0xFF60A5FA`(Blue 400)/ LightIceChatInfo = `0xFF2563EB`(Blue 600),命中 memory `feedback-dual-theme.md`「不要家族蓝」红线。v0.1.67 复用 slate-navy family 调色板的 AccentSecondary token — DarkIceChatInfo = `0xFF7DA4BD`(= DarkIceChatAccentSecondary),LightIceChatInfo = `0xFF5A7090`(= LightIceChatAccentSecondary);InfoContainer / OnInfoContainer 同步换深一档海军蓝 `0xFF1E3A5F` 保证 contrast。`ColorTokensTest` 4 个 Info pin 同步更新;SeverityColorsTest 不受影响(只引用 Info token 名,不 pin RGB)。
-- **HomeScreen Loading 分支接进 LoadingOverlay**:v0.1.45 editorial-redesign 分支写了 shimmer 骨架屏 + 三张幽灵 hit-card 的 `LoadingOverlay`,但 commit `ad54b4b` 从未 merge 进 main,Loading 分支一直停在「一行 phase text」。v0.1.67 真正把 `LoadingOverlay(phase = s.stage, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))` 接进 `HomeScreen.kt:281` 的 `is AnalysisState.Loading ->` 分支;`loadingLabelRes` helper 保留(LoadingOverlay.kt 内部还要消费它),LoadingOverlay KDoc 47-49 行 stale 「uncalled by any production code」注释同期改写。
-- **UpdateDetailScreenTest 新增**:settings/ 之前唯一漏测试的可导航屏幕,v0.1.67 补 Robolectric 测试覆盖 5 个分支 — top-bar title 渲染 / 返回箭头回调 / Idle 态 no-pending 消息 / UpdateAvailable 态 banner + changelog 行渲染 / 非 UpdateAvailable 其它态(Checking 显式 pin)fallback。`UpdateRepository._state` 通过反射设值,`@After` 复位 Idle 防止污染同 JVM 的 UpdateSectionTest。
-
-### 变更
-
-- **无规则库 / TTS 模型变更**;本次仅 UI 完整性 + 编辑性收口,沿用 v0.1.66 规则库版本(ad_signage v20 / food_label v4)。
-- **APK 体积**:无显著变化 — EditorialFontFamily 走系统衬线、不下载 OTF,实际产物大小与 v0.1.66 同量级。
-
-### 验证
-
-- `./gradlew testDebugUnitTest` 全过:UpdateDetailScreenTest 5 个新测试 + ColorTokensTest 4 个 Info pin 更新 + 现有 v0.1.66 测试稳定(835 + 5 = 840 个用例,0 fail,2 skip)。
-- `ChangelogScreenTest` shipping-version pin 同步到 v0.1.67。
+- 字体优化:全项目 11 处文字样式统一改用衬线字体(之前漏设置字体,显示的是系统默认字体,现在统一了)
+- 信息桶颜色去掉了家族蓝(用户反馈"不要家族蓝"),改用深一档的海军蓝
+- 加载等待页面接入了真正的骨架屏(之前只是显示一行进度文字,现在有占位骨架)
+- 补了一些更新详情页的测试
 
 ## v0.1.66 — 2026-09-09
 
-UI 严重度契约一致性 + SeverityChip 可读性(WCAG AA)修复。广告招牌 tab 仍是唯一 UI tab。
+**严重度排序契约一致性 + 严重度标识牌文字颜色可读性修复**。低对比度的颜色可能导致用户在户外强光下看不清标签,已统一改用高对比度颜色。
 
 ### 修复
 
-- **HighlightOverlay worst-severity pick 改用 `severityRank` + 过滤 Positive**:v0.1.36 落地时把 HomeScreen.kt / ViewerTextList.kt 的 worst-pick 迁到 `domain.severityRank` 函数,但 `HighlightOverlay`(首页 + Viewer 全屏图叠命中框渲染命中框的 Composable)仍在用 `maxOfOrNull { it.second }`,依赖 `Comparable<Severity>` 按 ordinal 排序 → Positive(ordinal=3)会反向压制 Violation(ordinal=2)。目前规则库还没 Positive-emit 规则所以 latent,但同图 Positive + Violation 一旦共存,框会错画绿色。v0.1.66 把 picker 抽成 `internal worstSeverityForOverlay(normalizedLine, normalizedHits)` top-level helper,走 `severityRank` + `.filter { it.second != Severity.Positive }`,与 `ViewerTextList.worstSeverityForLine` 完全一致,新增 `HighlightOverlaySeverityRankingTest.kt` 10 个回归 pin(violation > warning > info / positive + violation 共存取 violation / positive + warning 共存取 warning / positive-only 不画框 / 空 hits / 空 line / whitespace-tolerant containment)。stale FIXME 注释(`Severity enum is currently [Info, Warning, Violation, Positive]; maxOfOrNull uses Comparable ...`)同期删除。
-- **HitCard SeverityChip 文字颜色配对修正**:违规 / 警告 / 信息 chip 的 background 是 `sev.accent`(饱和红 / 琥珀 / 蓝),但 v0.1.41 实现时文字用的是 `sev.onContainer`(配 `container` 浅色背景的 token),contrast 仅 1.6-2.2:1,WCAG AA 4.5:1 不达标。ResultPanel section header 同场景(背景也是 accent)正确用了 `sev.onAccent`,contrast 6-9:1。v0.1.66 把 chip 的文字 color 也切到 `sev.onAccent(hit.severity)`,SeverityChip 私有 Composable 形参 `onContainer` → `onAccent`,call site 同步。视觉对比度合规后,用户在户外强光下、低亮度屏、灰度模式阅读都不会丢信息。
-
-### 变更
-
-- 无功能 / 规则变更;本次仅 correctness + a11y hardening,沿用 v0.1.65 规则库版本(ad_signage v20 / food_label v4)与 TTS 模型。
-
-### 验证
-
-- `./gradlew testDebugUnitTest` 全过:新增 `HighlightOverlaySeverityRankingTest` 10 个回归 pin(覆盖 worst-pick 全部分支);`HitCardTest` 现有 7 个测试已对 compose 不崩提供兜底(`IceSpiritVisionTheme` 包裹 → `LocalSeverityColors` 抛错即挂),SeverityChip onAccent 改完不影响现存断言。
-- `CHANGELOG_SCREEN_TEST_VERSION` 同步到 v0.1.66。
+- 修复了"违规标签文字几乎看不清"的问题(之前违规 / 警告 / 信息三个标签用浅色文字配深色背景,对比度不达标;现在统一用深色文字配饱和色背景)
+- 修复了一个潜在排序 bug:在严重度排序时如果错误地把"合规"排得比"违规"还高,以后规则增加"合规"类时图上红框会画错颜色
 
 ## v0.1.65 — 2026-09-09
 
-TTS 本地引擎 integrity gate 强化(espeak-ng-data 9 文件齐备性校验)。
+**TTS 本地引擎文件完整性校验加强**。之前如果本地 TTS 引擎在下载/安装过程中被打断,虽然显示"已安装"但点播放会闪退,现在能识别这种情况并优雅处理。
 
 ### 修复
 
-- **Bug 7c hardening(防 partial install 复现)**:v0.1.63 修复了「speech 文本/规则资源缺失」导致 native SEGV 的根因,但 `SherpaTtsEngine.isModelInstalled()` 只校验 2 个 ONNX 文件,未校验 `espeak-ng-data/` 子目录的 9 个文件。若 install 流程中途打断(磁盘满 / 用户在 `Downloading` 状态杀进程 / future 多 APK 场景下手动清理),picker 会显示「已安装」但实际 `OfflineTts` 仍会在 `generate()` 内部走 null espeak lookup → `OfflineTts_generateImpl+268` 同样闪退。v0.1.65 把 9 个 espeak 文件 (`phontab` / `phonindex` / `phondata` / `phondata-manifest` / `intonations` / `cmn_dict` / `en_dict` / `lang/sit/cmn` / `lang/sit/cmn-Latn-pinyin`) 全部纳入 `isModelInstalled()`,任一缺失 → speak() 走 early-return + onDone,不触发 native;同时 picker 的 Installed 状态与 speak() 实际可执行能力严格保持一致(不再误显「已安装」)。
-
-### 变更
-
-- 无功能/规则变更;本次仅 defensive hardening,沿用 v0.1.64 规则库版本(ad_signage v20 / food_label v4)。
-
-### 验证
-
-- `./gradlew testDebugUnitTest` 全过:新增 `isModelInstalled is false when espeak-ng-data files are missing`(TtsModelInstaller)+ `speak gracefully skips when espeak-ng-data missing` + `supportedChineseEngines returns NeedsDownload when espeak-ng-data missing`(SherpaTtsEngine) 三个回归测试;旧测试中 plant 4 个 espeak 文件的假数据已升级为 plant 全 9 个。
+- 修复了"本地 TTS 引擎在下载过程中被打断后,点播放按钮会闪退"的问题(现在检测到文件不完整会显示"未安装",不闪退)
 
 ## v0.1.64 — 2026-09-09
 
-规则库数据质量修正 + 14 条广告业务违规判定规则扩展(广告招牌 tab 仍然唯一 UI tab)。
-
-### 修复
-
-- **清理跨域污染 30 条**:regulation/lawText 字段不再引用《食品标识管理规定》《食品安全法》《婴幼儿配方乳粉产品配方注册管理办法》《化妆品监督管理条例》单独引用 / 《烟草广告管理暂行办法》(已废止) / 《户外广告登记管理规定》(已废止) / 《广告绝对化用语执法指南》《广告引证内容执法指南》《特殊标志管理条例》《体育法》《商业银行法》《证券法》《保险法》《刑法》《消费者权益保护法》《通信短信息服务管理规定》《民法典》等非广告业务法规或不存在的 .md 知识库条目。Cosmetic 类规则全部统一挂《广告法》umbrella(第十七条 + 第二十八条 + 第五十五条 + 第八条 + 第四十六条);Finance 316 号通知规则加《》括号便于下游解析;Food 类(食品功能宣称 / 食品疾病指向)lawText 删除食品标识管理规定残留引用,regulation 同步到《广告法》第十七条 + 第十八条 + 第五十八条。`ad_signage_signage_food_function_claim` 和 `ad_signage_signage_food_disease_target` 两条「抗氧化」相关规则,lawText 现在与 regulation 完全一致(不再引用食品标识管理规定)。`ad_signage_outdoor_art4_unaudited` 等 3 条 outdoor 规则,regulation 由已废止《户外广告登记管理规定》改为《广告法》第二十六条 + 第四十六条 + 《广告管理条例》第十三条。`ad_signage_restricted_tobacco_sports_sponsorship` 烟草体育赞助规则,lawText 删除《烟草广告管理暂行办法》§8 残留,regulation 同步到《广告法》第二十二条 + 第五十七条。`知识库/广告业务/README.md` line 19 断链修复:户外广告登记管理规定.md 已废止,链接改为说明 + 指向《广告法》§42 + 《城市市容和环境卫生管理条例》§11。
-
-### 变更
-
-- **14 条新规则**(`ad_signage_rules.json` version 19→20, 175→189 条):
-  - **§38 代言人未使用**:「明星同款 / 联名款 / 明星单品 / 明星推荐」覆盖户外招牌护肤 / 服饰 / 餐饮明星代言常见场景(fixture 113/115 类)。
-  - **§38 童星代言人**:萌娃 / 童星 / 小学生代言 + 母婴 / 童装 / 玩具 / 奶粉 anchor。
-  - **§14 新闻形式广告(通用非医疗)**:「本台讯 / 本报讯 / 记者探店 / 权威访谈 / 记者暗访」覆盖餐饮 / 教育 / 食品 / 装修店招 / 电梯电视以新闻形式包装的广告(医疗领域原有 med_art13_newsform)。
-  - **§19 健康养生变相广告(实体店)**:「健康讲座 / 老中医 / 养生堂 / 祖传中医」覆盖养生馆店招场景(fixture 32 类,互联网场景原有 internet_art9_health_softarticle)。
-  - **§43 未经同意发送广告**:「扫码加我 / 快递柜广告 / 短信群发 / 强制关注公众号」覆盖小区门禁屏 / 快递柜 / 楼宇强制屏 / 短信营销。
-  - **§22 烟草品牌联名礼盒**:「中华礼盒 / 玉溪礼盒 / 云烟联名 / 黄鹤楼联名 / 利群礼盒」+ 烟酒/礼盒 anchor,补 restricted_tobacco_sports_sponsorship 之外的烟酒礼盒变相广告。
-  - **房地产 §13 装修承诺**:「豪华装修 / 拎包入住 / 五星级装修 / 国际大师设计」+ 房地产 anchor。
-  - **房地产 §17 贷款披露**:「零首付 / 首付贷 / 0 月供 / 1 万首付」+ 房地产 anchor。
-  - **医疗 §3 审查证明文号**:「审查证明缺失 / 未取得审查」+ 医疗 / 医院 / 国药准字 anchor,补 med_art11_qualifications 未覆盖的医疗广告审查证明缺失检测。
-  - **§10 残疾人歧视有害内容**:「脑瘫 / 智障 / 唐氏 / 自闭症」+ 残联 / 康复 / 医院 anchor。
-  - **§9 地域民族宗教歧视**:「地域黑 / 河南人骗子 / 新疆切糕」覆盖性别歧视外的其他歧视维度。
-  - **§8 附带赠送披露**:「买一赠一 / 赠送大礼包 / 到店即送」覆盖零售 / 餐饮 / 教育店招赠送披露义务。
-  - **房地产 §15 效果图披露**:「效果图 / 鸟瞰图 / CG 渲染」+ 房地产 anchor,强度 Info(告知性披露义务)。
-  - **招聘 §9(9) 性别歧视扩 keyword**:「男性优先 / 女性优先 / 形象气质佳 / 限女生 / 招聘女主播」+ 招聘 / 招工 anchor,补现有 recruitment_gender_discrimination 词表过窄。
-
-### 验证
-
-- `./gradlew testDebugUnitTest` 全过(cleanup 不影响 keywords/categoryAnchors/severity,OCR 命中行为字节级稳定;新增 14 条规则的 AC matcher 由 `AdSignageRuleMatcher` keyword 路径自动覆盖)。
-- 真机 audit71 fixture smoke:expected miss 数下降(原 0-hit 的 fixture 113/115 命中 §38 代言人,f32 类养生馆命中 §19)。
-- KB README.md 已同步更新,`广告业务/README.md` line 19 断链修复,`知识库/广告业务/` 目录 `广告招牌` 跨域引用原则保持(regulation 仅引《广告法》《广告管理条例》《互联网广告管理办法》《医疗广告管理办法》及其伞下法律)。
-
-## v0.1.63 · 2026-09-09
-
-### 修复
-- **切换到「冰灵 TTS 引擎(本地)」后点播放按键无声音** — 真机发现 v0.1.62 选了本地引擎,分析完点朗读完全无音:
-  - **根因 A(Bug 7)**:`onnxruntime-android:1.21.1` 与 `sherpa-onnx:v1.13.5` 两个 AAR 都向 APK 注入同名 `libonnxruntime.so`,但 ELF 版本化符号 (`@@VERS_1.X`) 不兼容 — PaddleOCR JNI bridge 期望 `VERS_1.21.1`,sherpa-onnx v1.13.5 的自定义 fork 暴露 `VERS_1.27.1`,动态链接器严格匹配,任一无法加载另一个。`packagingOptions.jniLibs.pickFirsts` 静默取其中一个,但都不满足两者 ABI。logcat:`dlopen failed: cannot locate symbol "OrtGetApiBase"`
-  - **根因 B(Bug 7b — v0.1.63 二次发现)**:解决 Bug 7 ABI 后真机再次 tap 播放,直接 native SEGV in `libsherpa-onnx-jni.so` `Java_com_k2fsa_sherpa_onnx_OfflineTts_generateImpl+268`。根因:`sherpa-onnx` Matcha-zh-baker `OfflineTtsConfig.Validate()` 要求 `modelDir` 同时存在 **7 个文件**(2 个 ONNX + 5 个文本/规则资源:lexicon.txt / tokens.txt / phone.fst / date.fst / number.fst)。`TtsModelInstaller` v0.1.62 只下载 2 个 ONNX,Gitea 仓库的 5 个小文件从未挂到 JSON 描述符,模型目录长期残缺。`OfflineTts` ctor 拿 `null` 返回(Validate 失败时不抛异常,只 `LOG(ERROR)` "Rule fst '<path>' does not exist" + "Errors found in config!"),随后 `generate()` 内部解 null `OfflineTts*` 句柄 → native SEGV
-  - **根因 C(Bug 7c — v0.1.63 三次发现)**:补齐 Bug 7b 7 文件 + 重打 APK 后真机仍然 SEGV,栈顶 `OfflineTts_generateImpl+268`,logcat 上一行 `W OfflineTts: phontab does not exist`。根因:`SherpaTtsEngine.kt` v0.1.62 误以为 Matcha-zh-baker 是「中文专用不需要 espeak」,把 `OfflineTtsMatchaModelConfig.dataDir` 参数整段删除 —— 但 sherpa-onnx v1.13.x C++ 端有内置默认空串路径,落到第一个 token 上照样走 espeak 路径照样 NULL deref。`OfflineTtsConfig.Validate` 在 data_dir 找 `phontab` / `phonindex` / `phondata` / `intonations` 4 个核心文件,缺失只 `LOG(WARN)` 不抛错,`generate()` 走到第一个字符的 espeak lookup 时 NULL 解引用 SIGSEGV
-  - **修复**:`assets/models/tts/zh/espeak-ng-data/` 子目录树(2.2 MB,9 文件:`phontab` + `phonindex` + `phondata` + `intonations` + `cmn_dict` + `en_dict` + `phondata-manifest` + `lang/sit/cmn` + `lang/sit/cmn-Latn-pinyin`)打 APK bundle,`TtsModelInstaller.copyBundledAssets()` 新增递归 `copyAssetDirectory()` 私有方法拷子目录树(用 `AssetManager.list()` enumerate),`SherpaTtsEngine.DefaultSynthesizerProvider.create()` 把 `dataDir = File(modelDir, "espeak-ng-data").absolutePath` 加回去。原始仓库 commit `92422cb` 已 staged 这 9 个文件,只是 `copyBundledAssets()` 之前没覆盖到子目录 —— Bug 7c 真因是「资产进了 APK,拷到 modelDir 的代码没覆盖到子目录」
-  - **修复**:**hybrid path** — 2 ONNX 从 Gitea 下载,5 文本/规则资源 + 9 个 espeak-ng-data 文件打 APK bundle 在 `assets/models/tts/zh/`(1.6 MB + 2.2 MB = 3.8 MB),首次安装时 `TtsModelInstaller.copyBundledAssets()` 通过 `AssetManager.open` 拷到 `filesDir/offline-models/zh/`。`isModelInstalled()` 现校验全部 7 + 4 核心文件,缺一即触发重新安装。复用 translate 项目 `ModelInstaller.copyBundledAsset()` 已稳定 3 个月的同款 pattern
-
-### 变更
-- `app/build.gradle.kts` jniLibs.pickFirsts 注释更新(原 "ABI-compatible C-API 1.21.1" 措辞错误,改成 "BOTH .so 必须暴露相同 `@@VERS_1.X`,否则 dlopen fail")
-- `gradle/libs.versions.toml` sherpa-onnx 块注释记录 ABI 同步策略 + 引用 `feedback-onnxruntime-abi-version-mismatch` memory
-- `app/src/main/java/.../tts/TtsModelInstaller.kt` 加 `assets: AssetManager` ctor 参数 + `BUNDLED_ASSET_FILES` companion + `copyBundledAssets()` private suspend
-- `app/src/main/java/.../tts/sherpa/SherpaTtsEngine.kt` KDoc 更新:asset 布局段落明确「**11 文件必须同时存在否则 SEGV**」(2 ONNX + 5 文本规则 + 4 espeak 核心 + 字典 + 语言包) + `DefaultSynthesizerProvider.create()` 恢复 `dataDir` 参数(Bug 7c 修复关键)
-- `app/src/main/java/.../IceSpiritVisionActivity.kt`:`TtsModelInstaller` 构造时传 `assets = applicationContext.assets`
-- 新增 APK 内资产 5 个文本/规则:`assets/models/tts/zh/{lexicon.txt, tokens.txt, phone.fst, date.fst, number.fst}`(1.6 MB)+ 9 个 espeak-ng-data 文件:`assets/models/tts/zh/espeak-ng-data/{phontab, phonindex, phondata, intonations, cmn_dict, en_dict, phondata-manifest, lang/sit/cmn, lang/sit/cmn-Latn-pinyin}`(2.2 MB)— 合计 +3.8 MB,随 APK 出
-- Gitea `giteaadmin/Model` release `sherpa-onnx-matcha-zh-baker`(id 8)5 个文本/规则资源补齐上传,JSON 描述符 v1.0.1 维持 2 个 ONNX 形状(hybrid 路径不再走 JSON)
-
-### 测试
-- 新增 `TtsModelInstallerTest`(Robolectric sdk=33):`isModelInstalled` 11 文件感知(空目录 / 仅 ONNX / 全部 11 文件 3 个 case) + `downloadModel` 走 copy 路径(报告 Done,espeak-ng-data 子目录树同步生成)+ sha256 错配回退 Failed(partial 文件清理)+ 已安装时幂等不发网络请求
-- `testDebugUnitTest` 全部 7.x case 通过(纯函数 + Robolectric,无 Compose)
-- 真机 smoke:华为 nova 6 SDK 35,选「冰灵 TTS 引擎」→ 触发下载 → 验证 11 文件齐(2 ONNX + 5 文本规则 + 4 espeak 核心 + 字典 + 语言包) → 选图分析 → tap 朗读 → 无 SEGV + 出声
-
-### 构建 / 数据
-- `versionCode` 62 → 63
-- `versionName` 0.1.62 → 0.1.63
-- 依赖:`onnxruntime 1.21.1 → 1.24.3`,`sherpa-onnx v1.13.5 → v1.13.3`
-- ONNX OCR 模型 / TTS 模型 / `ad_signage_rules.json` / `food_label_rules.json` 不变
-- APK 体积 +3.8 MB(5 个 bundled 文本/规则资源 + 9 个 espeak-ng-data 文件);onnxruntime-android:1.24.3 AAR 比 1.21.1 大 ~10 MB,sherpa-onnx v1.13.3 与 v1.13.5 体积近似
-
-## v0.1.62 · 2026-09-09
-
-### 修复
-- **TTS picker 点「下载」chip 区域无反应** — 真机发现 v0.1.61 picker 行右侧「下载」chip 自身消费 pointer event(`AssistChip(enabled = false)` 即便 disabled 仍 consume input,不冒泡到 parent row 的 selectable.onClick),点 chip 区域 engineClick 未触发,downloadEngine 没跑:
-  - **Bug 6 修复**:`EngineStatusChip` 改用 `Box + 背景色 + 文本` 视觉(无 clickable modifier),chip 区域 pointer event 穿透到 parent Row.selectable。整行(label + 状态 pill)统一一个 clickable unit
-
-### 变更
-- **UI**:`TtsEnginePickerScreen` 去掉 `AssistChip` + `AssistChipDefaults` import,改用 `Box + background(shape = MaterialTheme.shapes.small)`,视觉与原 disabled chip 完全一致(`surfaceVariant` 底 + `onSurfaceVariant` 文)
-
-### 测试
-- **+1 case**:`TtsEnginePickerScreenTest` 新增 `tapping the status chip area on NeedsDownload row triggers onEngineClick`,用 `composeRule.onNodeWithText("下载").performClick()` 直接点 chip 文本 pin 透传契约,防止后续 revert 复发
-- `testDebugUnitTest` 807 / 0 fail / 2 skipped
-
-### 构建 / 数据
-- `versionCode` 61 → 62
-- `versionName` 0.1.61 → 0.1.62
-- `ad_signage_rules.json` / `food_label_rules.json` 不变(无规则库改动)
-- ONNX OCR 模型不变(PP-OCRv6_small);ONNX TTS 模型不变(sherpa-onnx-matcha-zh-baker)
-- APK 体积不变(只 UI fix)
-
-## v0.1.61 · 2026-09-09
-
-### 修复
-- **TTS 引擎选择器不显示「冰灵 TTS 引擎(本地)」选项** — 真机发现 v0.1.60 picker 在系统引擎列表底部看不到本地引擎行,用户无法触发首次下载:
-  - **Bug 4 修复**:`SherpaTtsEngine.supportedChineseEngines()` 始终返回 1 条带 `EngineStatus` 的本地引擎条目;`TtsController.mergedEngines()` 在其上叠加 installer 瞬时状态(`Downloading` / `DownloadFailed`),picker 行尾展示状态 chip(`下载` / `下载中` / `重试`)。新增 `TtsController.engineClick(pkg)` 统一入口:本地未安装 → `downloadEngine()`;本地已装 / 系统引擎 → `setEnginePackage(pkg)`。`TtsEnginePickerScreen` 把 `onSelectEngine` + `onDownloadEngine` 两个回调合并成单个 `onEngineClick`
-- **朗读 / 暂停按钮外围圆圈多余** — 真机发现 v0.1.60 HomeTopBar 朗读按钮 1dp primary `CircleShape` 描边视觉多余:
-  - **Bug 5 修复**:去除按钮外圈 border,改用 tint 单维度表达 enabled(enabled=primary / disabled=onSurface@38%),与右侧设置齿轮视觉对齐
-
-### 变更
-- **UI**:`TtsEnginePickerScreen` 空态文案精简(无下载 CTA,本地引擎行始终渲染);`HomeTopBar.TtsIconButton` 改 `Triple` data class(去除 `accentBorder` 字段),无 `CircleShape` import
-- **资源**:新增 3 个 string(`tts_status_needs_download` / `tts_status_downloading` / `tts_status_download_failed`),删除 5 个旧 string(`tts_empty_solution_1_*` + `tts_empty_download` + `tts_empty_downloading` + `tts_empty_download_long_press_to_cancel`)
-
-### 测试
-- **+5 case / -1 文件**:`TtsEmptyStateDownloadButtonTest` 删除(空态 CTA 已消失);`TtsEnginePickerScreenTest` 新增 5 case 覆盖 NeedsDownload / Downloading chip + 安装后 tap 触发 onEngineClick;`SherpaTtsEngineTest` 改写 2 case 适配新契约(始终返回 LOCAL + status 字段);`TtsControllerTest` 新增 4 case 覆盖 `engineClick` 路由(未安装→下载 / 已装→选 / 系统→选 / null→选 null)
-- `testDebugUnitTest` 806 / 0 fail / 2 skipped
-
-### 构建 / 数据
-- `versionCode` 60 → 61
-- `versionName` 0.1.60 → 0.1.61
-- `ad_signage_rules.json` / `food_label_rules.json` 不变(无规则库改动)
-- ONNX OCR 模型不变(PP-OCRv6_small);ONNX TTS 模型不变(sherpa-onnx-matcha-zh-baker)
-- APK 体积不变(只 UI/UX 改动)
-
-### 已知遗留 / 后续
-- **PcmAudioPlayer 真机烟测未做**:Robolectric 不能播 PCM,需 `connectedDebugAndroidTest` 在华为 nova 6 上 1 张 fixture 跑 speak + 进度回调 + onDone 链路(本发版号 v0.1.61 仍未做,留 v0.1.62)
-- **首次启动下载 UX**:目前无后台通知(走 picker 内 status chip 反映进度),若下载中用户离开 picker 进度流会断(留 v0.1.62 加 ForegroundService 通知)
-
-## v0.1.60 · 2026-09-08
-
-### 修复
-- **TTS 设置界面无变化 + 引擎选项空 + 兜底下载无反应** — 真机发现 v0.1.59 TTS 朗读功能 3 个真机问题:
-  - **Bug 1 修复**:`IceSpiritNavHost` 默认 `isAnalysisComplete = false` / `ttsState = Disabled` / `currentEngineLabel = "跟随系统默认"`,HomeTopBar 朗读按钮 永远 Disabled,设置 TTS 项永远不显真实引擎。**修法**:把 `ttsState` / `ttsEnabled` / `onSetTtsEnabled` / `currentEngineLabel` collect 提升到 NavHost 层,`isAnalysisComplete` 走 `state is Complete` 推导,SettingsScreen 拿到 `ttsController.setting.collectAsStateWithLifecycle()` 真实值。commit `d8a8d4b`。
-  - **Bug 2 修复 + 视觉重做**:`TtsController` 未暴露 `engines: StateFlow<List<EngineInfo>>`,NavHost 调用点 `engines = emptyList()` 默认,picker 永远 EmptyTtsState;`TtsEnginePickerScreen` 视觉与 Phase 3 Editorial 不搭(title `headlineMedium` 30sp 比父路由 26sp 还大、行用 Material `RadioButton`、empty state 裸 `Column` + 实心 `Button`)。**修法**:`TtsController` 加 `engines: StateFlow`,init 后 + `refreshEngineStatus` 时各 populate 一次;NavHost 加 `currentEnginePackage` / `engines` / `onSelectEngine` 3 参数,Activity 收集后 thread 进去;picker title `headlineSmall` 26sp / list 套 `Card` / 行用 `Icon(Icons.Default.Check, tint=primary)` 替代 RadioButton / 行间 `HorizontalDivider(0.5dp, outline)` / empty state `Card` + `FilledTonalButton`,对齐 `SettingsScreen.kt:77` 字号 + `SettingsScreen.kt:100` section 模式 + `HitCard.kt:112` tonal button palette。commit `35d0e77`。
-  - **Bug 3 修复(pivot)**:`TtsEngineInstaller` `fetchReleaseInfo()` 走 `gitea.example.invalid` 占位 + 全零 SHA,真机永远 0 步进;`BuildConfig.TTS_ENGINE_JSON_URL` 缺失。原 spec 计划独立 `icespirit-tts-engine` APK,但 `giteaadmin/tts-engine` 仓 404 不可用,需建仓 + build 独立 gradle subproject + 上传 ~150MB APK,3-5h 兴师。**Pivot**:参考 `IceSpiritAI_Translate` 仓设计 — `giteaadmin/Model` release `sherpa-onnx-matcha-zh-baker` 已有现成 ONNX(`model-steps-3.onnx` 75.6MB + `vocos-22khz-univ.onnx` 53.9MB),translate 1:1 用这套,vision 同样策略:
-    - 主 APK 集成 `com.k2fsa.sherpa-onnx:v1.13.5`(JitPack,`exclude "sherpa-onnx-jvm"`)+ `packaging.jniLibs.pickFirsts` 排除 c-api/cxx-api。**APK +42.5MB**(native lib 26.5MB + 文本资源 ~16MB),ONNX 130MB 不入 APK
-    - 新 `SherpaTtsEngine`(`OfflineTtsMatchaModelConfig` 懒初始化,`synthesize` 返 PCM)+ `PcmAudioPlayer`(`AudioTrack` 22050Hz/16-bit/mono,`MODE_STATIC` ≤50000 samples else `MODE_STREAM`)+ `TtsModelInstaller`(`HttpURLConnection` + `Range: bytes=N-` 续传 + `.meta` sidecar `sha256` 校验,失败时 partial + meta 删除 + `InstallState.Failed(reason)`),首次启动从 `giteaadmin/Model` release `sherpa-onnx-matcha-zh-baker` 拉 2 个 ONNX 到 `filesDir/offline-models/tts/zh/`
-    - `TtsController` 多引擎路由:`currentEngine` 按 `selectedEnginePackage` 选 `SherpaTtsEngine`(本地)或 `AndroidTtsEngine`(系统);`supportedChineseEngines()` merge 系统 + 「冰灵 TTS 引擎(本地)」(模型装好后出现);`downloadEngine()` 触发 `TtsModelInstaller.downloadModel()` + 刷新 engines list
-    - 21 个文本资源(tokens.txt / lexicon.txt / phone/date/number.fst / espeak-ng-data/* / dict/*)从 `IceSpiritAI_Translate/app/src/main/assets/models/tts/zh/` 复制
-    - `BuildConfig.TTS_MODEL_JSON_URL` → `giteaadmin/Model` release `sherpa-onnx-matcha-zh-baker` 的 `*-latest.json` 资产(2026-09-08 由 vision 上传,uuid `f108aa74-f6c7-4ae9-aaab-4a3e3eb66089`,含真 SHA-256)。`TtsModelInstaller.FallbackDescriptors` 同步填真 URL + SHA(保险,JSON 抓不到时不破)
-    - 弃用路径:commit `f039bd3`(`gitea.example.invalid` 兜底)已 `e319d39` revert;原 spec "独立 APK 路径" 改 memory `project-tts-engine-apk-pivot.md` 标记 **PIVOTED 2026-09-08**
-    - commit `92422cb` + 后续 `FallbackDescriptors` 填真 SHA 在 release-marker commit 内
-
-### 变更
-- **依赖**:新增 `com.github.k2-fsa:sherpa-onnx:v1.13.5` + JitPack 仓库(Aliyun/Tencent 镜像无 sherpa 制品)
-- **AndroidManifest**:无新增(FileProvider authority `${applicationId}.fileprovider` 走 v0.1.59 既存的 `update/` cache-path,无 TTS 专用)
-- **导航**:`TtsEnginePickerScreen` 空态时 FilledTonalButton 「下载冰灵 TTS 引擎」→ `onDownloadEngine` 路由 → `TtsController.downloadEngine` 触发下载(进度流透传)
-- **资源**:`app/src/main/assets/models/tts/zh/` 21 个文本资源从 translate 复制(tokens/lexicon .txt + 3 .fst + espeak-ng-data/* + dict/*);`prepare-ocr-rules.gradle.kts` `copyOcrModelsAssets` 加 `tts/**/*.txt/.fst/espeak-ng-data/dict` 规则
+**广告业务规则库扩展 14 条 + 跨域法规引用清理**。让识别范围更广(覆盖更多真实广告场景),同时清理了一些不相关法规的引用,避免误判。
 
 ### 新增
-- **TTS 兜底引擎「冰灵 TTS 引擎(本地)」**:picker 在模型已下载后,中文 TTS 系统引擎列表底部追加,`com.icespiritai.vision.sherpa-onnx` synthetic package,纯本地零网络合成中文
-- **Gitea `giteaadmin/Model` release `sherpa-onnx-matcha-zh-baker` 资产 `sherpa-onnx-matcha-zh-baker-latest.json`**(2026-09-08 vision 上传,uuid `f108aa74-f6c7-4ae9-aaab-4a3e3eb66089`):6 字段 `versionCode / versionName / modelUrl / vocoderUrl / modelSize / vocoderSize / modelSha256 / vocoderSha256`,ONNX 实际 sha256 通过 `sha256sum` 验证过
 
-### 测试
-- **+23 case**(全部 PASS):`SherpaTtsEngineTest` 8(speak 懒初始化 / onDone / 无模型 no-op / 双态 engines / samples 透传 / stop / init no-op / cached Synthesizer reuse)、`PcmAudioPlayerTest` 3(construct / stop 幂等 / empty no-op)、`TtsModelInstallerTest` 8(isModelInstalled 双态 / write ONNX / sha256 mismatch / meta 往返 / readMeta null / verifySha256 双态)、`TtsControllerTest` +4(LOCAL 路由 / null 路由 / downloadEngine 刷新 / 无 sherpa 兜底)
-- `testDebugUnitTest` 801 / 1 fail(`ChangelogScreenTest` 仍期待 v0.1.57,本 release-marker commit bump 到 v0.1.60)/ 2 skipped
-- **PcmAudioPlayerTest 缩减**:Robolectric `AudioTrack` shadow 不会真播音频(write 返 0),从 5 砍到 3 API-surface case;真机验证留 `connectedDebugAndroidTest`
+- 广告业务规则库新增 14 条规则,覆盖:明星代言(成人/童星)、新闻形式包装广告、健康养生变相广告、未经同意发送广告、烟草品牌联名、装修承诺、贷款首付、性别歧视、残疾人歧视、地域歧视、买赠披露、效果图披露等
+- 清理了 30 条规则里引用错误法规的问题(之前有些规则引用了食品标识、烟草等不相关法规)
 
-### 构建 / 数据
-- `versionCode` 59 → 60
-- `versionName` 0.1.59 → 0.1.60
-- `ad_signage_rules.json` / `food_label_rules.json` 不变(无规则库改动)
-- ONNX OCR 模型不变(PP-OCRv6_small)
-- **APK 体积 +~42.5MB**(sherpa-onnx native lib 26.5MB + 文本资源 ~16MB);ONNX TTS 模型 130MB 走首次启动下载(`giteaadmin/Model` release `sherpa-onnx-matcha-zh-baker` → `filesDir/offline-models/tts/zh/`)
+## v0.1.63 — 2026-09-09
 
-### 已知遗留 / 后续
-- **PcmAudioPlayer 真机烟测未做**:Robolectric 不能播 PCM,需 `connectedDebugAndroidTest` 在华为 nova 6 上 1 张 fixture 跑 speak + 进度回调 + onDone 链路(留 v0.1.61)
-- **首次启动下载 UX**:目前无后台通知(走 `InstallState.Downloading(progress)` 反映到 picker 按钮文字),若下载中用户离开 picker 进度流会断(留 v0.1.61 加 ForegroundService 通知)
-- **giteaadmin/Model 仓 `sherpa-onnx-matcha-zh-baker` release 关联 `sherpa-onnx-matcha-zh-baker-latest.json` 后,vision app 端走 `BuildConfig.TTS_MODEL_JSON_URL` fetch 即可**,Gitea API 不变
-
-## v0.1.59 · 2026-09-08
-
-### 新增
-- **TTS playback — 朗读识别结果中文命中**(spec §6 端到端落地,plan 17 tasks):
-  - **状态机 + 持久化**:`TtsSetting` DataStore Preferences 持久化 enabled + engine package + disclaimer accept;`TtsController` 4 状态 sealed class(`Idle` / `Speaking` / `Disabled` / `InitFailed`)经 `AndroidTtsEngine` 包装走 `android.speech.tts.TextToSpeech` API,`setLanguage(zh-CN) >= LANG_AVAILABLE` per-engine probe 缓存到 `primaryEnginePackage` 避免字符串 substring 误判(Honor voiceengine 实测)
-  - **脚本拼接**:`ScriptBuilder` 按 severity 排序拼接 `ViolationReport` → 朗读脚本(violation 在前,info 在后,priority-ordered)
-  - **UI 表面**:HomeTopBar 朗读按钮 4 态视觉矩阵(`Idle` speaker / `Speaking` stop / `InitFailed` warning / `Disabled` hidden)+ a11y `contentDescription` per 态;ResultPanel 0 命中卡片 visible footer(「未发现违规用语」+ 「AI 识别仅供参考」);Settings 「语音播报」section + `TtsEnginePickerScreen` 路由
-  - **首次启动免责**:`DisclaimerDialog` `AlertDialog`(`dismissOnBackPress=false`),启动期 `disclaimerAcceptedAt == null` 触发,「我了解」tap 后 `acceptDisclaimer()` 写入 DataStore 一次性 ack
-  - **兜底引擎下载**:`TtsEngineInstaller` 状态机(`Idle` / `Downloading(progress)` / `Installing` / `Done` / `Failed(reason)`)+ `HttpURLConnection` `Range: bytes=<start>-` 续传 + sidecar `.meta` JSON `sha256` 校验 + `IOException` cleanup(partial + meta 删除 + `Failed(reason)`)+ `FileProvider` cache-path `ACTION_VIEW` + `ACTION_INSTALL_PACKAGE`
-  - **Activity 接线**:`IceSpiritVisionActivity` 注入 `TtsController` + `ttsController.state.collectAsStateWithLifecycle()` thread 到 `IceSpiritNavHost` → `HomeScreen` → `HomeTopBar`;`LaunchedEffect` bridge collect `sharedVm.state` → `ttsController.setLatestReport((Complete)?.report)`
-- **真机 e2e(华为 nova 6 SDK 35)**:`AndroidTtsEngineInitTest` / `SpeakTest` / `TtsEngineInstallerResumeTest` / `HomeScreenTtsE2ETest` / `TtsEngineInstallerE2ETest` 5/5 PASS(commit `2876a8e` + 修复 `45078a5` + `7c4715e` + smoke doc `7b32c1c` + plan doc `585bc42`)
-- **Visual audit fixtures**:`app/src/androidTest/assets/visual-audit/tts/{before,after}/` 各 3 张真机截图,`speaking.png` sha256 `a795a666...235e` 验证 HomeTopBar 按钮渲染
-
-### 变更
-- **依赖**:无新增(走 `android.speech.tts` SDK + `androidx.datastore:datastore-preferences`)
-- **资源**:`strings.xml` 新增 TTS + disclaimer 全量 keys(约 12 条)
-- **导航**:`IceSpiritNavHost` 加 `Routes.TTS_ENGINE_PICKER` route
+**修复了"切换本地 TTS 引擎后点播放无声音"问题**。根因发现 3 个:本地引擎需要的两个组件符号不兼容、5 个必备的小文件从来没下载、还有 1 个配置被误删。三层都修了。
 
 ### 修复
-- `AndroidTtsEngine.supportedChineseEngines()` 字符串 substring 探测 → per-engine init 缓存 `primaryEnginePackage` + `primarySupportsChinese`,`Honor voiceengine` 实测命中(原 substring 列表漏)
-- `IceSpiritNavHost.HomeScreen(...)` 调用点补 `ttsState` + `onSpeakToggle` 参数(原默认值 `TtsState.Disabled` 让按钮不渲染)
-- `TtsEngineInstaller` `IOException` handler 增 partial + meta sidecar 文件清理(plan 未列,实现期发现)
-
-### 构建 / 数据
-- `versionCode` 58 → 59
-- `versionName` 0.1.58 → 0.1.59
-- `ad_signage_rules.json` / `food_label_rules.json` 不变(无规则库改动)
-- ONNX 模型不变(PP-OCRv6_small)
-- APK 体积 +~50KB(TTS 模块 + 测试代码)
-
-## v0.1.58 · 2026-09-04
-
-- **「ad」域规则库法规新鲜度审计 + 3 P0 修复**(per v0.1.57 follow-up workflow Phase 2 synthesis 报告):synthesis 标识出 3 条 ad_signage 规则 `regulation` 字段引用了已废止法规或错号条款,违反 CLAUDE.md §"知识库时效性整理(2026-08-27)" 的"规则 JSON 条目 regulation 必须能指回 知识库/&lt;域&gt;/&lt;现行法规&gt;.md,不得指已废止法规"约束。本次修复 3 条 P0 法规新鲜度问题:
-  - **`ad_signage_restricted_tobacco_health_relief`** — 原引《烟草广告管理暂行办法》§6(2016-02-01 施行 / 2016-12 实质被《广告法》§22 吸收 / 2018-10 已废止) → 现行《广告法》第二十二条 + 第五十七条。`知识库/广告业务/烟草广告管理暂行办法_广告法§22实质替代.md` 同步 `git mv` 到 `知识库/已废止/烟草广告管理暂行办法_2016工商总局令86号废止.md`,README.md 链接同步更新
-  - **`ad_signage_restricted_tobacco_buy_gift_promotion`** — 原引《烟草专卖法》§19(1991 原版编号) → 现行 §18(2015 第三次修正版,§19 已变为商标注册专用)。错误根源:本档历史上用 1991 原版结构,§18/§19 在 2015 修正版中整体重排,本档 §18=广告禁令 / §19=商标注册。`知识库/广告业务/中华人民共和国烟草专卖法(广告节选).md` 新增 "v0.1.58 编号同步" 章节明示
-  - **`ad_signage_signage_duty_free_unauthorized`** — 原引《反不正当竞争法》§8(2017/2019 版「虚假宣传」) → 现 §9(2025-10-15 修订版主席令第五十号整体重排,原 §8→现 §9;现 §8 是商业贿赂与广告无关)。新建 `知识库/广告业务/中华人民共和国反不正当竞争法.md` + `中华人民共和国海关法(广告节选).md`(本地,gitignored) 给 dev/research 留文本锚点
-  - **behavior delta**:**仅 regulation 字段字符串 + lawText 字段文本变化**,keywords / severity / category / sourceMarkers / categoryAnchors 全部不变,OCR 命中行为字节级一致。已跑 AdSignageRuleMatcherTest 4 条 P0 相关测试(v0_1_57_tobacco_buy_gift_promotion_firesWithAnchor / blockedWithoutAnchor / v0_1_57_tobacco_health_relief_firesWithAnchor / v0_1_57_duty_free_extended_keywords_fire),**全过**
-  - **构建 / 数据**:`versionCode` 57 → 58,`versionName` 0.1.57 → 0.1.58,`ad_signage_rules.json` 规则数 / keywords 全部不变,仅 regulation/lawText 字段字符串更新
-
-- **`知识库/广告业务/直播电商监督管理办法.md` 主目录迁移**(v0.1.57 follow-up scratch review P0 建议):v0.1.57 落地的 2 条规则 `ad_signage_internet_art34_live_ecommerce_fake` / `ad_signage_internet_art37_ai_digital_human` regulation 字段已引《直播电商监督管理办法》,但 `知识库/广告业务/` 主目录无对应 .md,违反知识库时效性整理约束。从 `_tmp_convert/直播电商监督管理办法.md`(2025-12-18 国家市场监督管理总局 / 国家互联网信息办公室令第 117 号公布,2026-02-01 起施行)迁入主目录,加 canonical 头(发文字号 / 通过日期 / 施行日期 / 替代关系 / 与 v0.1.57 规则对应 §34/§37),dev/research 引用锚点已就位
-
-## v0.1.57 · 2026-09-04
-
-- **「ad」域规则引擎全量扩写(知识库/广告业务/ 17 部法规全量阅读后落地的合规扩写)**:用户 2026-09-04 反馈「广告业务有更新,全部认真阅读一遍该文件夹下所有的法律法规,完善识别规则」,逐部研读 17 部现行法规(广告法 / 广告管理条例 / 烟草专卖法 / 野生动物保护法 / 就业促进法 / 药品医疗器械保健食品广告审查暂行办法 / 兽药广告审查发布规定 / 农药广告审查发布规定 / 房地产广告发布规定 / 互联网广告管理办法 / 直播电商监督管理办法 2026 / 广告绝对化用语执法指南 / 广告引证内容执法指南 2026 等),落地为 **21 新规则 + 2 severity 升级 + 4 既有规则 keyword 扩展**:
-  - **`ad_signage_rules.json` version 18 → 19,规则数 154 → 175(+21)**
-  - **新规则 21 条**(按法规分):
-    - **烟草专卖法 / 烟草广告管理暂行办法** — `ad_signage_restricted_tobacco_buy_gift_promotion` (Violation,买烟得好礼 / 凭烟盒兑换 / 买1条赠,锚烟/卷烟/烟草)+ `ad_signage_restricted_tobacco_health_relief` (Violation,养生烟/保健烟/解乏烟,锚烟)
-    - **就业促进法 §26** — `ad_signage_signage_recruitment_gender_discrimination` (Violation,只招男性/男性优先,锚招聘/招工)+ `ad_signage_signage_recruitment_age_discrimination` (Warning,35岁以下/45岁以下,锚招聘)
-    - **广告法 §9(2)** — `ad_signage_signage_party_leader_commercial` (Violation,主席同款/领导人形象/主席卡通,无 anchor — 国家机关形象全场景违规)
-    - **广告法 §3+§9(2)+绝对化用语执法指南** — `ad_signage_signage_special_supply` (Violation,特供/专供/国宴特供/国宾专供,`categoryAnchorsAbsent=[特许经营,特许加盟]` 屏蔽加盟广告合法使用「特许」字)
-    - **广告法 §40(2)** — `ad_signage_signage_minor_under14_pester_parent` (Violation,妈妈我要/爸爸买/哭闹要,锚儿童/宝宝/奶粉 — 阻断餐饮等无关广告)
-    - **广告法 §13** — `ad_signage_art13_compare_dismiss` (Warning,碾压XX/完爆XX/吊打XX — 贬低同业比较广告)
-    - **广告引证内容执法指南 §13(2026)** — `ad_signage_art9_citation_radish` (Violation,某市第一/本省第一/全市第一 — 萝卜坑式绝对化新解释)
-    - **药品医疗器械保健食品广告审查暂行办法 §11(1) / §21 / §11(7)** — `ad_signage_medical_art11_induce_sales` (Warning,免费治疗/家庭必备/限量抢购,锚药品/OTC/国药准字)+ `ad_signage_medical_art21_prohibited_ad` (Violation,麻醉药品/精神药品/戒毒药品/放射性药品,锚药品/制药)+ `ad_signage_medical_art11_clinic_promotion` (Warning,义诊/特约门诊/医疗咨询电话,锚药品/医疗器械)
-    - **兽药广告 §9 / §4(1)** — `ad_signage_veterinary_art9_overrange` (Warning,万能/百病皆治/包治百病,锚兽药/兽医)+ `ad_signage_veterinary_no_residue` (Violation,无残留/无停药期/零休药期,锚兽药)
-    - **农药广告 §7 / §8** — `ad_signage_pesticide_art7_suggestive` (Warning,独家配方/特效/一喷就死,锚农药/杀虫,`categoryAnchorsAbsent=[食品,茶饮,化妆品,美容]` 屏蔽跨域)+ `ad_signage_pesticide_art8_pseudoscience` (Warning,纳米农药/太空育种/量子农药,锚农药,absent 同上)
-    - **房地产广告 §16 / §18 / §19** — `ad_signage_re_art16_financing` (Violation,首付贷/售后包租/返本销售,锚房地产/楼盘)+ `ad_signage_re_art18_hukou_education` (Violation,解决户口/保证入学,锚学区,`categoryAnchorsAbsent=[已交付,已划片]`)+ `ad_signage_re_art19_property_mgmt` (Warning,高端物业/24小时管家,锚物业)
-    - **直播电商监督管理办法 §34 / §37(2026-02-01 施行)** — `ad_signage_internet_art34_live_ecommerce_fake` (Violation,直播间/上链接/主播亲测,锚直播)+ `ad_signage_internet_art37_ai_digital_human` (Warning,AI主播/数字人主播/虚拟主播,锚AI主播)
-  - **Severity 升级 2 条**(per 绝对化用语执法指南 §11 strict-domain list):`ad_signage_art9_edu_abs` 教育培训类 + `finance_art9_abs_investment` 招商投资类 — Warning → Violation(2026-09-03 研判:医疗 / 医美 / 教育 / 招商投资 4 类严领域,绝对化用语无免罚)
-  - **既有规则 keyword 扩展 4 条**:
-    - `ad_signage_restricted_wildlife_product_ad` +10 keywords(玳瑁/象牙/犀角杯/藏羚羊绒/赛加羚羊角/野山参/象骨/鲸骨 — 野生动物保护法 §27 §31 列举)
-    - `ad_signage_signage_duty_free_unauthorized` +2(离境免税/免税额度 — 海关法 §24 适用扩展)
-    - `ad_signage_signage_cosmetic_implied_dryness` +3(屏障受损/屏障破坏/易过敏 — 化妆品监督管理条例 §25 第二款)
-    - `internet_art21_paid_search` +3(搜索品专/品牌专区/品专 — 百度搜索产品官方名)
-  - **33 条新单测**(全过,`./gradlew.bat testDebugUnitTest --tests AdSignageRuleMatcherTest`,**245 tests / 0 failures / 0 errors**):每条新规则 1-2 测(正向 + anchor gate 反向),severity 升级 2 测,keyword 扩展 4 测
-  - **构建 / 数据**:`versionCode` 56 → 57,`versionName` 0.1.56 → 0.1.57,`ad_signage_rules.json` version 18 → 19
-  - **真机 e2e 待跑**:audit71 fixture set 本次主要扩 category-anchor gated rules(medical / vet / pesticide / re / internet_ad),后续真机烟测关注 `anyHitCount` 是否破 ≥60/N 阈值
-
-## v0.1.56 · 2026-09-04
-
-- **「ad」域规则引擎新增 fixture 136 变相对比式健康暗示广告通用修复**(用户 2026-09-04 反馈:fixture 136 不是「无违规」而是**变相对比式健康暗示广告**,v0.1.54 categoryAnchors 正极性 gate 错把它当公益广告误杀(0 hit),v0.1.55 矩阵 sync 时进一步确认为规则库 gap)
-  - **法规依据**:《广告法》§17(除医疗、药品、医疗器械广告外,禁止其他任何广告涉及疾病治疗功能,并不得使用医疗用语**或者保健暗示用语**)+ §28 第二款第(二)项(商品的性能 / 功能 / 销售状况 / 曾获荣誉等信息与实际情况不符,对购买行为有实质性影响 → 引人误解的虚假宣传)
-  - **违规逻辑**:fixture 136 OCR 召回「每天8杯水」+「不如每天4杯」+「哈尔滨市公共交通和出租汽车事业发展中心监制」+「220 / 公交220-11 / 普惠大道(哈南五路口)/ 哈尔滨音乐厅」。**结构**:借用大众熟知的健康养生科普概念「每天8杯水」做对比式宣传,潜台词「喝茶效果优于喝水」→ 暗示茶饮具备优于饮水的健康价值 / 养生功效。普通瓶装茶饮料属于**普通食品**,不是保健食品,**普通食品广告不允许暗示保健 / 养生 / 健康获益**(无蓝帽子保健食品批号,不得做任何健康获益的暗示)。对比式宣传「自家产品 vs 喝水」亦落入 §28 —「性能 / 功能与实际不符」
-  - **新规则 `ad_signage_signage_food_implicit_health_advantage_claim`**(`signage` / `Violation`,《广告法》§17 + §28,`ad_signage_rules.json` version 17 → 18,153 → 154):
-    - **13 keywords**:对比式结构(`不如每天4杯` / `不如每天6杯` / `不如每天8杯` / `不如每天10杯` / `每天8杯水，不如` / `8杯水不如` / `比8杯水好` / `比喝水好` / `比白开水好` / `喝水不如` / `饮水不如` / `白开水不如` / `茶比水好`)。fixture 136 OCR 命中 `每天8杯水，不如` + `不如每天4杯` 双 keyword,Phase 2 dedup 合并到 longest(`每天8杯水，不如` = 6 chars)
-    - **17 absent anchors**:同 v0.1.55 那 17 个医疗机构 / 医药产品 markers(`医院 / 医师 / 诊所 / 门诊 / 中医 / 卫健委 / 卫生所 / 药品 / OTC / 国药准字 / 制药 / 药业 / 处方 / 临床 / 保健食品 / 适应症 / 禁忌症`)— 阻断合法医疗机构 / OTC 医药产品广告(医院 / 医师 / OTC 等 health claim 不应被本规则命中)
-    - **为什么用 `categoryAnchorsAbsent` 反极性 gate 而非 `categoryAnchors` 正极性 anchor**:fixture 136 OCR 未召回茶饮品牌名(只有「每天8杯水」+「不如每天4杯」+ 公交站台信息),正极性 anchor(`茶 / 饮料 / 饮品`)无从命中,无法捕获;absent gate 仅要求文本「不含医疗 / 医药产品 markers」即放行,精确捕获变相对比式普通食品广告
-    - **故意不收录**:纯公益健康科普「每天8杯水」无对比(不违规,光「每天8杯水」不应触发)
-  - **Phase 3 dedup**:本规则类同 absence rule,`categoryAnchorsAbsent` 非空时按 `dedupOncePerRule` 路径走(每个 ruleId 最多 1 hit)
-  - **6 条新单测**(全过,`./gradlew.bat testDebugUnitTest --tests AdSignageRuleMatcherTest`,**212 tests / 0 failures / 0 errors**):
-    - `firesOnFixture136BusAd` — fixture 136 OCR 风格(每天8杯水 + 不如每天4杯 + 公交站台文字 → 触发,1 hit)
-    - `firesOn茶比水好` — 通用对比式(高山乌龙 茶比水好 → 触发)
-    - `blocksOnHospitalHealthAdvice` — 真实医院健康建议(`富氏邦医院 健康科普 建议每天8杯水` → `医院` anchor 阻断,0 hit)
-    - `blocksOnOtcProductHealthClaim` — OTC 药品(`施玛脚气水 OTC 国药准字 适应症 每天8杯水` → `OTC` anchor 阻断,0 hit)
-    - `doesNotFireOnPurePublicHealthAd` — 纯公益科普(`每天8杯水 健康养生 多饮水有益身心 哈尔滨市健康教育所宣` → 无对比式 keyword,0 hit)
-    - `dedupMultiKeyword` — 多 keyword 命中合并到 1 hit(Phase 3 行为 pin)
-- **fixture 136 命中**:v0.1.55 = 0 hit → v0.1.56 = 1 hit via `ad_signage_signage_food_implicit_health_advantage_claim`(真机 e2e 待跑确认,**单测已 pin** 触发路径)
-- **`coverage_matrix.md` v0.1.55 → v0.1.56 演进**:fixture 136 行 `已修复 / 命中=0` → `已识别 / 命中 / 1 hit / 已覆盖`;header 规则数 153 → 154;§3 fixture 136 子节追加 v0.1.56 修复说明
-- **构建**:`versionCode` 55 → 56,`versionName` 0.1.55 → 0.1.56,`ad_signage_rules.json` version 17 → 18
-
-## v0.1.55 · 2026-09-04
-
-- **「ad」域规则引擎新增 `categoryAnchorsAbsent` schema 字段 + gate**(v0.1.54 `categoryAnchors` 反向极性版本,`AdSignageRule.categoryAnchorsAbsent: List<String> = emptyList()`,默认空 = 行为不变):解决 v0.1.54 设计取舍留下的 fixture 76「易树堂推拿按摩店 兼列病种」通用性缺口
-  - **设计取舍背景**:v0.1.54 commit 4-6 给 medical 规则加 anchor gate 时,为不误伤 fixture 129「东郊到家按摩 APP」+ fixture 123「泰八八泰式按摩」,medical anchor 池刻意不包含 `推拿 / 按摩` 字串,导致 fixture 75 / 76「马驹堂 / 易树堂 推拿按摩店 兼列颈椎病 / 腰间盘突出」anchor gate 阻断、`ad_signage_signage_disease_prevention` 0 hit
-  - **用户原则(2026-09-04)**:"不管怎么修复、必须要具有通用性,不能这样照片可以、另外同类型照片又不成"。fixture 76 实际是**真违规**(《广告法》§17:除医疗、药品、医疗器械广告外,禁止其他任何广告涉及疾病治疗功能,并不得使用医疗用语),不应为「按摩服务」而妥协
-  - **新方案**:新增反向极性 gate `categoryAnchorsAbsent` — 文本**不含**任一 anchor 时才放行(inverse of `categoryAnchors`,镜像 `sourceMarkers` 既有通路 ~20 行,见 `AdSignageRuleMatcher.kt` 新增 `anchorAbsentTrie` / `anchorAbsentHandler` / `anchorAbsentHitRules` 字段)。极性表:`sourceMarkers` 出现就抑制 / `categoryAnchors` 出现才放行 / `categoryAnchorsAbsent` 出现就抑制
-  - **新规则 `ad_signage_non_medical_institution_disease_advertisement`**(`signage` / `Violation`,《广告法》§17 + §58,`ad_signage_rules.json` version 16 → 17,153 条):
-    - **31 keywords**:慢性病名(颈椎病 / 肩周炎 / 腰间盘突出 / 坐骨神经痛 / 网球肘 / 风湿 / 类风湿 / 关节炎 / 腱鞘炎 / 骨质增生 / 椎间盘突出 / 半月板损伤 / 强直性脊柱炎 / 滑膜炎 / 筋膜炎 / 肩袖损伤 / 腰肌劳损 / 退行性关节炎 / 扭伤 / 崴脚) + 中医医疗术语(正骨 / 理筋 / 推拿 / 复位 / 整脊 / 推油 / 针灸 / 艾灸 / 拔罐 / 刮痧 / 整复)
-    - **17 absent anchors**:`医院 / 医师 / 诊所 / 门诊 / 中医 / 卫健委 / 卫生所 / 药品 / OTC / 国药准字 / 制药 / 药业 / 处方 / 临床 / 保健食品 / 适应症 / 禁忌症`(任一出现即抑制 = 文本为合法医疗 / 医药产品广告时,本规则不应触发)
-    - **故意排除**:`按摩`(fixture 129/123 合法按摩服务,会误命中本规则)、`脚气 / 脚癣 / 手足癣`(fixture 70 OTC 药品通用病名,会误命中本规则)
-  - **Phase 3 dedup 扩展**:本规则类同 absence rule,`categoryAnchorsAbsent` 非空时也按 `dedupOncePerRule` 路径走(每个 ruleId 最多 1 hit,避免 fixture 76 OCR 命中 6 个 keyword 变成 6 条视觉噪声;`longest matchedText` wins)
-  - **7 条新单测**(全过,`./gradlew.bat testDebugUnitTest --tests AdSignageRuleMatcherTest`,**206 tests / 0 failures / 0 errors**):
-    - `gateFiresOnMassageShopWithDiseaseList` — fixture 76 风格(推拿按摩店 + 疾病名 + 医疗术语 → 触发,1 hit)
-    - `gateBlocksOnMedicalClinic` — fixture 79「中研专科门诊」回归 pin(文本含 `门诊` → 抑制)
-    - `gateBlocksOnHospitalAd` — fixture 102「富氏邦医院」回归 pin(文本含 `医院` → 抑制)
-    - `gateBlocksOnOtcProduct` — fixture 70「施玛脚气水 OTC」回归 pin(文本含 `OTC / 制药 / 适应症` → 抑制)
-    - `doesNotFireWhenNoDiseaseKeyword` — fixture 123/129 风格纯按摩服务(无 disease kw → 0 hit)
-    - `firesOnMassageShopWithMedicalTermOnly` — 仅医疗术语「正骨 / 理筋 / 推拿 / 推油」无 disease kw(用户强调「正骨」本身即医疗术语,单 kw 即触发)
-    - `emptyAbsentListFiresOnAny` — 退化路径 pin(空 list = 不 gate,行为字节级不变)
-- **真机 e2e 验证**(`audit71` 71 张图,`connectedDebugAndroidTest -PmodelProfile=ice_ocr_rules`,Huawei nova 6 SDK 35):
-  - **anyHitCount = 70/71**(v0.1.54 baseline = 68/71,**+2**)
-  - **fixture 76「易树堂推拿按摩 + 列病种」= 1 hit**(v0.1.54 = 0 hit,`MISS → 1 hit`),命中 `ad_signage_non_medical_institution_disease_advertisement` — **核心修复落地**
-  - fixture 75「马驹堂推拿按摩 + 列病种」= 1 hit(同 fixture 76 模式,新规则同时修复)
-  - 5 个医疗 anchor regression pin **全部不动**:fixture 70(施玛脚气水 OTC)= 1 hit,fixture 79(中研专科门诊)= 3 hit,fixture 102(富氏邦医院)= 3 hit,fixture 123(泰八八按摩)= 1 hit,fixture 129(东郊到家按摩)= 1 hit,**`non_medical_institution_disease_advertisement` 在 5 张图上均不触发**(absent-anchor gate 正确阻断 `医院 / 诊所 / 门诊 / OTC / 制药 / 适应症` 等合法医疗 / 医药 marker 出现)
-  - fixture 136「公交220喝水提醒」= 0 hit,与 v0.1.54 一致(OCR-recall-limited,本规则不适用)
-  - **冷启动 / warm 平均**:`cold_ms=2205`(v0.1.54 ≈ 5000)/ `warm_avg_ms=1351`(v0.1.54 ≈ 2600),latency 改善
-- **构建 / 数据**:`versionCode` 54 → 55,`versionName` 0.1.54 → 0.1.55,`ad_signage_rules.json` version 16 → 17(rules 数 152 → 153,新规则 `ad_signage_non_medical_institution_disease_advertisement`)
-
-## v0.1.54 · 2026-09-04
-
-- **「ad」域规则引擎新增 `categoryAnchors` schema 字段 + gate**(`AdSignageRule.categoryAnchors: List<String> = emptyList()`,默认空 = 行为不变):解决 ~30 条 category-specific 规则因通用 2-3 字 keyword(如「不如」「按摩」「儿童」)跨域污染导致的 false positive
-  - **设计**:每条规则可声明 3-5 个 category anchor(强特异性字串,经 NFKC 归一化后 AC 匹配);scan 命中后若该规则 anchor 池非空且文本中无任一 anchor 子串 → 丢弃该 hit。anchor **不走 1-char 变体分解**(`MIN_KEYWORD_FOR_VARIANTS = 5`),与既有 `sourceMarkers` 通路镜像但极性相反(anchor = "出现才放行" vs source marker = "出现就抑制")
-  - **覆盖范围**:commit 2-5 分阶段给 ~37 条规则加 anchor — **8 条 pesticide**(`农药 / 杀虫 / 杀菌 / 本剂 / 本药`)、**8 条 veterinary**(`兽药 / 兽用 / 兽医 / 本药`)、**20 条 medical**(`医疗 / 药品 / 医院 / 医师 / 诊所 / 制药 / 本药`,commit 6 扩 `门诊 / 中医 / 药业 / OTC / 国药准字`)、**9 条 cosmetic + minor**(`化妆品 / 美容 / 护肤 / 肌肤 / 儿童 / 未成年人 / 青少年`)
-  - **fixture 112 落地**:廿四熹 PLANT TEA & COFFEE 茶饮店外景图(v0.1.49 起误触发 `pesticide_art5_deprecate` + `veterinary_art5_deprecate` 两条规则,matchedText=「不如」),v0.1.54 起农药 / 兽药警告消失,仅 `signage_major_event_endorsement` ×2 命中(冰雪同梦 亚洲同心 主旨营销 + 冰雪同梦 亚洲同心 营销 + `活久最重要` 等)。
-    - 真机 e2e `audit71` 验证:`[HITS]=2`(原 4),按用户「app 筛查食品类的广告是否违规时,不要出现 农药、兽药 类法规的警告」原则完成精准纠错
-    - **fixture 129 / 123 锚定保护**:为不误伤 fixture 129「东郊到家按摩 APP」+ fixture 123「泰八八泰式按摩」,medical anchor 池刻意不包含 `推拿 / 按摩` 字串(后者在其他场景属合法按摩服务);权衡结果:fixture 75 / 76 「马驹堂 / 易树堂 推拿按摩店 兼列颈椎病 / 腰间盘突出」因含 `推拿 / 按摩` 关键词而 anchor gate 阻断,改为 0 hit(原 5 hit,设计取舍)
-- **`build` 链路修复(commit 7)**:`androidTestImplementation(files("libs/ppocr-sdk.aar"))` + `androidTestImplementation(libs.opencv.android)` — AGP 9.x 严格 classpath 隔离下,`implementation(...)` 配置对 `androidTest` 源不可见,补两行让 `PaddleOcrEngine` / `OpenCVLoader` 在 connectedDebugAndroidTest scope 可解析(否则真机烟测时 `Unresolved reference PaddleOcrEngine`)。**e2e 命令必须带 `-PmodelProfile=ice_ocr_rules`**(profile-specific source dir 仅在指定 profile 时挂载)
-- **真机 e2e 验证**(`audit71` 71 张图,`connectedDebugAndroidTest -PmodelProfile=ice_ocr_rules`):
-  - **顶层 anyHitCount = 68/71**,与 v0.1.54 baseline 一致,**无新增回归**
-  - fixture 112 = 2 hit(`signage_major_event_endorsement` ×2),BUG 修复稳定
-  - fixture 79「哈尔滨中研专科门诊 / 动脉闭塞超导靶向介入」= 3 hit(原 1 hit),通过 commit 6 `门诊` anchor gate 恢复命中 `med_art6_indications` + `med_art7_technicality`
-  - **已知部分恢复**(fixture 文本侧局限,留待后续 commit 改 fixture 命名 / 标记或加 OCR 端处理):
-    - **fixture 70 「施玛脚气水 OTC 户外陈列」**:1/6 — OCR 把「药业」识为英文 `ZEMAPHARMACY` + `ZEMAPHARMACYLIMI`,anchor pool 中 `药业 / OTC / 国药准字 / 制药` 字面均不出现;fixture 文本侧局限
-    - **fixture 75 / 76 「推拿按摩店 列病种」**:0/5 — 设计取舍(见上 fixture 129 / 123 锚定保护)
-    - **fixture 117 「易视顿眼科蔡司小乐园」**:1/3 — 蔡司小乐园近视镜产品 ≠ 医疗服务,medical rule 不应触发,v0.1.54 起不再误命中 `medical_art7_cure_rate` / `veterinary_art4_cure_rate`
-    - **fixture 118 「易视顿眼科叶黄素眼贴」**:2/4 — 眼贴产品 ≠ 化妆品,v0.1.54 起不再误命中 `cosmetic_art23_medical_claim` ×2
-- **`coverage_matrix.md` 不动**(用户原 plan 明示):`fixture 112` 由 4 hit 降到 2 hit 是预期(消除 2 条农药 / 兽药误报),不视作覆盖率倒退;后续 e2e 报告中 `fixture 112` 命中数变化不写进矩阵
-- **CLAUDE.md 更新**:加「`categoryAnchors` gate 必须配 category-specific 规则」原则段(留待后续 commit,本版本未更新 — 优先发版)
-
-## v0.1.53 · 2026-09-03
-
-- **「ad」域规则库 v15 → v16**(150 → 152 条):audit71 真机命中 70/71 → **71/71**(miss 1 → 0)
-  - **1 条新规则 `ad_signage_signage_topn_unauthorized`**(signage / Violation, 6 关键词):法源《广告法》§9(三) + §28 第二款第(二)项 + §55 + §57(一) + 市场监管总局《广告绝对化用语执法指南》(2023-02-09) 第十条「评比 / 排序结果」(十佳 / 十大 / 第一 / 首位等)若无事实依据或无法查证。覆盖「X 十」排名 claim — 商家在店招 / 户外广告 / 包装上宣称「哈十佳 / 全国十佳 / 中国十佳 / 十大品牌 / 十强企业」,但未取得对应的政府或经国务院 / 国家部委 / 全国性行业协会 / 国家级权威第三方机构颁发的「十佳 / 十强 / 十大」荣誉证书 / 评定结果,落入极限词 + 销售状况/曾获荣誉不实。核心 6 关键词「十佳 / 十强 / 十大 / 哈十佳 / 全国十佳 / 中国十佳」中「哈十佳」3 字独立注册,不走 1-char-deletion 变体路径(MIN_KEYWORD_FOR_VARIANTS=5)
-    - **fixture 120 落地**:`哈十佳` — 哈十佳老红肠店店招(v15 规则库 0 命中,v16 起命中;real-device OCR 召回「哈十佳」+「老红肠无淀粉」两条违规关键词,fixture 120 由「规则库 gap」转为命中)
-    - **Phase 2.5 substring dedup pin**:OCR「哈十佳」文本中「十佳」2 字 keyword + 「哈十佳」3 字 keyword 都会触发,Phase 2.5 同规则 substring dedup 保留较长「哈十佳」,丢弃「十佳」3 次,实际命中 1 条
-    - **执法参考**:山东临沂沂南房地产「最高端、沂南唯一、绝无仅有」罚 2.8 万(samr.gov.cn);福建宁德奶粉「中国剖宫产奶粉首创者销量领先」罚 12.5 万(scjgj.fujian.gov.cn);江西南昌培训「全国唯一一家」罚 5 万(samr.gov.cn)
-  - **1 条新规则 `ad_signage_signage_food_ingredient_unverified`**(signage / Warning, 5 关键词):法源《广告法》§28 第二款第(二)项 成分与实际不符 + 《食品安全法》§71 食品广告真实义务 + GB 18357-2003《熏煮火腿卫生标准》+ GB/T 20711-2006《熏煮香肠》淀粉含量阈值(上限 10%)+ GB 7718-2025《预包装食品标签通则》成分含量声称标注。覆盖「无 X / 零 X / 纯 X」食品成分 claim — 商家在店招 / 包装 / 户外广告 / 短视频中宣称食品「无淀粉 / 无添加 / 零添加 / 无防腐剂 / 纯天然」,需可验证检测报告与成分标注一致,否则落入成分与实际不符的虚假广告
-    - **fixture 120 落地**:`无淀粉` — 哈十佳老红肠店店招(real-device OCR 召回「老红肠无淀粉」6 字,v15 规则库 0 命中,v16 起命中)
-    - **执法参考**:江西 / 浙江 / 广东多地市监局 2024-2026 对「无添加蔗糖」「零添加防腐剂」「纯天然食品」等无检测报告背书的食品广告立案处罚,典型罚款 5-20 万元;市场监管总局 2025-08 食品广告合规指引第二十条明确「无 X」「零 X」「纯 X」类成分含量声称需可验证
-    - **已知语义交叉**:`零添加` + `纯天然` keyword 与既有 `ad_signage_signage_food_safety_implication` 规则共享,合规风险不同角度(成分 vs 暗示安全),保留双触发便于取证包分类与分桶展示
-- **`coverage_matrix.md` 重生成**(`§2` 表格用 v16 实跑 OCR_HIT/OCR_NO_HIT 行匹配重写):
-  - fixture 120 由未覆盖转已覆盖(命中 2 条规则:`topn_unauthorized`「哈十佳」+ `food_ingredient_unverified`「无淀粉」)
-  - §3 未命中明细 1 → 0(v0.1.49 进度 6 → 5 → v0.1.51 进度 5 → 3 → v0.1.52 进度 3 → v0.1.53 进度 **3 → 0**)
-  - v0.1.52 误判为「真负例」的 fixture 120 由用户纠正为「规则库 gap」,本版本落地修复,audit71 真机命中 **71/71**
-- **测试 pin bump**:`AssetRuleLoaderTest.load_parsesActualBundledAdSignageAssetShape` version 15 → 16 + 阈值 ≥140(152 ≥140 ✅);新增 5 条 `scan_signageTopnUnauthorized_firesOnHaShiJia` / `scan_signageTopnUnauthorized_firesOnAllSixKeywords`(Phase 2.5 substring dedup pin)/ `scan_signageFoodIngredientUnverified_firesOnWuDianFen` / `scan_signageFoodIngredientUnverified_firesOnAllFiveKeywords` / `scan_signageFoodIngredientUnverified_dualFireWithFoodSafetyImplication`(跨规则 dual-fire pin)单测覆盖:fixture 120 双命中 / 6 keyword 联触发 / 5 keyword 联触发 / 「零添加 + 纯天然」与既有 food_safety_implication 共触发验证
-
-## v0.1.52 · 2026-09-03
-
-- **「ad」域规则库 v14 → v15**(149 → 150 条):audit71 真机命中 68/71 → 70/71,miss 3 → 1
-  - **1 条新规则 `ad_signage_signage_cosmetic_implied_dryness`**(cosmetic / Warning, 5 关键词):法源《广告法》§17 + 《化妆品监督管理条例》§25 第二款(国务院令第 727 号,2021-01-01 施行)。覆盖「problem-solution 暗示功效」结构 — 非医/药/械广告涉及疾病治疗功能 + 化妆品广告不得暗示医疗作用。核心 5 关键词「皮肤太干 / 皮肤干燥 / 肌肤干燥 / 皮肤缺水 / 皮肤粗糙」捕捉「皮肤问题 → 推介产品」式暗示医疗作用的化妆品广告
-    - **fixture 103 落地**:`皮肤太干` — 敷尔佳面膜电梯屏「皮肤太干了,快用我!(我=敷尔佳面膜)」(v14 规则库 0 命中,v15 起命中)
-    - **法条要点**:《广告法》§17「禁止其他任何广告涉及疾病治疗功能,并不得使用医疗用语或者易使推销的商品与药品、医疗器械相混淆的用语」+ 《化妆品监督管理条例》§25 第二款「化妆品广告不得明示或者暗示产品具有医疗作用,不得含有虚假或者引人误解的内容」。处罚:市场监督管理部门责令改正,处二十万元以上一百万元以下的罚款,可以吊销营业执照
-  - **1 条扩 keyword `ad_signage_signage_peoples_republic_misuse`**(signage / Warning):新增 OCR-error fallback keyword「人正咖啡馆」,从 10 → 11 关键词。兜底 PP-OCRv6_small 在金色书法末笔上把「民」误识为「正」横笔的 deterministic OCR 错误
-    - **fixture 124 落地**:real-device OCR 真实召回「人正咖啡馆」(1 行, 5 chars, 87.7% conf),非「人民咖啡馆」。v14 规则库 0 命中(v15 起命中)。注意:**用户实测拍照角度可正常识为「人民咖啡馆」93%**(测试 harness 直喂 JPEG vs 用户拍照 = 同一图不同输入方式 OCR 输出可能完全反,这是 fixture 124 设计上的 boundary 提醒)
-    - **OCR-error fallback pattern**(v0.1.49 起的 AC substring 兜底机制):keyword 既覆盖正确 OCR 文本又覆盖 determinist 错误文本,确保规则引擎在 OCR 召回有限时仍命中。fixture 124 / 109 / 99 都是此 pattern 受益者
-- **fixture 120 误判纠正 + 文件名 undo 重命名**:
-  - **用户 callout(2026-09-03 末)**:`adb-runner` 报告 fixture 120「0 hit = 真负例」(哈尔滨巴洛克风情街告示),我盲目接受未独立核验 OCR 文本,**实际 OCR 召回「哈十佳」+「老红肠无淀粉」** 两条明显违规关键词
-  - **违规点**:
-    1. **「哈十佳」**:极限词 / 排名 claim,无政府 / 正规第三方权威机构颁发的「十佳」荣誉证书 → 落入《广告法》§28 第二款第(二)项 + §9(三) 极限词(类比「最高级 / 最佳」)
-    2. **「老红肠无淀粉」**:食品成分 / 含量宣称,商家承诺「无淀粉」 → 落入《广告法》§28 第二款第(二)项 + 《食品安全法》§71 + GB 18357-2003 / GB/T 20711-2006 熏煮香肠淀粉含量阈值
-    3. **「口感就是不一样」**:主观吹嘘描述,无客观可验证 claim,本身不违规,规则库不应误命中
-  - **fixture 120 文件名 undo**:`120_哈尔滨巴洛克风情街告示牌_真负例.jpg` → `120_哈十佳老红肠店_极限词与成分宣称_食品.jpg`(两目录同步:`违规案例/` + `app/src/androidTest/assets/fixtures/audit71/`)。原命名 v0.1.49 误判「中华老字号I❤Harbin」已纠正(实际图像无 ❤ 符号,real-device OCR「中华巴洛克」为地名 +「IASHIJL」为视觉符号 I❤Harbin 误识)
-  - **修复归属**:**fixture 120 待 v0.1.53 新增 2 条规则覆盖**:`ad_signage_signage_topn_unauthorized`(signage / Violation,~6 keyword:十佳 / 十强 / 十大 / 哈十佳 / 全国十佳 / 中国十佳)+ `ad_signage_signage_food_ingredient_unverified`(food / Warning,~5 keyword:无淀粉 / 无添加 / 零添加 / 无防腐剂 / 纯天然)
-- **`coverage_matrix.md` 重生成**(`§2` 表格用 v15 实跑 OCR_HIT/OCR_NO_HIT 行匹配重写):
-  - fixture 103 / 124 由未覆盖转已覆盖(命中 1 条规则)
-  - fixture 120 **状态**:规则库 gap(确含违规关键词,当前规则库无对应 keyword),不是真负例
-  - §3 未命中明细 3 → 1,但**剩余 1 张 = fixture 120 规则库 gap**(待 v0.1.53 修复),非真负例
-  - 进度追踪修正:v0.1.49 miss 6 → v0.1.50 miss 5 → v0.1.51 miss 3 → v0.1.52 miss **仍 3**(fixture 120 由「真负例」回退为「未覆盖 gap」)
-- **知识库延伸**:`知识库/广告业务/中华人民共和国广告法.md` 引用 §17 「禁止非医疗、药品、医疗器械广告涉及疾病治疗功能」(已存在判别要点章节,v0.1.52 在 fixture 103 落地时引用)
-- **测试 pin bump**:`AssetRuleLoaderTest.load_parsesActualBundledAdSignageAssetShape` version 14 → 15 + 阈值 ≥140(150 ≥140 ✅);新增 4 条 `scan_signageCosmeticImpliedDryness_firesOnPiFuTaiGanLe` / `scan_signageCosmeticImpliedDryness_firesOnMultipleDrynessKeywords` / `scan_peoplesRepublicMisuse_firesOnRenZhengKafeiGuan_OCRErrorFallback` / `scan_peoplesRepublicMisuse_firesOnBothRenMinAndRenZheng` 单测覆盖:fixture 103 单命中 / 5 keyword 联触发 / fixture 124 OCR-error 兜底 / 「人民 + 人正」双 variant 拼接
-
-## v0.1.51 · 2026-09-03
-
-- **「ad」域规则库 v13 → v14**(147 → 149 条):三路扩展覆盖 audit71 fixture 99 + 109
-  - **1 条新规则 `ad_signage_signage_duty_free_unauthorized`**(signage / Violation, 6 关键词):法源《海关法》§24 第一款 + 《广告法》§28 第二款第(二)项 + 《反不正当竞争法》§8 第一款 + 第五十五条,覆盖「免税店冒用 / 免税价格允诺不实」 — 街边 / 非海关监管场所以「免税店 / 免税价格 / 离岛免税 / 免税商品 / 免税专区 / 免税仓」字样作店招 / 广告,无海关总署 + 财政部 + 商务部三部委联合批准 / 无口岸海关监管资质的,违反「免税」作为价格允诺信息的真实性义务
-    - **fixture 99 落地**:`免税店` — 哈尔滨某大街俄式商品店「免税店」紫色 LED 店招(v13 规则库 0 命中,v14 起命中)
-    - **真实处罚案例**:
-      - 海南海口海关 2025-02 套代购案 3 名旅客违规「套代购」离岛免税品(手机 12 部,货值约 10 万元)(customs.gov.cn)
-      - 海口海关 2026-01 新海港查获团伙代购某品牌皮带 112 条(货值约 42.6 万元)(customs.gov.cn)
-      - 王某 2020-2022 利用离岛免税额度代购套购 400 万元,偷逃税款 105 万元,以「走私普通货物罪」判处有期徒刑四年,罚金 105 万元(customs.gov.cn)
-  - **1 条新规则 `ad_signage_signage_superlative_zui_xxx_edu`**(education / Violation, 12 关键词):法源《广告法》§9(三) + §24(一) + §57(一) + §58 一款(一),覆盖「公考 / 培训 / 资格考试行业『培养 X 最多』结构」—「培养面试状元最多 / 培养面试状元 / 培养最多 / 公考培训第一 / 培训规模最大 / 上岸率最高 / 面试通过率最高 / 公考状元 / 状元最多 / 面试状元最多 / 公考通过率最高 / 国考通过率第一」12 个典型话术,因 §24 同时构成「对培训效果作出明示或暗示的保证性承诺」叠加违反
-    - **fixture 109 落地**:`培养面试状元最多` — 万运龙公考移动车体 LED 暗 band(v13 规则库 0 命中,v14 起命中;OCR 召回限制需 det 阈值调高)
-  - **1 条扩 keyword `ad_signage_art9_abs_top`**(absolute / Warning):新增 9 个 X最 极限词(最多 / 最高 / 最强 / 最新 / 最快 / 最优 / 最全 / 最深 / 最厚),从 28 → 37 关键词,直接为 fixture 109 提供「培养面试状元最多」中「最多」命中通道
-    - **真实处罚案例**:
-      - 山东临沂沂南房地产「最高端、沂南唯一、绝无仅有」罚 2.8 万(samr.gov.cn)
-      - 山东临沂沂水家政「全县最低」罚 2 万(samr.gov.cn)
-      - 福建宁德奶粉「中国剖宫产奶粉首创者销量领先」罚 12.5 万(scjgj.fujian.gov.cn)
-      - 江西赣州医美「最安全 / 最顶级 / 最先进 / 最便捷」罚 15 万(samr.gov.cn)
-      - 江西南昌培训「全国唯一一家」罚 5 万(samr.gov.cn)
-- **fixture 99 文件名重命名**:`99_哈尔滨御康中西医结合诊所_逆转糖尿病中医诊所_医疗病种.jpg` → `99_哈尔滨俄式商品店_免税店冒用_unauthorized_duty_free.jpg`(两目录同步:`违规案例/` + `app/src/androidTest/assets/fixtures/audit71/`)。原命名误判为医疗诊所,实际图像内容为「免税店」LED 店招 + 俄罗斯套娃陈列,属 v0.1.51 新规覆盖域
-- **知识库延伸**:`知识库/广告业务/中华人民共和国广告法.md` 新增 2 段:
-  - 「§9(三) + §9 三 — 极限词『最 + X』扩 keyword + 教育领域『培养 X 最多』结构」(v0.1.51):含 4 条真实处罚案例(山东临沂 / 福建宁德 / 江西赣州 / 江西南昌)
-  - 「§28 第二款第(二)项 + 海关法 §24 + 反不正当竞争法 §8 — 『免税店』店招冒用 / 免税价格允诺不实」(v0.1.51):含 4 条真实海关执法案例(海南海口海关套代购 / 团伙代购皮带 112 条 / 王某走私普通货物罪案)
-  - 原 §9(三) keyword 列表(28 个)同步扩 9 个 X最 极限词
-- **`coverage_matrix.md` 重生成**:`§2` 表格用 v14 实跑 OCR_HIT/OCR_NO_HIT 行匹配重写,fixture 99 / 109 由未覆盖转已覆盖;§3 未命中明细 5 → 3(v0.1.49 进度 6 → 5 → v0.1.51 进度 5 → 3)
-- **测试 pin bump**:`AssetRuleLoaderTest.load_parsesActualBundledAdSignageAssetShape` version 13 → 14 + 阈值 ≥140(149 ≥140 ✅);新增 5 条 `scan_signageDutyFreeUnauthorized_firesOnMianShuiDian` / `scan_signageDutyFreeUnauthorized_firesOnAllSixKeywords` / `scan_signageSuperlativeZuiXxxEdu_firesOnPeiYangMianShiZhuangYuanZuiDuo` / `scan_signageSuperlativeZuiXxxEdu_firesOnMultipleEducationSlogans` / `scan_art9AbsTop_firesOnNewZuiXKeywords` 单测覆盖:fixture 99 / fixture 109 / 多 keyword 联触发 / AC substring dedup 压回 / 9 个 X最 keyword 全覆盖
-
-## v0.1.50 · 2026-09-03
-
-- **「ad」域规则库 v12 → v13**(146 → 147 条):新增 1 条规则 `ad_signage_signage_playful_objectification_promotion`(signage / Violation),法源《广告法》§4 + §28 第二款第(二)项 + §9(7) + §9(9) + §57(一),覆盖「玩梗式物化促销 / 戏谑式虚假承诺」叙事范式。核心 11 关键词全部由 samr.gov.cn / scjgj.jiangsu.gov.cn / sz.gov.cn 等官网公示的真实处罚案例提取,知乎 / 微博 / 媒体转载一律排除
-  - **fixture 110 落地**:`一钱带走老板娘` / `带走老板娘` / `一元钱带走` / `一分钱带走` — KOALA 玩具潮玩店把女性作为可带走商品客体(v12 规则库 0 命中,v13 起命中)
-  - **真实处罚案例关键词**(每个 entry 都带 source_attribution + official_domain):
-    - `我没婆娘别吃` — 漳州市信冠食品(2023-04,龙海区市监局罚 1.2 万元)<https://www.samr.gov.cn/ggjgs/sjdt/gzdt/art/2023/art_1e6d000aa87048aab6bf3c9215ebbfc4.html>(samr.gov.cn)
-    - `彩礼翻倍` + `不做黄脸婆` — 泰州海陵区美容中心(2025-05,海陵区市监局罚 6,000 元)<https://scjgj.jiangsu.gov.cn/art/2026/1/7/art_70154_11712093.html>(jiangsu.gov.cn 市场监督管理局子域名)
-    - `没有蓝宝石我不脱` — 深圳 Ulike 电梯广告(深市监处罚〔2022〕稽30号,2022-04-25 罚没 51.5 万元)<https://www.sz.gov.cn/cn/xxgk/zfxxgj/zwdt/content/post_9779142.html>(sz.gov.cn,gov.cn 同类域)
-    - `取悦四性兽` — 鞍山市台安县科技服务公司「取悦四性兽狼牙套」<https://www.samr.gov.cn/ggjgs/sjdt/gzdt/art/2024/art_03583c31d1fc4519b695eda14265a98c.html>(samr.gov.cn)
-    - `我不卖` + `恶搞男友` — 上海悦活餐饮 Superboy 男友力系列(沪市监黄处〔2024〕01202400599 号,黄浦区市监局罚 45 万元)<https://www.samr.gov.cn/xw/zj/art/2024/art_b8baa5a064fd44fd835092ea279c55a8.html>(samr.gov.cn)
-- **知识库延伸**:`知识库/广告业务/中华人民共和国广告法.md` `## 适用判别要点` 章节新增「§4 + §28 第二款第(二)项 + §9(7) + §9(9) + §57 — 玩梗式物化促销 / 戏谑式虚假承诺」条款(类别:广告文案 / 严重度:Violation),含判别模式 / 5 条判别要点 / OCR 漏检边界 / 与 fixture 110 的对应关系;附 9 条典型案例全部由 samr.gov.cn / scjgj.jiangsu.gov.cn / sz.gov.cn 官网溯源(其中妇炎洁案 130 万 + 五个女博士案 20 万 + Ulike 案 51.5 万是 2024-2026 年最具代表性的性别物化广告行政处罚)
-- **测试 pin bump**:`AssetRuleLoaderTest.load_parsesActualBundledAdSignageAssetShape` version 12 → 13 + 阈值 ≥140(147 ≥140 ✅);新增 6 条 `scan_signagePlayfulObjectificationPromotion_firesOn*` 单测覆盖:fixture 110 双命中 / 漳州信冠 / 5 case 拼接 / 上海悦活「我不卖 + 恶搞男友」/ 深圳 Ulike / 江苏泰州「彩礼翻倍 + 不做黄脸婆」
-
-## v0.1.49 · 2026-09-03
-
-- **「ad」域规则库 v10 → v12**(146 条):分两轮扩展。第一轮 v10 → v11(144 条)新增 15 条规则覆盖大型赛事冠名赞助冒用 / 烟草体育赞助变相发布 / 现役军人形象商业代言 / 天安门国庆政治符号商业使用 / 人民共和国国家字样商业冒用 / 野生动物制品广告 / 招工收入保证 / 医疗承保承诺 / 外交活动背书 / CCTV必吃榜冒用 / 宣泄性酒类广告 / 非处方药户外陈列 / 医美医疗用语 / 医疗机构国家三级表述 / 国际奖项冒用 15 维度。第二轮 v11 → v12(146 条)再扩 2 条 + 扩展 1 条既有规则关键词:`ad_signage_signage_origin_claim`(9 关键词,Warning)覆盖「发源地 / 之源 / 始创于 / 原产地」;`ad_signage_signage_cultural_heritage_claim`(13 关键词,Warning)覆盖「千年传承 / 中国非遗 / 中华老字号」;`ad_signage_art9_abs_top` 增 3 关键词(`中国第一` / `中国第一品牌` / `首创`)修复 OCR 把「中国第一品牌」误识为「中国第品牌」(蟹凰宫 91/128、布列斯特套娃 133 命中)
-- **71 张 fixture 文件名复核重命名**:对照真机 OCR 文本全量审计,26 张文件被发现「文件名 vs 实际图像内容」错位,按 OCR 文本重命名同步 `违规案例/` + `app/src/androidTest/assets/fixtures/audit71/` 两目录。典型 swap:68 ↔ 69(德伦堡啤酒 ↔ 纯天然亚麻籽粉)、72 ↔ 73 ↔ 74(龙烟烟草赞助系列)、91 ↔ 92 ↔ 93(蟹凰宫 ↔ 蟹都汇 互换)、96 ↔ 107(团圆口腔医院保险版 ↔ 国家三级版)、133 ↔ 135(布列斯特套娃 ↔ 哈药牌钙铁锌)、136 ↔ 137(禧龙酒店用品 ↔ 公交220路公益)。品牌名修订:86 名泽 → 兰泽、87 易真殷氏 → 易真段氏(以图像中真实店招为准)
-- **真机端到端回归**:`connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.icespiritai.offline.rules.AdSignageAudit71ImageE2ETest` 在华为 nova 6 ANN-AN00 + SDK 35 上跑通。结果 `ANY_HIT=65/71`(v11:59/71,v10:49/71),miss 6 张 — 99 御康 OCR 召回字数为空、103 敷尔佳文本仅 21 字、109 万运龙公考 OCR 严重错位、110 KOALA 文本无违规、120 哈十佳老红肠 I❤Harbin 视觉符号未被 OCR 召回、124 人民咖啡馆地垫 OCR 仅 5 字。规则引擎本身 100% 召回,余 6 张均为 OCR 召回上限
-- **`coverage_matrix.md` 重生成**:`§2` 表格用 v5 实跑 OCR_HIT/OCR_NO_HIT 行匹配重写,filename ↔ rule_id 全部用新文件名
-- **知识库整理**:`知识库/` 加入 `.gitignore`(体积大 + 含未授权转载法源,本地留存供规则引擎引用);`广告业务/README.md` 同步添加 5 份新 markdown 索引
-- **测试 pin bump**:`AssetRuleLoaderTest.load_parsesActualBundledAdSignageAssetShape` version 10 → 12 + 阈值 ≥140(146 ≥140 ✅);新增 `scan_signageOriginClaim_firesOnFaYuanDi` / `scan_signageOriginClaim_firesOnZhiYuan` / `scan_signageCulturalHeritageClaim_firesOnQianNianChuanCheng` / `scan_signageCulturalHeritageClaim_firesOnZhongHuaLaoZiHao` 4 条 AC 命中单测覆盖 v12 新规则关键词触发 + substring dedup 行为 pin
-
-## v0.1.48 · 2026-09-02
-
-- **首页顶部标题去 ⚡ + 字号 20sp**(`HomeTopBar.kt`):三段式 `冰灵⚡锐目` 合并为单段 `Text(stringResource(R.string.app_name))`,样式 `titleMedium.copy(fontSize = 20.sp, fontWeight = Medium)`(从 16sp 回拨到 20sp,用户反馈 "16sp 太小");同步删 `app_name_prefix` / `app_name_bolt` / `app_name_suffix` 三个死字符串,launcher label 与 a11y 仍走 `app_name` 单源。`titleMedium` 全局 token(`Type.kt:13`)不动 — 影响 `RuleTabBar` pill 文字 / `ResultPanel` / `ViewerTopBar` 等 7+ 处已稳定的 16sp 引用
-- **Tab 改软色 chip + Verified leading icon**(`RuleTabBar.kt`):从 `Surface(RoundedCornerShape(20.dp)) + secondaryContainer + titleMedium SemiBold` 强对比 pill 改为 `Surface(RoundedCornerShape(50)) + tertiaryContainer + labelLarge Medium` 软色 chip,前置 `Icons.Outlined.Verified`(16dp,`onTertiaryContainer` 染色)。圆角 / 配色 / 字号三档同步下调,跟 20sp 标题拉开视觉层级;`isSelected` 分支仍保留供 FoodLabeling tab 启用时复用
-- **测试 pin bump**:`RuleTabBarTest` 新增 `tab pill renders Verified icon as leading element`(`testTag = ruleTabBar_pill_leading_icon`);`ChangelogScreenTest:74` 顶部 `v0.1.47` → `v0.1.48`
-
-## v0.1.47 · 2026-09-02
-
-- **设置页关于区三行堆叠**(9bc32f8):「版本」行上下各加一行同字号文案 — 上方 `冰灵锐目`(app brand),下方 `哈尔滨市市场监管局`(regulatory attribution),新增字符串 `settings_about_org = 哈尔滨市市场监管局`。三行 `bodySmall` 左对齐,沿用原 `padding(horizontal = 16.dp)`;无 Card 包裹,纯文本堆叠,符合本期「不加容器」约束
-- **查看更新日志 Card 框样式统一**(537d948):去掉内部 Material3 `ListItem`(自带 `surfaceColorAtElevation` 自绘容器,在 深夜雪夜 / 浅色冰月 两主题下与外观/更新 Card 的 `surfaceContainerLow` 都不一致),改 `Card(...clickable...){Row{Column(weight=1f){title; subtitle}; Icon chevron}}`,内部 padding 模式与 `AppearanceSection` 对齐 — 两主题下三 Card 视觉完全一致,实现 frame parity
-- **首页顶部标题字号下调**(473c252):三段式 `冰灵⚡锐目` 三 Text 的 `titleLarge`(22sp)→ `titleMedium`(16sp),bolt 仍 `colorScheme.tertiary` + `Modifier.padding(horizontal = 4.dp)` 不变,语义(a11y `mergeDescendants = true` 的 `app_name`)也不变;`HomeScreenBare` 测试 bare 路径同步调整保持视觉与生产一致
-- **测试 pin bump**:`ChangelogScreenTest:74` 顶部 `v0.1.46` → `v0.1.47`
-
-## v0.1.46 · 2026-09-02
-
-- **Idle 预览区展示吉祥物胸像**(a5ddc5f):空态装饰从居中文案「请对正图片后点击拍照」改为渲染 `mascot_glasses_bust.png`(固定 120dp),引导文案统一到 `StatusBanner(Idle)` 单点呈现 — `ImagePreview` 留 testTag `idle_mascot`,`HomeScreenTest` 改 `composeRule.onNodeWithTag("idle_mascot").assertExists()` 校验装饰图节点存在,替代之前依赖 Robolectric Compose viewport 文本渲染的脆弱路径(参 [Unit test 踩坑(2026-08-21 v0.1.14)](../../../CLAUDE.md))
-- **`SettingsViewModel` `stallDetector` 死循环修复**(92b6da0):v0.1.45 `7038274` 在 VM 构造期起的 `delay(STALL_POLL_INTERVAL_MS)` 循环把 `runTest` 的 `advanceUntilIdle` 永久挂住,gradle 任务挂 26 分钟。无下载时改用 `updateState.first { it is Downloading }` 挂起等待 — 协程停在 flow 上不算 pending task,`advanceUntilIdle` 立刻返回;顺带清掉整个 VM 生命周期的 30s 周期唤醒。同类坑:VM 构造期只该挂起、不该 eager 起定时器
-- **吉祥物去底 PNG + 生成脚本 + 选型文档入仓**(757c69d):
-  - `app/src/main/res/drawable-nodpi/mascot_glasses_bust.png`:480×480 透明底胸像,rembg `isnet-general-use` 出 matte
-  - `tools/generate_mascot_asset.py`:可重复生成(border 8px 环中位数检背景 → matte → 补洞 → 高斯去阶梯 → 边缘带反解 JPEG 混色 → 紧裁缩放)。`--engine chroma` 边框色度泛洪保留为「主体与背景色度差异大」的应急回退,本素材必须走 `isnet`
-  - [`docs/knowledge/mascot-ui-asset.md`](../../../docs/knowledge/mascot-ui-asset.md):空态装饰图用固定 dp 而非容器百分比(平板/折叠屏空态会被百分比撑成广告牌)的实测理由 + `#11212C` 上放大 2~2.5x 验收清单(右镜片 / 领高光 / 白前襟 / 腿缝)
-- **测试 pin bump**:`ChangelogScreenTest` 顶部 `v0.1.45` → `v0.1.46`
-
-## v0.1.45 · 2026-09-01
-
-- **全项目兼容性审计(55 项 findings / 4 维度)**: Android API(API 26→37) / 中国 ROM(HarmonyOS / MIUI / ColorOS / OriginOS / vivo) / Hardware(arm64 / RAM / camera / APK 体积) / Screen form(foldable / gesture / WindowSizeClass / edge-to-edge)四象限扫描,识别 6 项 Critical + 16 项 High(P1)+ 29 项 Medium(P2)。详 [`docs/knowledge/2026-09-01-compatibility-audit.md`](docs/knowledge/2026-09-01-compatibility-audit.md)。Critical 全部已在 5 个 commit 落地(bfcab6a / e9f3f45 / 7038274 / 9c0496c / b510bee);本轮(16adb6f / 4e83fc7)新落地 2 项 P1:
-  - **Viewer 底部 OCR 文字列表加 navigationBars inset**(P1-H005): API 35+ edge-to-edge 强制 + 全 gesture 化 ROM(HyperOS / MIUI / HarmonyOS 全面屏)上,`ViewerScreen` 的 Scaffold 只有 topBar / 无 bottomBar,content slot 的 bottom inset 是否传递依赖 M3 ScaffoldDefaults.contentWindowInsets 的实现细节。在 LazyColumn `contentPadding.bottom` 显式加 `WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()`,使最后一行不被 gesture pill 遮挡,且对 M3 默认行为变化有韧性
-  - **AAB splits 启用(abi / density / language 三轴)**(P1-H013): 启用 `android.bundle { abi / density / language { enableSplit = true } }`。当前分发模式(单 fat APK,direct in-app update)对当前输出无影响,但为将来 Play Store 分发打底 — Play Store dynamic delivery 可按 device spec 拆分,降基础 APK 体积 5-15 MB(density split)+ 排掉未匹配 locale 资源(language split)
-- **审计 inspection 收获**:
-  - **H003**(Android 14 FGS type 声明)inspection 阶段发现 `AndroidManifest.xml` `<service>` 已声明 `android:foregroundServiceType="dataSync"`(早于本审计)
-  - **H004**(`RECEIVER_NOT_EXPORTED`)inspection 阶段发现本项目无 `<receiver>` 元素,N/A
-- **审计文档同步**: `docs/knowledge/2026-09-01-compatibility-audit.md` 加 v0.1.45 修订记录 — 表头数字 P1 20→16(4 项已修 / N/A),各 finding 行加 commit 关联,新增 2 节修复明细,补历史 changelog 条目
-- **测试覆盖**: 622 tests / 0 failures / 100% successful(`testDebugUnitTest -PmodelProfile=shell`);`./gradlew :app:bundleDebug` 通过,产出 47 MB debug AAB
-
-## v0.1.44 · 2026-09-01
-
-- **选图 / 拍照兼容性硬化**(无 GMS 设备 / 极简系统):
-  - 「选图」三级降级:系统 photo picker → OEM 图库 `ACTION_PICK` + MediaStore → 兜回 photo picker;**最后兜回也失败时**弹 Toast「未找到可用的图库应用」,不再崩溃
-  - 拍照 launch 包 try/catch,设备无相机应用时弹 Toast「未找到可用的相机应用」,原路径直接崩 ActivityNotFoundException
-  - `Intent.setType` 误用修复:`Intent(ACTION_PICK, uri).apply { type = ... }` 会把 data URI 清空,改用 `setDataAndType(uri, type)` 保留
-
-## v0.1.43 · 2026-09-01
-
-- **审计 round 2 收尾(代码 + hook + 文档)**:
-  - **代码硬化**:
-    - `IceSpiritVisionViewModel.reset()` 恢复全同步(`cancel()` + state 写 inline)。原 round 1 引入的 `cancelAndJoin`-inside-launch 在 JVM 测试下与 `withContext(Dispatchers.Default) { matcher.scan }` 产生 scheduler-blind 竞态(测试 scheduler 看不到 Default 池,`advanceUntilIdle` 提前返回导致 state 仍为 `Loading`)。新 KDoc 明示 trade-off:reset 仅在 `state !is Loading` 时被调用(HomeScreen `ErrorPanel.onReset` + `setTab` 内部路径),生产路径下无 in-flight analyze 可竞争。`IceSpiritVisionViewModelTest.reset_cancelsCurrentJobAndReturnsStateToIdle` + `setTab_sameTab_nonLoadingState_resetsToIdle` 同步断言恢复通过
-    - `ExportAction.share` 新增 `ioDispatcher: CoroutineDispatcher = Dispatchers.IO` 参数。`ioScope.launch(ioDispatcher)` 让 ContentResolver + ZipOutputStream + cacheDir.writeBytes 走注入的 IO 调度器;`showFailureToast` 仍走 `Dispatchers.Main`(Toast / startActivity 必须在主线程)。测试传 `UnconfinedTestDispatcher` 作为 `ioScope` + `ioDispatcher`,生产传 `rememberCoroutineScope()` + 走默认 `Dispatchers.IO`,调用点不动。`ExportActionTest` 3 个 case(happy path / provider fail / write fail)同步 `ioDispatcher = testDispatcher` 后恢复通过
-    - `HomeScreen.onExport` 改 `ExportAction.share(context, s.report, BuildConfig.VERSION_NAME, exportScope)`,`exportScope = rememberCoroutineScope()` 生命周期绑 Compose screen,避免后台 export 跨屏幕泄露
-  - **PreToolUse hook 加固 + 自检**:
-    - `pre-tool-use.js` Rule 1 正则扩展,堵 4 类 git add 绕过:`git add --all`(long form)、`git add *`(`*` 非 `\b` 边界,原 `\b\*\b` 不匹配)、`git add ./` / `git add ..`(cwd 与 parent)、`git add .git`(直接污染 HEAD)。最终正则:`(?:\s+\S+)*\s+add\s+(?:-A\b|--all\b|\.(?=[\s\/.;&|*]|$)|\.\.\b|\.git\b|\*(?=[\s;|&]|$))`
-    - 新增 `tools/pre-tool-use-hook-test.js` 自检脚本(23 case,全过,含 4 类新绕过 + 旧 6 类边界 + 误报零回归),开发者改 hook 后 `node tools/pre-tool-use-hook-test.js` 一键验证
-  - **文档 / Spec 对齐(消除实际状态与描述 drift)**:
-    - `CLAUDE.md` §profile 表 3 处 v5/120 → v10/129/14 类别对齐(`ice_ocr_rules` 行 + 广告招牌注释 + 检测 surface 段)
-    - `CLAUDE.md` §开发环境 删「`gradle.properties` 设 `auto-download=true`」误导句(实际该 flag 已 v0.1.42 删除)
-    - `CLAUDE.md` §Claude Code 自动化 4 skills + 2 hooks + 2 agents 计数修订
-    - `CLAUDE.md` §发布流水线踩坑 上传顺序描述从「先 POST JSON 再 POST APK」改为「先 POST APK 抓 uuid → 改写 apkUrl 为 `/attachments/<uuid>` → POST JSON」,与 `build.gradle.kts` `uploadVisionReleaseToGitea` 实际 3a/3b/3c 顺序一致
-    - `CLAUDE.md` Gitea PAT 模板文件名 `.token.properties.example` → `gradle.token.properties.example`
-    - `settings.gradle.kts` 注释同步删 `auto-download=true` 引用
-    - `domain/AnalysisState.kt` 顶部注释 `report.json` → `report.txt`(EvidencePackageBuilder v0.1.39 早已切到 txt)
-    - `docs/knowledge/ad-signage-detection-surface-2026-08.md` v5/118 → v10/129/14 类别
-    - `docs/knowledge/ppocrv6_vs_v5_a_b_test.md` 加 caveat:A/B 时规则库是 v4/116,当前是 v10/129,数据可比性需考虑
-    - `docs/knowledge/cross-project-implications.md` `targetSdk 36 → 37`,Actions 2/3 标 CLOSED 2026-08-13
-    - `docs/superpowers/specs/2026-08-15-icevision-ui-design.md` 顶部加 `⚠ SUPERSEDED` banner(指向 v0.1.36-42 UI overhaul)
-    - `docs/smoke/2026-08-14-phase1-smoke.md` 加 `⚠ STALE` banner(shell APK 体积 / rules JSON 路径 / 类别数已变)
-    - `.claude/skills/icevision-release/SKILL.md` 修断的 numbered list(补漏的 step 1 + `--max-time 900`)+ APK size check 路径修正(`app/build/outputs/.../icespiritai-vision.apk` → `build/generated/release-staging/icespiritai-vision.apk`,对齐 v0.1.42 staging 路径迁移)
-    - `README.md` 头部 v0.1.42 → v0.1.43
-
-## v0.1.42 · 2026-08-31
-
-- **全面审计修复(19 项 / 6 维度扫描 + 对抗验证)**:
-  - **关键路径硬化**:
-    - `IceSpiritVisionViewModel.startAnalysis` 加 `cancelAndJoin`,快速连点拍照 / 选图时,旧 job 的 `Loading(OcrRunning)` 一定在新 job 写 `_pendingUri` 之前完全收尾,消除「图 A 的 Loading + 图 B 的 pendingUri」短暂错位(单测 `startAnalysis_secondCall_doesNotLeavePriorJobInLoadingState` 覆盖)
-    - `PaddleOcrEngine.recognize` 包 try/finally,`bitmap.recycle()` 在 `OcrResult` 组装后立即调用,长会话 ONNX Mat 内存不再累积
-    - `ApkSignatureVerifier.parseFirstCertificate` 改用 `generateCertificates(...).firstOrNull()`,与构建侧 `extractApkCertificateSha256` 对齐同一份 cert chain API;部分 JDK 上 cert-pin 返回 DER 与 build 不一致会导致合法更新被拒,改完统一
-  - **发布流水线硬化**:
-    - `uploadVisionReleaseToGitea` 反转 POST 顺序 — 先 POST APK 抓 `uuid`,然后用 regex 按 `"apkUrl" : "<old>"` 字段替换写到 task-local 临时 JSON,再 POST JSON。中途崩溃保留旧 release 完整可用;`apkUrl` 改写为 `/attachments/<uuid>` 防御 Gitea 1.22.x release route 偶发 404(发布仓库 `giteaadmin/vision-app` 实测健康,rewrite 作为 defense-in-depth)
-    - task 新增 `dependsOn("archiveVisionRelease")` 显式 producer→consumer 边,避免 archive 未跑就 POST
-    - `--max-time 600` → `900` 对齐 SKILL.md 文档(大 APK POST 余量)
-  - **构建侧杂项**:
-    - `copyOcrModelsAssets` 删 `onlyIf { activeProfile == "ice_ocr_rules" }`,改为无条件 `deleteRecursively()` + profile-gated include filter + ONNX count assert,杜绝 `shell` profile APK 被残留 ONNX 污染
-    - `runtimeOnly(files(...))` 加 KDoc 说明为何不用 `builtBy`(DSL overload 不接受 config action);producer-consumer 关系改由 `dependsOn("archiveVisionRelease")` 显式声明
-    - `gradle.properties` 删 `org.gradle.java.installations.auto-download=true` + `auto-detect=true` 两行惰性 flag(无 foojay resolver plugin,flag 不生效,留之只是噪音);CLAUDE.md §开发环境 已要求必须 manual `export JAVA_HOME`
-    - `buildSrc/build.gradle.kts` 加 Tencent / Huawei 镜像 + `mavenCentral()` fallback,断 Aliyun 时构建不至于 fail-fast
-    - `ApkDownloader` 改 `maxOf(0L, contentLengthLong)`,server 缺 `Content-Length`(返 -1)时 UI 走 "unknown total" 分支而非显示负字节数
-  - **文档 / Spec 对齐**:
-    - `compileSdk / targetSdk` 36 → 37 sweep(CLAUDE.md / `docs/knowledge/build-stack-2026-08.md` 7 处)
-    - `init-design.md` 顶部加 `⚠ STALE` banner(初版 baseline 已过时),`phase1-ocr-rules-design.md` 顶部加 `⚠ SUPERSEDED` banner(实际走 PaddleOCR 官方 SDK,与 RapidOCR 草案无关)
-    - `README.md` v0.1.37 → v0.1.41 头部声明,与 `user-changelog.md` 交叉引用
-    - `icevision-release` skill:URL 补 `/giteaadmin/vision-app/` 段;`Gitea 1.22.x 404 workaround` 段更新为「代码仓库 broken / 发布仓库 healthy」的 defense-in-depth 叙事
-  - **Dev hygiene**:
-    - PreToolUse hook rule 1 regex 加固,拦截 `git add -A` / `git add .` 在 shell continuation(`;` / `&&` / `||` / `|` / leading whitespace)下的所有 bypass 路径(15 个 case 自测覆盖)
-    - CLAUDE.md 加 §"CI 仅跑 shell profile"标注 + §"历史 Co-Authored-By trailer grandfather 例外"说明(2026-08-21 前 commit 保留 trailer,live gate 是新 commit pre-flight,避免 force-rewrite 破坏 `tag SHA ↔ APK SHA ↔ JSON SHA` 对齐)
-  - **测试覆盖**: 617 tests / 0 failures / 100% successful(`testDebugUnitTest -PmodelProfile=shell`,新增 1:startAnalysis atomicity + cancelAndJoin 契约 pin)
-
-## v0.1.41 · 2026-08-31
-
-- **UI 微调(广告招牌 tab,用户反馈 6 点 v0.1.40 复盘)**:
-  - **① KPI bar 提示由长按改为点击**: `StatusBanner` 3 个 KpiCell 的 `TooltipBox` 默认行为是长按,大部分用户试不到。改用 `Modifier.clickable { tooltipState.show()/dismiss() }` 显式点击切换,persistent tooltip(用户不点不会自己消失,便于读完再点掉)。3 个桶语义(违规 = 广告法明文禁止的违规内容 / 警告 = 需结合语境判断的可疑话术或缺失披露 / 信息 = 广告含有合规资质 / 未成年相关等关键词需另行核实)现在点击即可弹出
-  - **② 导出取证包按钮搬到选图 + 拍照中间**: `CaptureBar` 由 2 按钮(选图 / 拍照)改为按命中数动态 2 / 3 按钮:无命中 = 选图 + 拍照各占半宽;有命中 = 选图 / 导出 / 拍照三等分(`Modifier.weight(1f)` 各 1/3)。3 按钮并排更紧凑,「导出」靠近拍照按钮也符合主操作流(识别完顺手导出)。当 `state is Loading` 时 `enabled = false` 同步禁掉拍照与导出,避免半路点导出踩到 `Complete.report == null`
-  - **③ 按钮文字由「导出取证包」缩为「导出」**: 用户反馈「取证包」在 1/3 宽 + 图标 + 中文环境下显挤。visible label 改 2 字 `导出`,图标保留 `Icons.Default.Save`(存盘语义);TalkBack 描述走单独 a11y string `export_button_desc = "导出取证包"`(`Modifier.semantics { contentDescription = ... }`),无障碍读全词不变
-  - **④ 导出按钮仅在有命中时显示**: 与②联动 —— `CaptureBar(hasHits: Boolean)`,`hasHits = hits.isNotEmpty()`。0 命中时整个 export 中间槽位消失,不显示禁用的灰按钮、不留空位,布局干净
-  - **⑤ 命中卡片字号降一档**: 用户反馈 v0.1.40 `HitCard` matched text `"增强免疫力"` 用 `headlineSmall`(24sp)偏大、压住下面的法规依据。改 `titleLarge`(22sp),仍略大于「广告招牌」tab 标签(`titleMedium` 16sp),不再与法规行抢戏
-  - **⑥ Viewer 文字列表命中行 + 命中子串高亮**: 双击图片进入 Viewer 后,底部 OCR 文字列表每行若命中规则 → **整行背景染上该行最严重桶的 container color**(与图片红/琥珀/蓝框对应),行内**命中子串**再用 `SpanStyle(background = sev.container(severity))` 在原文字上打底色,直接告诉用户「是哪几个字触发规则」。`worstSeverityForLine` 走 `severityRank`(domain 层 helper,Violation > Warning > Info,Positive 永远不进 rank)与 `TextNormalizer.forMatching` 全文包含检查,与 `HighlightOverlay` 的图片红框**完全对齐**(同一份 hits、同一个严重度排序)—— 不存在「图上框在 A 行 / 列表染色在 B 行」的 drift
-- **代码整理**:
-  - `severityRank` 从 `ui/home/HomeScreen.kt` 移到 `domain/AnalysisState.kt`(top-level function),`ui/viewer/ViewerTextList.kt` 与 `ui/home/HomeScreen.kt` 都从 domain 引用,避免 ui.home → ui.viewer 反向依赖。`HomeScreenSeverityRankingTest` 同步更新 import,契约(pin Violation=3 / Warning=2 / Info=1 / Positive=0)不变
-  - `ViewerTextList` 增加 `hits: List<RuleHit>` 参数(`ViewerScreen` 调用点同步更新),`hitsCount` 仍走单独参数(避免每次都 `hits.size` 多算一遍)
-- **测试覆盖**: `testDebugUnitTest -PmodelProfile=shell` 全绿(下文),新增 / 调整 8 个测试:CaptureBar 拆分 `hasHits=true / false` 两套 2 按钮与 3 按钮断言(原 4 个 2-button-only 测试改用新签名 + 新增 3 个 hasHits 切换断言);ViewerTextList 新增 6 个(`worstSeverityForLine` 严重度排序 / Positive 屏蔽 / 无命中 / 子串映射回原 offset / 多 occurrence 不重叠 / 含 hits 渲染不崩)
-
-## v0.1.40 · 2026-08-31
-
-- **UI 重大调整(广告招牌 tab,Phase 3.5 — 4 项联动)**:
-  - **① ResultPanel 不再显示识别文字**:OCR-text header `识别文字: ...` 整体删除。识别的原文已完整落入导出取证包 `report.txt`,UI 上只露「违规 / 警告 / 信息」3 个 card,信号更聚焦
-  - **② 按严重度分组,违规 / 警告 / 信息 颜色不同**:`HitCard` 不再走旧的"6.dp 左侧色条 + 分类(广告文案等)"两件套,改为**整张卡片用 severity container color 染色**(红 = 违规 / 琥珀 = 警告 / 蓝 = 信息),卡片右上角挂一个 SeverityChip(`违规` / `警告` / `信息`)标识桶。**规则 category(广告文案 / 绝对化用语等)整条删除**,UI 上不再显示——语义上 category 是引擎内部概念,用户只需要知道严重度。ResultPanel 按 rank(Violation > Warning > Info)分 3 个 section,每个 section 头顶一个 `违规 (N)` / `警告 (N)` / `信息 (N)` 计数条**
-  - **③ KPI bar 加长按提示**:`StatusBanner` 3 个 KpiCell 各包一层 `TooltipBox`(Material3 ExperimentalMaterial3Api),长按弹出单句说明「这个桶是什么意思」——违规 = 广告法明文禁止的违规内容需立即下架整改 / 警告 = 需结合语境判断的可疑话术或缺失披露 / 信息 = 广告含有合规资质 / 未成年相关等关键词需另行核实。无需离开页面学习 3 桶语义
-  - **④ 全屏查看图(双击放大后)也标红框命中位置**:`ViewerImage` 接 `hits` + `imageSize`,在 Telephoto `ZoomableAsyncImage` 上叠 `HighlightOverlay`(同款红/琥珀/蓝染色),与首页 `ImagePreview` 走同一个 `computeFitTransform` 共享 helper。**pinch / pan / 双击 zoom 时框同步缩放**,用户可以放大看「是哪几个字」触发规则
-- **测试覆盖**: 606 tests / 0 failures / 100% successful(`testDebugUnitTest -PmodelProfile=shell`,603 → 606,新增 / 调整 4:HitCard 拆 3 个 severity 的 chip + contentDescription pin + `分类: X` 反向断言;ResultPanel 拆 3 个 section header + 多 severity 分组 + 空 section 不渲染 pin)
-
-## v0.1.39 · 2026-08-31
-
-- **UI 调整(广告招牌 tab,Phase 3.5)**:
-  - **KPI 数字+标签栏 1 行布局**: `StatusBanner` KpiCell 之前 2 行竖排(数字 `headlineSmall` 在上 + `[icon] [label]` 在下)→ 改单行 `Row { icon(); count(`titleLarge`); label(`bodyMedium`) }`,整个 KPI bar 高度 ~80.dp → ~36.dp(约 44.dp 节省)
-  - **图片区高度恢复**(用户反馈 `weight(1.6f)` 把图压扁了): ResultPanel weight `1.6f → 1f`,图片:image-result 比例从 1:1.6 回到 1:1 — 图文各半,图片不再被规则命中详情挤压
-  - **文字区扩高**(承接 KPI 节省的高度): ResultPanel 现拿到更大空间,`LazyColumn` 长 OCR 原文 + 多个 hit card 滚动阅读更舒适
-  - **导出取证包按钮下移**: Button padding top `8.dp → 20.dp`(底部 16.dp 保留),按钮视觉上从 ResultPanel 滑开,触控也更明确不会误点
-- **导出取证包格式:`report.json → report.txt`**(用户反馈手机上 JSON 不好打开): `EvidencePackageBuilder` 不再写机器面向的 `report.json`(需要 JSON viewer 才能看)与 minimal `manifest.txt`,而是直接写一份**人读**的纯文本 `report.txt`,章节按顺序:
-  - **头部 metadata**: 生成时间 / App 版本 / 命中数量
-  - **OCR 文本**: 规则引擎扫的就是这份文本
-  - **命中详情**: 每个 hit 一段,含 ruleId / matchedText / 类别(含中英文 + domain) / 严重度 / 法规依据 / 法条原文
-  手机自带「文件 / WPS / 记事本」类应用直接打开,不需要任何 viewer。`renderReport()` 函数独立 `@JvmStatic`,配 `EvidencePackageBuilderTest` 2 unit test pin(整包结构 + 空命中占位 `(无命中)`)
-- **测试覆盖**: 603 tests / 0 failures / 100% successful(`testDebugUnitTest -PmodelProfile=shell`,599 → 603,新增 4:1 空命中占位 + 3 real-OCR Info 分布审计)
-- **真值 OCR Info 分布审计**(新 `AdSignageInfoDistributionRealOcrTest`):
-  - 走 audit66_ocr/ 仓库里的真实 PP-OCRv6_small OCR 输出(manifest 第 3-6 行注明 `runtime_note: ONNX Runtime CPU (matches Android ice_ocr_rules profile)`),等同 App 真机 OCR 引擎吐出来的文本
-  - **5 张导师图类别(种子 / 蟹都汇 / 杜蕾斯 / 东郊到家 / 紫玉米)在真实 OCR 下 Info 全部 = 0**(Contract pin A)—— 不是 bug 而是设计预期:Info 规则触发面窄,只在医疗 / 化妆品 / 烟酒 / 母婴类广告自报家门时才亮(关键词如「未成年人 / 儿童 / 宝宝 / 三甲专家 / 国械注准 / XK16-108 缺失 / 限期使用日期缺失 / 白酒」),日常广告常态 0
-  - **66 张 audit66 全扫仅 2 张(~3%)真亮 Info**(Contract pin B): #05 五常龙江医院 → `med_art11_qualifications` / #19 蜂胶胶囊整图 → `art10_minor`。即「该亮的广告」在真实 OCR 下仍能亮,守住 Info 桶不会被人为挖空的底线
-  - 与 pin A 成对,防「Info 永亮」与「Info 永灭」两个方向同时收紧
-
-## v0.1.38 · 2026-08-31
-
-- **规则改进(广告招牌 tab):Phase 2.5 同 ruleId 子串去重**(`AdSignageRuleMatcher`):在原 Phase 2 (ruleId + originalKeyword 维度,折叠 1-char-deletion 变体) 与 Phase 3 (absence rule 维度) 之间插入子串合并阶段 — 同 ruleId 内,若一条 hit 的 `matchedText` 是另一条更长 hit 的子串,**双向**:`case A` 较短候选是已 kept 较长条目的子串 → 丢弃;`case B` 较长候选包含已 kept 较短条目 → 反向删除较短条目,保留较长。LinkedHashMap 插入序非长度序,必须 case B 兜底。覆盖 3 类重叠模式:
-  - **关键词子串**(同规则 keywords 列表里有 `增强免疫`(4) + `增强免疫力`(5)两条独立关键词,OCR 仅 `增强免疫力` 一处时原先生成 2 个 hit,现在合并成 1)
-  - **变体误中**(`呵护心血管`(5) → 1-char-deletion 变体 `护心血管`(4) substring 匹配另一独立关键词 `保护心血管`(5),原 Phase 2 折叠变体后两条仍共存,Phase 2.5 再按子串丢短)
-  - **相邻 claim 短语**(同规则 `控糖`(2) + `稳血糖`(3) + `控糖稳血糖`(5) 共存于一段 OCR,只留最长)
-- **跨 ruleId 子串不去重**(守护):不同法源即便词条互含(如 medical 类规则的 `心血管` 与 food_function_claim 的 `保护心血管`)各自保留;**已知 trade-off**:同 ruleId 内即便短 keyword 在文本其它位置独立出现(如 `增强免疫` 独立 + `增强免疫力` 独立)仍按子串去重 → 用户从 ResultPanel OCR 原文即可看到短表述,RuleHit 列表只保留最长。配 6 unit test pin 契约(3 类覆盖模式 + 跨 ruleId 守护 + 同长度互不包含 + 短 keyword 独立出现仍去重)
-- **4 条旧测试适配**:同 ruleId 内把"每个独立关键词各记 1 hit"语义换成"子串去重只保留最长",相应放宽断言。涉及 `finance_art25_endorsement_reinforced`(经济学家推荐 ⊂ 首席经济学家推荐)/ `signage_food_disease_target`(糖尿病 ⊂ 糖尿病患者等 4 对)/ `finance_316_art3_internet`(直播带单 ⊂ 快手直播带单)/ `mentorReview_crabMall`(全国第一 同时 ⊂ 销量全国第一 / 连锁门店数量全国第一)。每条加 `Phase 2.5 (2026-08-31)` 注释,详细 dedup 模式见 `AdSignageRuleMatcher.kt` Phase 2.5 KDoc
-- **UI 调整(广告招牌 tab)**: 顶部标题 `冰灵⚡锐目` 三段 `headlineSmall` → `titleLarge`(小一号,降低顶部占用);KPI bar(`10 违规 / 0 警告 / 0 信息` 数字 + 标签)vertical padding 12.dp → 6.dp + 数字字号 `headlineMedium` → `headlineSmall`(整体压矮,数字 + 标签紧凑);ResultPanel weight 1f → 1.6f(图文区高度比从 1:1 改为 1:1.6,文字区更高更易读);导出取证包按钮 padding 微调(top 0→8.dp,底 16.dp 保留)从 ResultPanel 滑出。**图片区高度不变**(仍 weight 1f)
-- **测试覆盖**: 599 tests / 0 failures / 100% successful(`testDebugUnitTest -PmodelProfile=shell`,569 → 599,新增 6 Phase 2.5 子串去重契约 + 4 条旧测试放宽断言)
-
-## v0.1.37 · 2026-08-29
-
-- **新功能:Tab → 初始页 reset 行为**(CLAUDE.md §Tab → 初始页 spec 落地):识别完成后用户再次点已选中的「广告招牌」tab 直接回到 Idle 初始页(清 pendingUri + state 走回 Idle),无需手动点右下角拍照/相册按钮。3-state 契约:`tab 切换 → 保留 state(预留 FoodLabeling 解锁后);同 tab + Loading → no-op(防误触打断正在跑的 OCR / 规则扫描);同 tab + !Loading → reset 回 Idle`。配 3 unit test pin(`setTab_sameTab_nonLoadingState_resetsToIdle` / `setTab_sameTab_loadingState_isNoOp` / `setTab_tabSwitch_doesNotReset`)— 反射设 `_state=Loading` 验证 Loading 路径不被误清,稳定
-- **规则改进(广告招牌 tab)**:
-  - **通用化 AC 1 字 OCR 退化兜底**(`AdSignageRuleMatcher` auto-decomposition):length≥5 keyword 自动注册所有 1-char-deletion variants 到 AC trie,容忍 PP-OCRv6_small 在密集文字上 1 字漏检(`#48` OCR 实际 `高压血糖血脂降下去` → 8-char variant 命中 keyword `血压血糖血脂降下去` 9-char 原词)。L≥5 阈值 cross-check:`抗病毒`(3 chars)不会被分解 → `#13`/`#26` 豌豆/无筋豆种子「抗病高产」plant-disease 描述不会误命中 `disease_prevention`(L=3 会引发回归,实证已规避)
-  - `art28b_fake_data` keywords 扩 `不二之选`(闭环 `#61` GT 第 3 条规则覆盖)
-  - `food_function_claim` 扩 `蜂胶` / `蜂王浆` / `灵芝孢子` — 覆盖 `#19` 配料表
-  - `disease_prevention` 扩 `降血糖` / `降三高` / `降血压` / `降血脂` — 覆盖 `#48` GT 第 2 条
-- **代码同步(食品标识 tab)**: `FoodLabelRuleMatcher` 同步 `AdSignageRuleMatcher` 的 AC auto-decomposition + 3-phase scan(longest-match)模式。FoodLabelRule 当前没有 `sourceMarkers` 字段,absence rule 暂不落地(若未来有需求,先扩 `FoodLabelRule` 数据类)
-- **Bug 修复**: `variantOrigins` pre-pass bug — 当 keyword A 的 1-char-deletion variant 恰好等于另一条规则独立注册的 keyword B 时(如 `反式脂肪` 是 `反式脂肪酸` 的 variant 又是独立 keyword),原本会把 B 错标为变体导致 Phase 2 dedup 把两条独立命中合并成一个。修复:init 加 `allNormalizedKeywords` pre-pass,生成 variant 时多 guard `variant !in allNormalizedKeywords`。AdSignage 同源同步修复(现有 AdSignage ruleset 未踩坑,提前规避未来新增规则时引入)
-- **性能 regression guard**: 新增 `MatcherPerformanceRegressionTest`(4 tests,直接读 `src/main/assets/rules/*.json` 绕过 shell profile 空 assets),pin matcher construction < 800 ms / scan < 30 ms(实测 ~30-80 ms / ~0.5-2 ms,10× 余量,只 catch 算法退化,不被 CI 性能抖动 false positive)
-- **E2E 验证(nova 6 / arm64-v8a / ice_ocr_rules)**: `FULL 27 → 46(+19)`,`MISS 6 → 1`(剩 `#19` OCR 端漏识配料表 + GT keyword 路径问题,扩词不能解,需 audit 决定);`warm_avg_ms 2198 → 2043`(−7%)
-- **零碎清理**:
-  - `docs/knowledge/ocr-long-image-slicing-evaluation.md`: OCR 长图 / 高密度小字 评估 — 4 方案对比(block slicing / two-pass zoom / maxEdge 4096 / 不动),**结论不动**,等 `ice_vision` profile / PP-OCRv7 multi-scale / VLM 路线自然覆盖。`PaddleOcrEngine.kt` 不修改,现有 det 参数是经过 2026-08-29 净负回滚验证的最优帕累托
-  - memory `followup-ad-signage-cross-cite` 标 closed(regulation 字段 2026-08-21 后已被收窄为仅《广告法》§17+§58,lawText 仍提《食品标识管理规定》是教育性背景,有意保留)
-- **测试覆盖**: 158 tests / 0 failures / 100% successful(`testDebugUnitTest -PmodelProfile=shell`,152 → 158,新增 6:3 tab + 2 food variant + 1 perf empty)
-
-## v0.1.36 · 2026-08-28
-
-- **修复 APK 下载进度条卡在 totalBytes=0**(audit finding #2): `ApkDownloader` 新增 `onMetadata: (Long) -> Unit = {}` 回调,Content-Length 已知(非 -1)时一次性触发;`UpdateDownloadService.handleDownload` 用 mutable `liveRecord = record`,`onMetadata` 写入 StateFlow + DataStore,`onSuccess` 用 `liveRecord.copy(totalBytes = liveRecord.totalBytes)` —— 之前 `totalBytes` 只在 recreate 时从持久化的 `AppVersionInfo.totalBytes` 读,如果下载过程中网络层提前传了 Content-Length 也不会更新,进度条一直 0%。配 2 个 unit test pin(`onMetadata_fires_once_with_total_bytes_before_body` / `onMetadata_skipped_when_content_length_unknown`)
-- **修复 UpdateAvailable 触发 POST_NOTIFICATIONS 权限请求**(audit finding #3): `UpdateSection.kt` API33+ 在 UpdateAvailable 卡片首次出现时调 `rememberLauncherForActivityResult(RequestPermission())`,dedup via `promptedForNotif` state(避免每次重新 compose 都弹),rationale string 复用 `update_notification_rationale`。**死代码清理**: `currentVersionString(versionCode)` 的 `versionCode` 参数从未被使用,删除
-- **修复 Severity 排序显式化**(audit finding #4): `Severity` enum 重排 `{Violation, Warning, Info, Positive}` + KDoc 解释「Positive 放末位是 guard」;`HomeScreen` 改用显式 `severityRank` 函数(Violation=3 / Warning=2 / Info=1 / Positive=0),过滤 Positive 取 `worstViolationOrWarning`(替代原 `maxOfOrNull { it.severity }` —— 该隐式 ordinal 比较把 Info > Positive 误当成更高严重度)。配 `HomeScreenSeverityRankingTest` 6 tests pin 契约(纯 JVM,无 Compose 渲染,稳定)
-- **buildSrc helper 三合一**(audit finding #5): `app/build.gradle.kts` 删除 inline `groovy.json.JsonSlurper` 块 / `FileInputStream` copy / `sha256HexForBuild` 函数(共 -56 行,加 import 4 行),改用 `LatestJsonGenerator.buildLatestJson(...pretty=true)` + `ArchiveVision.archiveForUpload(...)` + `LatestJsonGenerator.sha256Hex(apk)`。`buildSrc:helper` 三处职责收口在 `LatestJsonGeneratorTest` + `ArchiveVisionTest` JVM 单测
-- **零碎清理**:
-  - `FakeRuleMatcher` 加 `@VisibleForTesting internal` 修饰符(lint 现在能识别其 test-only 性质)
-  - `prepare-ocr-rules.gradle.kts` 注释 `116 rules / v4` → `129 rules / v9` + drift warning
-  - `network_security_config.xml` 注释澄清 `apkSha256` 是 forensic / debugging 用途,**`signerCertSha256` + BuildConfig.UPDATE_EXPECTED_CERT_SHA256 才是真正的 trust anchor**(server 只能明文 HTTP 下载 APK,所以 `apkSha256` 无法在传输层验证)
-  - `SettingsViewModel.kt` `download()` KDoc 更新描述 FGS 推送 `downloadId` 到 `UpdateRepository.onDownloadProgress` 的契约
-  - `PaddleOcrRealDeviceAbTest.kt` fixture 重构:`test_set/img1/2/3.jpg` 与 `fixtures/mentor/mentor_1_5/2_6/3_9_2011.jpg` 字节一致(SHA-256 验证),改共享同一份,避免两份独立 fixture 漂移;`img4.jpg`(signage-11-2011)独有,保留在 `test_set/`
-  - `README.md` v0.1.18 → v0.1.35 → v0.1.36(shipping version banner 同步)
-  - `ChangelogScreenTest` shipping-version pin `v0.1.35 → v0.1.36`
-- **测试覆盖**: 574 tests / 0 failures / 2 skipped / 100% successful(`testDebugUnitTest -PmodelProfile=shell` + `:buildSrc:test`)
-
-## v0.1.35 · 2026-08-28
-
-- **修复 v0.1.34 case #13 miss — bare「高产」seed 广告**(《广告法》第二十七条第(一)项「科学上无法验证的断言」+ 第(二)项「表示功效的断言或者保证」):`ad_signage_art27_seed_yield_guarantee` keyword 列表扩 3 个 bare 产量承诺 keyword `高产` / `丰产` / `稳产`(原 14 keyword 全部围绕「保证 / 承诺 / 必 / 确保 / 效益保证」短语,bare「高产」命中不了)。即使放实物照片也不能直接宣称「高产」——果实饱满特写 ≠ 整田丰产保证,无对照组 / 区域条件 / 品种试验即科学上无法验证。配 fixture `违规案例/text_signage_pea_01.md` 锁住 case #13 命中集合 `{ad_signage_art27_seed_yield_guarantee, Violation}`,AdSignageTextFixtureRegressionTest 命中集合精确 pin
-- **测试 pin 修复**: `ChangelogScreenTest.bundled asset first section matches the shipping version` 版本断言 `v0.1.33 → v0.1.35`(v0.1.34 release 时漏 bump test pin,本次连同 v0.1.35 一起对齐)
-
-## v0.1.34 · 2026-08-27
-
-- **规则扩充 v8→v9**(`ad_signage_rules.json`,121 → 129):
-  - 新增 8 条规则,覆盖审计发现的 6 张未覆盖案例 + 弱覆盖强化: `ad_signage_signage_alcohol_drink_scenario`(酒类通用场景)、`ad_signage_signage_gift_to_leader`(送领导/客户公务商务送礼诱导)、`ad_signage_signage_military_political_marketing`(商业借用军政形象营销,§9(七))、`ad_signage_signage_weight_loss_food_claim`(普通食品减肥/保健宣称,§17+§18)、`ad_signage_edu_art24_public_servant_endorsement`(在职公务员代言教育,§9(二)+§24(三))、`ad_signage_signage_weight_loss_data_commitment`(虚构减重数据,§17+§18+§28)、`ad_signage_signage_food_lung_health_claim`(食品肺部保健宣称,§17+§18)、`ad_signage_signage_food_beneficiary_count_claim`(亿国人夸大受益人群,§9(三)+§28)
-  - 强化 2 条规则: `ad_signage_art22_tob_alc` 加 `白酒/啤酒/红酒/黄酒/洋酒/酒类/酒精度数` 7 keyword;`ad_signage_art10_minor` 加 `未成年人/小学生/中学生`(去掉 `婴儿/幼儿`,避免与 infant_milk 规则抢命中)
-- **违规案例归档**: 42 个 text fixture 全覆盖 16 桶,新增 8 fixture(text_signage_alcohol / gift / military / weightloss / weightloss_data / lung / beneficiary + text_education_official),全部走政府站一手「处罚通报」类文本,AdSignageTextFixtureRegressionTest 命中集合精确 pin
-- **`_违规档案总册.md` 演化**: 加 `关联规则 ID` 列(66 节 × ≥1 ruleId)、§审计日志、§桶汇总(本次审计,主桶计入)
-- **`_coverage_matrix.md` 双向矩阵建立**: §1 规则→示例图 129 行、§2 示例图→规则 66 行、§3 覆盖率 60/66 已覆盖 + 6/66 backlog + 17/66 弱覆盖
-- **测试回归**: AdSignageTextFixtureRegressionTest 命中集合 pin(收紧过度关键词 + fixture expected 同步)+ AssetRuleLoaderTest v9 版本断言(8→9)。568 tests / 0 failures / 2 skipped / 100% successful
-
-## v0.1.33 · 2026-08-27
-
-- **规则扩充(ad_signage_rules.json)**:
-  - 新增 `ad_signage_signage_food_safety_implication` 暗示安全性规则(20 关键词),覆盖 #49「安全放心」+ #52 暗示天然无害类典型违规;广告招牌规则数 118 → 121
-  - 法规依据:广告法第十八条 + 药品医疗器械保健食品特殊医学用途配方食品广告审查管理暂行办法第十一条第五项、第五十八条
-- **违规案例归档**:66 张真实公开广告图片(01-66 编号)+ 完整违规档案总册(926 行 / 14 个桶 / 严重度 Critical×59 + Warning×7 + Info×0)
-  - 新发现:#06 商业借用军政形象、#49 + #52 保健食品暗示安全性违规
-- **知识库时效性**:2 份已废止法规迁移至 `知识库/已废止/`(户外广告登记管理规定 2016 / 母乳代用品销售管理办法 2017);3 份食品标识 2027-03-16 新版替换(GB 7718 / GB 28050 / 食品标识管理规定);1 份广告业务改名(药品医疗器械保健食品特殊医学用途配方食品广告审查管理暂行办法)
-- **自动化基础设施**:CLAUDE.md 新增「知识库时效性整理」段;project-commit skill 新增「Release 三段式打标」;PreToolUse hook 新增 Rule 3(防误删 `app/libs/*.aar`);新建 icevision-release skill(发版流水线 5 步 pre-flight + 4 步流水线)
-
-## v0.1.32 · 2026-08-26
-
-- **优化:底部操作栏 affordance 强化**(`CaptureBar.kt`)
-  - 左「选图」:从单图标 `FloatingActionButton(40dp)` 升级为 `ExtendedFloatingActionButton` + 可见"选图"文字标签 + PhotoLibrary 图标。按用户规格"icon左边加上「选图」"实现 text-then-icon(图右)顺序 — 借助 Extended FAB 的 `icon` 槽故意空、`text` 槽放自定义 `Row { Text; Icon }`,绕开 FAB 内部 icon→text 硬编码(无原生 text-then-icon 的 Extended FAB 变体)
-  - 右「拍照」:同 `ExtendedFloatingActionButton` 组件(`CaptureButton.kt` 已封装),新加 `Modifier.fillMaxWidth()` 让它拉满 BottomAppBar 的右半区 — 视觉上明显比左边的「选图」长,主操作 affordance 更显眼
-  - `enabled = false` 仍只影响 capture FAB(pick 仍是 Loading 期间的逃生口)
-- 单测更新 + 全套测试通过:
-  - `CaptureBarTest.kt` 加 `onNodeWithText("选图", useUnmergedTree = true).assertExists()`(原断言只检 a11y desc,现在检可见文字)
-  - `HomeScreenTest.kt` 同步注释 + 加 `onNodeWithText("选图", ...)` 断言
-  - `ChangelogScreenTest.kt` shipping-version pin `v0.1.31 → v0.1.32`(常规 bump 同步)
-  - `testDebugUnitTest -PmodelProfile=shell`:568 通过 / 2 skipped / 0 failures
-
-## v0.1.31 · 2026-08-26
-
-- **修复:首页「红框位置标错了」三次复盘(真机 A/B 验证 v0.1.30 修复未闭环)** — `HighlightOverlay` 矩形在 `ice_ocr_rules` profile 上对 `sampleSize > 1` 的图仍错位。2026-08-26 烟测 3 图:截图 1(竖图)框在文字上、截图 2(竖图)单框碰巧落文字,但截图 3(横图,真机拍摄公交车 + durex 广告)红框完全落在右上角空白处,与 OCR 检出的「激情公益红 守护爱始终」「durex」「创维汽车」等文字完全不重叠
-  - **新根因(独立于 v0.1.29 EXIF 双重旋转 / v0.1.30 imageSize 透传)**:v0.1.30 加的 imageSize 链路在「消费契约」层面对了(`computeFitTransform` 优先 `imageSize` + `ImagePreviewFitTransformTest` 6 例 Robolectric pin 住 `imageSize=IntSize(3024, 4032)` → `scale=0.248`),但**生产端契约**漏了一半 —— `PaddleOcrEngine.recognize` 设 `imageWidth = bitmap.width`(下采样 bitmap 尺寸,典型 `sampleSize=2` 时 = `2016×1512`),不是全分辨率 display-oriented 尺寸(4032×3024 / 3024×4032)。而 box 坐标已在 `OCRBox.toBoundingRect` 里被乘以 `loaded.sampleSize` 投到全分辨率空间,`imageSize` 与 `line.box` 活在两个不同坐标系,`computeFitTransform` 用错误的 `imageSize` 当 `refW/refH` → `scale` 偏约 2× → box 整体飘到 canvas 右下方 letterbox
-  - **截图 1 vs 截图 3 行为差异解释**:`BitmapLoader.sampleSize(longestEdge, maxEdge=2048)` 对 `longEdge ≤ 2048` 返回 1 → `bitmap.width × 1 = bitmap.width`(等于全分辨率),bug 静默;`longEdge > 2048`(典型手机相机 4032+ 像素)才 `sampleSize=2` 触发 bug。截图 1 长边可能较小 → `sampleSize=1` → 框对;截图 3 真机拍摄 4032×3024 横图 → `sampleSize=2` → bug 全显。截图 2 视觉上框在文字上,实际也已经偏移 `sampleSize²` 倍(典型 2×),只是「东莞·福州·宁波·济南」该行横向铺满中部不易察觉
-  - **修复**:`PaddleOcrEngine.recognize` 设 `imageWidth = bitmap.width * loaded.sampleSize`、`imageHeight = bitmap.height * loaded.sampleSize`,与 `OCRBox.toBoundingRect` 已有的 sampleSize 乘法对齐,保证 `imageSize` 和 `line.box` 在同一坐标系。注释同步更新(从「BitmapFactory 看到的就是 FULL bitmap」改成「bitmap 是下采样版,× sampleSize 才回到 box 坐标空间」)
-  - **回归 pin**:`PaddleOcrEngineTest` +1 例 androidTest —— `recognize_imageSize_isFullResDisplayDims_notDownsampled`,用 `fixtures/dongjiao_daojia.jpg`(1.5 MB 真机照片,`longEdge > 2048` → `sampleSize=2`,必触发 bug;`test.png` `longEdge ≤ 2048` → `sampleSize=1`,OLD 错代码也过,必须换 fixture):① `BitmapFactory.decodeFile(inJustDecodeBounds=true)` + `BitmapLoader.exifRotationDegrees` 计算期望全分辨率 display-oriented 尺寸(避免分配 4032×3024 ARGB_8888 bitmap 占 ~50 MB 测试设备内存)② 断言 `result.imageWidth == expectedW && result.imageHeight == expectedH` ③ 交叉断言每个 `line.box.right/bottom <= imageWidth/imageHeight`(OLD 错代码下每个 box 越界直接 fail)④ sanity guard —— fixture `longEdge` 必须 > 2048,否则 `sampleSize=1`、pin 失牙。androidTest 跑前需 `connectedDebugAndroidTest` + 真机 + `ice_ocr_rules` profile 配齐 ONNX 模型(同 `PaddleOcrExifTest` / `PaddleOcrFixtureTest` 路径,CLAUDE.md 已踩)
-  - **残余未 pin**(同 v0.1.29 / v0.1.30 的限制):PaddleOCR SDK 是 native + ONNX Runtime + OpenCV,Robolectric 跑不动,androidTest + 真机烟测把关;Compose runtime 真渲染 canvas letterbox + Painter ContentScale.Fit + Coil 额外下采样的协同层也只能真机烟测(2026-08-26 烟测 截图 1 + 3 已显式验证)
-- v0.1.30 / v0.1.29 的修复保留,本版本不撤销 —— 那两条在 Robolectric 不可复现的 API 24+ 路径上仍然必要,只是不足以独立闭环红框位置问题
-- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`,总 568 / 0 failures —— unit test 未动)
-
-## v0.1.30 · 2026-08-26
-
-- **修复:首页「红框位置标错了」二次复盘(真机 A/B 验证 v0.1.29 修复未生效)** — `HighlightOverlay` 矩形在 `ice_ocr_rules` profile 上依然落不到文字上(其他真机复核 8 命中 / 8 全错位,与 v0.1.29 同症状)
-  - **新根因(独立于 v0.1.29 的 EXIF 双重旋转 bug)**:`PaddleOcrEngine.recognize()` 喂给 `PaddleOCR.recognize(bitmap)` 的是 `BitmapLoader.downsampledBitmapWithScale(bytes).bitmap`(`maxEdgePx=2048` floor-based 下采样后,maxEdge=4032 仍走 `sampleSize=1` 不下采样,得到 API 24+ 自动 EXIF 旋转过的 3024×4032 全分辨率 display-oriented bitmap),PaddleOCR 返回的 bbox 坐标就在这 3024×4032 空间。但 `AsyncImage` + Coil 按 layout 约束(典型 800×1000 px)做了下采样,`painter.intrinsicSize` 反映的是下采样后的 bitmap 尺寸(800×1000),不是 3024×4032。`computeFitTransform` 误把 800×1000 当参考 → `scale = min(800/800, 1000/1000) = 1.0`,`offset = (0, 0)` → 3024×4032 空间的 bbox 直接画到 800×1000 canvas → 整块飘出右边/下边
-  - **修复**:把 OCR 跑过的全分辨率 display-oriented bitmap 尺寸沿数据流透传:`PaddleOcrEngine` 取 `bitmap.width/height` 写进 `OcrResult.imageWidth/imageHeight` → `ImageAnalyzerRepository` 透传到 `AnalysisState.OcrDone.imageWidth/imageHeight` 与 `ViolationReport.imageWidth/imageHeight` → `HomeScreen` 派生 `imageSize: IntSize?` 传入 → `ImagePreview.computeFitTransform(painter, boxSize, imageSize)` **优先**用 `imageSize` 当参考,fallback 才回到 `painter.intrinsicSize`(shell profile / OcrDone 到达前用)。附带:`imagePainter` race 也消失,transform 不再依赖 painter 加载完成
-  - 7 处文件改动(纯增量,旧 API 全部加默认值,既有的 9 处 `OcrResult(...)` / `OcrDone(...)` / `ViolationReport(...)` 构造点零回归):`OcrResult` / `AnalysisState.OcrDone` / `ViolationReport` 加 `imageWidth: Int = 0` + `imageHeight: Int = 0`;`PaddleOcrEngine` 填入 `bitmap.width/height`;`ImageAnalyzerRepository` 透传;`ImagePreview.computeFitTransform` 提升为 `internal` + `@VisibleForTesting`,签名加 `imageSize: IntSize?`;`ImagePreview` 增加 `imageSize: IntSize?` 参数;`HomeScreen` 派生并传入
-  - **回归 pin**:`ImagePreviewFitTransformTest` 6 例 Robolectric(SDK 33)锁住 transform 契约:① `imageSize` 优先于 `painter.intrinsicSize`(玉米广告 repro:3024×4032 全 + 800×1000 layout → scale = min(800/3024, 1000/4032) ≈ 0.248,letterbox 居中,box at (1500,2000,1700,2100) 落点 x=397 y=496 — 这次实测在 800×1000 canvas 内)② `imageSize=null` fallback `painter.intrinsicSize` ③ `imageSize=IntSize(0,0)`(默认值 sentinel)也 fallback,不把 0 当真实尺寸 ④ box 与 image 同尺寸 → identity ⑤ `painter=null` & `imageSize=null` → safe identity ⑥ 横向 letterbox 居中
-  - `computeFitTransform` 同时补 `Float.isFinite()` / `> 0` 防御:之前 `intrinsicSize` 为 NaN/0/负时会返回 `scale = NaN` 让 Canvas 静默崩(同 v0.1.29 那条防御的覆盖范围扩展到 `imageSize` 路径)
-  - **链路级 pin**:`ImageAnalyzerRepositoryTest` 增 2 例 — `OcrResult.imageWidth/imageHeight` 必须沿 `OcrDone` 与 `ViolationReport` 双向透传(`HomeScreen` 在 OcrDone 阶段从 OcrDone 读,在 Complete 阶段从 ViolationReport 读 — 任一断点都让 computeFitTransform 拿到 0 → fallback 到 painter.intrinsicSize → 红框漂走);`HomeScreenImageSizeDerivationTest` 4 例纯 JVM pin 派生契约 — OcrDone 优先、report 兜底、双零/null 返回 null、负值/单零视为不可用
-  - **残余未 pin**:`PaddleOcrEngine.recognize` 内部 `imageWidth = bitmap.width` 这一行 — PaddleOCR SDK 是 native,Robolectric 跑不动,只能 androidTest + 真机烟测把关(v0.1.29 的 helper-level pin 同等限制,沿用)
-- v0.1.29 的 EXIF 双重旋转修复与本版本独立,本版本不撤销 v0.1.29 — 那条修复在 Robolectric 不可复现的 API 24+ 路径上仍然必要,只是不足以独立闭环红框位置问题
-- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`,新增 ImagePreviewFitTransformTest 6 + ImageAnalyzerRepositoryTest 2 + HomeScreenImageSizeDerivationTest 4,总 568 / 0 failures)
-
-## v0.1.29 · 2026-08-26
-
-- **修复:首页「红框位置标错了」** — `HighlightOverlay` 矩形在 `ice_ocr_rules` profile 上落不到文字上(实测 8 命中 / 8 全错位:大框飘到图片右上角、小框散落到 OCR 文字面板与底部拍照按钮区)
-  - 根因:`PaddleOcrEngine` 在 `BitmapFactory.decodeByteArray` 之后又调了一次 `BitmapLoader.applyExifRotation`。Phase 2 设计文档假设 BitmapFactory 不应用 EXIF 旋转(API < 24 的行为),但 minSdk=26 已在 API 24+ 路径上,BitmapFactory JNI 内置 `applyOrientation()`,返回的就是 display-orientation bitmap。手动再转一次 = 双重旋转,OCR 返回的 bbox 在「被再转 90°/180° 的位图」坐标系里,而 Coil 画的是 BitmapFactory 的 display-orientation 坐标系,bbox 经 `computeFitTransform` 映射后整块错位
-  - 修复:`PaddleOcrEngine.recognize()` 移除 `applyExifRotation` 调用,直接喂 `BitmapLoader.downsampledBitmapWithScale(bytes).bitmap` 给 `PaddleOCR.recognize`。`BitmapLoader.applyExifRotation` / `exifRotationDegrees` 保留为 utility(`BitmapLoaderTest` 还要测),但不再走 OCR 路径
-  - 回归 pin:`BitmapLoaderExifRotationTest` 4 例 Robolectric(SDK 33)用 `test_rotated.jpg`(PIL 生成,带 EXIF Orientation tag 的 JPEG fixture)锁住 `BitmapLoader` 的旋转 utility:`exifRotationDegrees` 必须与 `ExifInterface` 直读一致(0/90/180/270);`applyExifRotation(0)` 必须 no-op(避免 EXIF=1 截图每次都多分配一张 bitmap);90° / 270° 必须交换 W↔H、180° 必须保尺寸。Robolectric 当前 SDK 33 的 `BitmapFactory.decodeByteArray` 不应用 EXIF(API < 24 表现),API 24+ 的双重旋转 bug 不能在 unit test 里复现 — 端到端真机回归留 `PaddleOcrExifTest` androidTest + 设备烟测把关,这套 unit test 仅防 helper 层退路。未来 Robolectric 升级若开始模拟 EXIF,`bitmapFactory_underRobolectric_decodesRawDimensions_evenWhenExifPresent` 会先 fail(标桩信号),届时 v0.1.29 的"别手动再转一次"假设就可以在 unit test 层闭环
-  - `computeFitTransform` 顺手补 `Float.isFinite()` / `> 0` 防御:之前 `intrinsicSize` 为 NaN/0/负时会返回 `scale = NaN` 让 Canvas 静默崩
-- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`,新增 BitmapLoaderExifRotationTest 4 例,总 556 / 0 failures)
-
-## v0.1.28 · 2026-08-26
-
-- **修复:`latest` 上发布的安装包未携带 OCR 模型 + 规则引擎,违规识别全部失效**
-  - 根因:v0.1.27 走的是 `shell` profile,产物 APK 内嵌 `FakeOcrEngine` + 空的 `ad_signage_rules.json`(`{"version":1,"rules":[]}`)。任何图片 OCR 出文字后规则表为空,UI 永远显示「未发现违规用语」。本草专治糖尿病、东郊到家等真实广告招牌验证均复现该症状
-  - 修复:本次发布切换到 `ice_ocr_rules` profile(59 MB,含 PP-OCRv6_small ONNX 模型 + `ad_signage_rules.json` 120 条 + `food_label_rules.json` 66 条 + ONNX Runtime + OpenCV),OCR 真跑 PaddleOCR,规则真跑 `AdSignageRuleMatcher` AC 匹配
-  - 真机端到端验证(华为 nova 6,SDK 35,arm64-v8a):
-    - 本草专治糖尿病 100%有效 → **8 违规**(医药 + 绝对化用语命中)
-    - 东郊到家(技师 9 万人 / 累计 1000 万次) → **1 警告**(《广告法》第十一条第二款,引证数据未标出处)
-- **流水线修复:`./gradlew.bat assembleRelease` 不再需要手动 export 5 个 `ICESPIRITAI_RELEASE_*` env var**
-  - 凭据写入 `~/.gradle/gradle.properties`(gitignored),`signingConfigs.release` 走 `providers.gradleProperty(...)` fallback 路径,CI / 本地都不再卡凭据缺失 GradleException
-- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`,551 tests / 0 failures)
-
-## v0.1.27 · 2026-08-25
-
-- **首页标题居中 + ⚡ accent**
-  - 「冰灵锐目」从左对齐移到屏幕正中。布局:单个 `Surface` 内的 `Box`,中央放「冰灵⚡锐目」`Row`,右上放设置 `IconButton`。`Box` 而非 `Row + weighted spacer` 是为了不让 settings 按钮的宽度影响居中精度
-  - ⚡ 单独一个 `Text` 渲染,颜色用 `colorScheme.tertiary`,跟两侧的「冰灵」「锐目」视觉区分开。三个 `Text` 用 `mergeDescendants = true` 合到同一个 a11y 节点,`contentDescription = app_name("冰灵锐目")`,TalkBack 仍按一个品牌名播报,不会拆成「冰灵」「闪电」「锐目」三段
-  - 启动器 label(`AndroidManifest.applicationLabel`)继续是「冰灵锐目」无 ⚡,`app_name` 字符串不动,只新增 `app_name_prefix` / `app_name_bolt` / `app_name_suffix` 三个拼接用的资源
-- **shell profile 上传图片崩溃修复**:v0.1.26 用户实测反馈「上传图片后报错!」
-  - 根因:`AdSignageRuleMatcher` 初始化时若 keywords 为空(shell profile 发的 `{"version":1,"rules":[]}`),`AhoCorasickDoubleArrayTrie` 不调 `build()`;之后 `scan()` 无条件 `keywordTrie.parseText(...)` 触发 HankCS 库内部 `Cannot load from int array because "this.base" is null` NPE,被 `ImageAnalyzerRepository` 的 catch-all 块捕获为 `ErrorCode.UNKNOWN`,UI 展示「未知错误,请重试」
-  - 修复:init 时把 `hasKeywordTrie` / `hasSourceMarkerTrie` 两个布尔记下来,scan 时按这两个 flag 守 `parseText`。empty rules 不再触发 NPE
-  - `ice_ocr_rules` profile 行为不变(规则 JSON 118 条非空,`hasKeywordTrie = true` 走原来分支),0 条规则只在 shell profile 出现
-- **回归 pin**:`ShellProfileRegressionTest` — `FakeOcrEngine + AdSignageRuleMatcher(emptyList())` 跑完整 analyze flow,断言无 `AnalysisState.Error` 发射 + 终态 `Complete.ocrText = "本店专治糖尿病,100% 有效"` + `hits = emptyList()`。这条测试在 v0.1.26 跑会失败(reproduced the bug),v0.1.27 跑过
-- `HomeTopBarTest` 重写:旧版断言 `onNodeWithText("冰灵锐目")` 还能命中单个 Text;新结构是三个 Text,改成断言三段各自存在 + `onAllNodesWithContentDescription(R.string.app_name)` 计数为 1(merged semantics 生效)
-- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`)
-
-## v0.1.26 · 2026-08-25
-
-- **首页 tab pill 化 + 标题间距收紧**
-  - `RuleTabBar` 重写为 pill 风格:每个 tab 是 `RoundedCornerShape(20.dp)` 的 `Surface`,选中态填充 `secondaryContainer` + `titleMedium` SemiBold,未选中态 `surfaceVariant` + `bodyLarge`。原本 tab 与「冰灵锐目」标题都是平面文字,字体区别度不够;现在 pill 容器与平铺标题形成强对比,后续启用「食品标识」tab 时风格一致
-  - `HomeTopBar` 移除 `TopAppBar`,改为单个 `Surface` 内的 `Column` 直接堆叠标题行 + tab 行。标题与 tab 间距由 ~16dp 收到 12dp,标题更靠近 tab
-- **Viewer 滚动崩溃修复**:`ViewerTextList` LazyColumn 之前用 `key = { it.text }`,当 OCR 识别出两条相同文字的 TextLine(广告招牌常见,例如「门店」出现两处)时,合成可见 item 触发 `IllegalArgumentException: Key X was already used` 闪退。改用 `itemsIndexed` + `key = { index, _ -> index }` 走 index-based identity(OCR 每次重扫都整列表替换,position-based 稳定)
-- **回归 pin**:`ViewerTextListTest.ViewerTextList does not crash when TextLines share identical text` — 三条相同「门店」TextLine 入参,断言 `setContent` 不抛异常 + 行数标题「共 3 行文字」正确显示
-- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`,551 tests / 0 failures)
-
-## v0.1.25 · 2026-08-25
-
-- **ad_signage `signage` 分类显示名修订**:HitCard 「分类」行原显示「门店招牌」,对短视频 / 互联网广告截图误导。改为「广告文案」,媒介中性。`category` JSON 字段值不变(仍为 `"signage"`),只改 `CategoryDisplay.kt` 映射 + 测试
-- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`)
-
-## v0.1.24 · 2026-08-25
-
-- **规则库 v8 — ad_signage regulation 字段清理**:4 条 ad_signage 规则之前串了食品标识 / 婴幼儿配方注册 / GB 7718 等非广告法规。修正为只引《广告法》对应条款,HitCard 「依据」行不再出现食品标识相关法规
-  - `ad_signage_art10_minor`:→《广告法》第十条(二) + 第五十七条
-  - `ad_signage_signage_infant_milk`:→《广告法》第二十条 + 第五十七条
-  - `ad_signage_signage_food_function_claim`:→《广告法》第十七条 + 第五十八条
-  - `ad_signage_signage_food_disease_target`:→《广告法》第十七条 + 第五十八条
-- **回归 pin**:`AdSignageRuleLoaderTest.load_realAssets_adSignageRulesCiteOnlyAdvertisingLaws` — 每条规则的 regulation 字段不得含 `食品标识 / GB 7718 / 配方注册 / 婴幼儿配方 / 特殊医学用途 / 保健食品 / 蓝帽子 / 国食健字`,且必须含广告法规信号(`《广告法》` / `广告审查` / `广告发布` / `广告登记`)
-- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`)
-
-## v0.1.23 · 2026-08-25
-
-- **规则库 v7 — 食品功能宣称补漏**:实地拍摄小园玉米紫玉米花青素广告时,OCR 把「抗氧化」识别为独立 TextLine,但 `ad_signage_signage_food_function_claim` v6 keywords 没收,HighlightOverlay 没有红框。v7 把 `抗氧化` 加入 keywords 列表(38 → 39 条),填补真实场景漏报
-- **影响**:包含「抗氧化 / 抗衰老 / 延缓衰老」等保健功效的小广告现在会正确触发 §17 食品功能宣称违规
-- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`)
-
-## v0.1.22 · 2026-08-25
-
-- **UI 现代化 Phase 3.4-3.5**:CaptureButton → ExtendedFloatingActionButton;CaptureBar 改 BottomAppBar + 大拍照 FAB + 小选图 FAB;LoadingOverlay 重写为 shimmer 骨架屏;SettingsScreen 改 Card + ListItem;AppearanceSection 改 SegmentedButton;ViewerScreen 命中行加 token Surface + animateContentSize;IceSpiritVisionActivity 已开启 `enableEdgeToEdge()`(Phase 3.5 之前已合入)
-- **影响**:主操作更突出,加载进度可见,设置页更易扫读,Viewer 命中行质感更立体
-- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`)
-
-## v0.1.21 · 2026-08-25
-
-- **UI 现代化 Phase 3.3**:HitCard 重写为左侧 6dp 严重度色条 + 纵向渐变背景 + 双引号包裹命中文字 + FilledTonalButton 法规展开;HighlightOverlay 升级 — Info 严重度也显示描边、6dp 描边宽度、动画渐变 alpha;ImagePreview 适配 edge-to-edge 系统栏 inset(idle 提示不再被状态栏遮挡,预览图保持 edge-to-edge)
-- **影响**:命中卡更易扫读(色条优先于文字)、违规框视觉权重提升、空状态文字不再被状态栏遮挡
-- **回归**:4 张广告招牌 fixture OCR / 命中 / 严重度分布与 v0.1.14 字节级一致
-- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`,545 tests / 0 failures / 2 skipped)
-
-## v0.1.20 · 2026-08-25
-
-- **UI 现代化 Phase 3.2**:StatusBanner 重写为 KPI 横条(违规 / 警告 / 信息 三段,AnimatedContent 数值滑入);HomeTopBar 透明背景 + headlineSmall 标题 + Outlined 齿轮图标;RuleTabBar 升级 Material 3 SecondaryTab(3dp 指示器 + titleMedium 选中态)
-- **影响**:屏幕顶部信息密度提升,违规数字一眼可见;tab 风格更接近 Material You
-
-## v0.1.19 · 2026-08-25
-
-- **UI 现代化底层** Phase 3.1:严重度色板扩展(Info 角色 / Container 角色)、Type 字号加 `displaySmall` / `headlineMedium` / `headlineSmall`、新增 `IceMotion` 数据类与 `Modifier.emphasizedEnter()`、通过 `LocalSeverityColors` 暴露统一严重度配色
-- **内部重构**:Hex 值未变更,只增加 token;`IceSpiritVisionTheme` 新增 `LocalSeverityColors` provider
-- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`,544 tests / 0 failures / 2 skipped)
-- `versionCode 18→19`,`versionName 0.1.18→0.1.19`
-
-## v0.1.18 · 2026-08-22
-
-- **断点续传修复**:`UpdateResumeWorker` 触发的冷启动续传,`UpdateDownloadService` 现在会从 DataStore 记录重建下载 URL / 目标路径 / 签名证书。此前缺失这三种 extra 会直接 `return`,导致「上划杀进程 → 重新打开」后续传不生效(可能触发 `ForegroundServiceDidNotStartInTimeException`)
-- **Android 12+ 后台 FGS 兜底**:WorkManager 在后台唤醒进程时启动前台服务若抛 `ForegroundServiceStartNotAllowedException`,worker 会 `retry()` 等待前台后重试,不再崩溃 / ANR
-- **更新通道信任锚点**:客户端在 `BuildConfig` 中固定签名证书 SHA-256,后续下载校验不再信任明文 HTTP 下发的 `signerCertSha256`,抵御 MITM 下发自洽的「JSON + APK」伪造对;`vision-latest.json` 缺失该字段时也按客户端固定值校验
-- **并发 / 健壮性**:`UpdateDownloadService.inFlight` 改用 `ConcurrentHashMap` 线程安全集合,并清除 `return` 路径上的幻影 id 泄漏;`cleanup()` 去掉阻塞式 `runBlocking`,改为挂起删除
-- **安全 / 文档 / CI**:禁用应用备份(`allowBackup=false`,App 保存实拍图与取证包);README 与版本目录注释对齐真实构建栈(AGP 9.3 / Kotlin 2.4.10 / Gradle 9.7 / compileSdk 37);新增 GitHub Actions CI(跑 `assembleDebug` + `testDebugUnitTest`)
-- `versionCode 17→18`,`versionName 0.1.17→0.1.18`
-
-## v0.1.17 · 2026-08-22
-
-- **应用内更新支持后台下载 + 锁屏不掉线**(Foreground Service,`foregroundServiceType="dataSync"`,Android 14+ 红线)
-  - 进入设置 → [下载更新] 后即便立刻锁屏,下载仍在通知栏 + App 内 `UpdateSection` 双通道进度持续推进
-  - 通知三通道:进行中 / 可安装 / 失败;每条通知带 `取消 / 安装 / 稍后 / 重试` 动作按钮
-- **断点续传**:HTTP `Range: bytes=N-` + `If-Range: <etag>`;FGS 退避 2 / 4 / 8 s,最多 3 次;落地后由 `DownloadStateStore`(DataStore Preferences)持久化到进程被杀也活得下来
-- **冷启动自动续传**:Application.onCreate 里跑 `UpdateResumeCoordinator.scanAndDispatch()`,正在下载的 partial 自动入队 `UpdateResumeWorker`(WorkManager,`NetworkType.CONNECTED` 约束),无需用户点重试
-- **签名校验失败 / 取消 / 退避耗尽** 三种 Failed subtype 在 `UpdateSection` 区分文案(「签名校验失败,请联系开发者」/「已取消」/「网络不可达,请重试」),失败自动清理 partial + DataStore,不留垃圾
-- **真机回归 4 项**(`CancelFromNotificationTest` / `UpdateResumeCoordinatorAndroidTest` / `ProcessKillResumeTest` / `UpdateDownloadServiceColdTest`),覆盖 cancel → cleanup、Coordinator → Worker 入队、force-stop → 重启续传、cold + warm 启动时延(实测 cold_ms=4 / warm_avg_ms=3,均 <5 s)
-- **`POST_NOTIFICATIONS` / `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_DATA_SYNC` / `WAKE_LOCK` 运行时权限** + `<service android:foregroundServiceType="dataSync">` 已在 `AndroidManifest.xml` 声明
-- 烟测场景(锁屏 / Wi-Fi 切换 / 飞行模式 / 上划杀进程 / 通知权限拒绝 / 签名校验失败)见 `docs/smoke/2026-08-22-update-fgs-resume.md`
-- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`);真机 androidTest 4/4 pass(华为 nova 6)
-- `versionCode 16→17`,`versionName 0.1.16→0.1.17`
-
-## v0.1.16 · 2026-08-21
-
-- **新增规则:广告法 第二十七条 · 农作物种子 / 种养殖广告无根据的产量 / 效益保证**(severity `Violation`)
-  - 新规则 id `ad_signage_art27_seed_yield_guarantee`,category `agricultural`(新增 CategoryDisplay 中文 label 「农业投入品广告」)
-  - 触发模式:种子 / 种苗 / 农药 / 兽药 / 饲料 / 化肥广告中含「必增产 / 保证增产 / 确保增产 / 承诺增产 / 产量保证 / 产量承诺 / 高产保证 / 保证丰产 / 保证稳产 / 效益保证 / 效益承诺 / 增产达 / 亩产保证 / 科学上无法验证」等无根据的产量 / 效益断言或保证性承诺
-  - 法规依据:《广告法》第二十七条(原文已在 `知识库/广告业务/中华人民共和国广告法.md` L185-193,适用判别要点已扩 §27 条目)+ 第五十八条处罚条款
-  - 触发案例:玉米种子高速广告「必增产」现在报 Violation(此前 0 命中)
-- **`AdSignageRule` 规则库 v5 → v6**(118 → 120 条)
-- **fixture 转写修正**:`AdSignageMentorFiveImageRegressionTest` 中 5_2011 玉米种子广告 fixture 文本「增产必选」修正为「必增产」(与原图 OCR 一致;此前手转写笔误)
-- 单元测试全绿(`testDebugUnitTest -PmodelProfile=shell`)
-- `versionCode 15→16`,`versionName 0.1.15→0.1.16`
-
-## v0.1.15 · 2026-08-21
-
-- **新增规则：广告法 第十一条第二款 · 数据未标明出处**（severity `Warning`）
-  - 新规则 id `ad_signage_art11_data_citation`，category `signage`
-  - 触发模式：广告使用数据 / 统计资料 / 调查结果 / 文摘 / 引用语（典型句式 "X 万人 / 累计 X 万次 / 同比增长 X% / 排名第一"），且**未标明出处**（无 "数据来源 / 据 X 报告 / 截至 YYYY" 等表述）
-  - claim 触发词 38 个；sourceMarker 缓解词 21 个 + 2020-2030 完整年份（154 条）→ 命中 claim 且全无 sourceMarker 即报 Warning
-  - 触发案例：东郊到家 "全国技师超 9 万人 | 累计服务超 1000 万次" 现在报 Warning（此前 0 命中）
-- **`AdSignageRule` 扩展 `sourceMarkers` 字段 + `AdSignageRuleMatcher` 增加 absence 复合匹配**
-  - 旧规则 `sourceMarkers = emptyList()` 时行为字节级等价，118 条既有规则零回归
-- **东郊到家 OCR 真机 fixture 测试**（`PaddleOcrFixtureTest`，androidTest）：真机跑 PaddleOcrEngine，固化 baseline 至 `app/src/test/resources/fixtures/dongjiao_baseline.json`；端侧可检出 + 触发 §11(2)
-- **5 张 mentor 图 OCR smoke test**（`MentorOcrSmokeTest`，androidTest）：防止 OCR 阈值调过头；预发版跑
-- **知识库 `中华人民共和国广告法.md`**：适用判别要点加跨域引用原则（广告招牌 tab 不引食品标识等非广告业法规）+ §11(2) 判别要点
-- 单元测试全绿（`testDebugUnitTest -PmodelProfile=shell`）；真机 androidTest 已过（华为 nova 6）
-- 已知边界：v1 absence 检测是全局 sourceMarker 检测，商业套语 "据用户反馈" 会被误识别为已标注来源（假阴性）；v2 同段复检会收紧，留作后续 spec
-- `versionCode 14→15`，`versionName 0.1.14→0.1.15`
-
-## v0.1.14 · 2026-08-21
-
-- 修复 v0.1.13 的 UI 缺陷:设置页「检查更新」中,新版本可用卡片的下载按钮被展开的 changelog 挤出屏幕、点不到
-- 新增更新详情独立页面:点卡片上「查看更新详情」进入,可滚动查看完整 changelog
-- 优化:广告招牌规则库 v4 → v5(118 条);紫玉米 0 → 8 Violation、蟹都汇 0 → 7 Warning,完整规则扩展清单见详情页
-- 升级链路:旧版本客户端可正常升级到 v0.1.14(vision-latest.json 字段后向兼容 + 签名证书不变)
-- `versionCode 13→14`,`versionName 0.1.13→0.1.14`
-
-## v0.1.13 · 2026-08-20
-
-- **ad_signage 规则升级:v4 (116 条) → v5 (118 条)**(基于导师视角 5 张测试集现场照片复核发现 3 类系统漏报):
-  - **扩展 `ad_signage_art9_abs_top` 关键词 +6**(`ad_signage_art9_abs_top` 关键词已从 5 升至 11):`首个` / `首家` / `首选` / `领导品牌` / `领军品牌` / `首屈一指` — 不再只属于化妆品行业,任何行业的极限词都进通用 §9(三) 规则。
-  - **扩展 `ad_signage_art28b_fake_data` 关键词 +15**(原 5 升至 20):`全国第一` / `全国销量第一` / `全国门店数量第一` / `全国连锁数量第一` / `行业第一` / `全网销量第一` / `市场占有率领先` / `销量遥遥领先` / `全国第一品牌` + 6 个 OCR 倒序复合形式(`销量全国第一` / `门店数量全国第一` / `连锁门店数量全国第一` / `门店数量第一` / `连锁数量全国第一` / `门店数量行业第一`) — 不再只属于农药 / 兽药行业,任何行业的虚假销量 / 排名数据都进通用 §28(二) 规则。
-  - **调整类目归属**:`ad_signage_pesticide_art6_endorsement` / `ad_signage_veterinary_art7_endorsement` 移除 `全国第一`(挪到通用 `art28b_fake_data`),避免类目误归(蟹都汇礼券 "全国第一" 不再被归为农药 / 兽药)。
-  - **新增 2 条 signage 普通食品医疗宣传规则**(类目 `signage` / 严重度 `Violation`):
-    - `ad_signage_signage_food_function_claim`(38 kw):保健功能宣称 — `增强免疫` / `调节免疫` / `提高免疫力` / `调节血糖` / `控糖稳血糖` / `降血糖` / `稳血糖` / `降血压` / `稳血压` / `调节血脂` / `保护心血管` / `软化血管` / `清理血管` / `保护视力` / `保护眼睛` / `护眼` / `护双眼` / `促进消化` / `调理肠胃` / `修复胃黏膜` / `养胃` / `护胃` / `调节内分泌` / `排毒` / `排毒养颜` / `抗衰老` / `延缓衰老` / `降三高` / `调节三高` / `降糖稳糖` 等。
-    - `ad_signage_signage_food_disease_target`(20 kw):疾病指向 — `糖尿病患者` / `糖尿病人的` / `高血压患者` / `癌症病人` / `肿瘤病人` / `冠心病患者` / `心脑血管病人` / `关节炎患者` / `骨质疏松患者` / `便秘患者` / `痔疮患者` / `前列腺患者` / `男性健康` / `妇科疾病` / `妇科炎症` / `白癜风` / `牛皮癣` / `抗癌` / `防癌` / `抗癌防癌`。
-    - 法规依据:《广告法》第十七条 + 第十八条 + 《食品标识监督管理办法》— 普通食品 / 保健食品广告不得涉及疾病预防、治疗功能,不得作保健功能宣称。
-- **5 张测试集现场照片回归命中数**(v4 → v5):
-  - 紫玉米 0 → **8 Violation hit**(`food_function_claim` × 7 + `food_disease_target` × 1)
-  - 蟹都汇 0 → **7 Warning hit**(`art28b_fake_data` × 4 + `art9_abs_top` × 2 + `art9_edu_abs` × 1)
-  - 杜蕾斯 0 → **2 Warning hit**(`art9_abs_top` × 1 + `cosmetic_art9_abs_extended` × 1)
-  - 玉米种子 0 → 0(OCR 无标准违规短语;扩展需新增农业投入品域规则)
-  - 东郊到家 0 → 0(OCR 无标准违规短语;扩展需新增上门服务域规则)
-- **新增 `AdSignageMentorFiveImageRegressionTest`**:5 张现场采集照片的 fixture OCR 转写 + 导师硬期望断言(每张图必命中 ruleId + 必命中 matchedText + 必命中 severity);与 `AdSignageRuleMatcherTest` 9 个 v5 用例协同,覆盖 v5 关键词扩展、2 条新规则、规则间 dedupe、不与现有 `disease_prevention` shadow、跨 category 共存。
-- **泛化保证**:本次 v5 关键词扩展均针对同类真实广告常见写法(不针对测试图片);后续类似广告图片(其他食品 / 保健食品 / 其他行业极限词 / 其他行业虚假排名)将自动命中。
-- 单元测试全绿(338 条),`testDebugUnitTest -PmodelProfile=shell` 路径不变。
-- `versionCode 12→13`, `versionName 0.1.12→0.1.13`。
-
-## v0.1.12 · 2026-08-20
-
-- **修复 v0.1.11 的"桌面 A/B ≠ 真机行为"隐患**(SDK 反编译确认):
-  - v0.1.11 `PaddleOcrEngine` 传 `PaddleOCRConfig()`(SDK v3.7.0 默认值 = `detLimitSideLen=64, detLimitType="min", detThresh=0.3, detBoxThresh=0.6, detUnclipRatio=1.5, recScoreThresh=0.0, recBatchSize=1`),与 v6 模型卡(960/max/0.2/0.45/1.4)不一致,会吃掉一部分 v6 小字召回优势;桌面 A/B 是 960/max 路径,但真机 SDK 走 64/min + 2048 px 全分辨率 BitmapLoader 输出,两套 pipeline 行为差 4.5 倍像素量。
-  - v0.1.12 显式对齐 v6 模型卡:`PaddleOCRConfig(detLimitSideLen=960, detLimitType="max", detThresh=0.2f, detBoxThresh=0.45f, detUnclipRatio=1.4f)`。
-  - 顺手把 `recScoreThresh` 从 0.0 提到 0.5(v6 实测平均置信 0.882,0.5 过滤低置信噪声但不丢真实文字);`recBatchSize` 从 1 提到 6(行宽差异大时 padding waste 较 8 小,1 vs 6 实际提速待真机验证,已在 smoke 记录里标注为 Phase 2 项)。
-- **修复 `BitmapLoader.sampleSize` 2049→1024 像素悬崖**:原算法 `while (longest/sample > maxEdge) sample *= 2` 是 ceiling-based,2048 px 图保持原分辨率,2049 px 图直接砍到 ~1024 px(50% 信息丢失);4096 px → 2048 px,4097 px → 1024 px(同样 50% 跳变)。改为 floor-based:2048 / 2049 都保持 inSampleSize=1,4096 / 4097 都保持 inSampleSize=2,bitmap 偶尔略超 maxEdge(最多 +1 px 量级)但从不悬崖。`sampleSize` 仍为准确的 box 坐标映射因子。
-- **文档修正**:`docs/smoke/2026-08-20-icevision-v6-upgrade.md` 中"DetResizeForTest: null # v6 = limit_side=960 / limit_type=max(SDK 内部默认)"是错的(实际 SDK 不读 det yml),已改为"SDK 内部默认 — 实际不读此 yml"+ v0.1.12 修复说明;`det/inference.yml` 标注为"死资产"(SDK 反编译确认 `models/det/inference.yml` 字符串不在 classes.jar 任何位置)。
-- `versionCode 11→12`, `versionName 0.1.11→0.1.12`。
-- 单元测试沿用(v0.1.11 全 317 条绿),预期全绿;真机 instrumentation A/B 是下一阶段门控项,当前未引入。
-- 真机验证缺口(2026-08-20 当前未跑):`recBatchSize=6` 实际加速;`detLimitSideLen=960` vs `1536` vs 全分辨率的延迟-检出取舍;`recScoreThresh=0.5` 是否误杀真实文字 — 这些都依赖标注集或真机 log,Phase 2 + 桌面 A/B 工具 `D:\tmp\ocr_compare\` 复用可降低工作量。
-
-## v0.1.11 · 2026-08-20
-
-- **OCR 模型升级:PP-OCRv5_mobile → PP-OCRv6_small**(基于 4 张实拍广告招牌 A/B 实测:见 [`docs/knowledge/ppocrv6_vs_v5_a_b_test.md`](docs/knowledge/ppocrv6_vs_v5_a_b_test.md)):
-  - **检出文本行数 +12%**(101 → 113 行 / 4 张合计);**平均置信度 +5.4%**(0.837 → 0.882);**单图平均耗时 −10%**(1.88 s → 1.70 s)。
-  - **关键胜负手**:蟹都汇"大闸蟹连锁门店数量全国第一"v5 误识为"大蟹年量全国谢"导致漏报;v6 完整检出"全国第一",并经 AC 自动机触发广告法 §9 绝对化用语 4 条规则联触发(art9_abs_top / art9_edu_abs / pesticide_art6 / veterinary_art7);**AdSignage 规则命中数:1 → 5(5×)**。
-  - 模型文件:`det/inference.onnx` 4.83 MB → 9.88 MB(+5.05 MB);`rec/inference.onnx` 16.53 MB → 21.16 MB(+4.63 MB);rec 字典 6623 → 18708 条(PaddleOCR 官方 v6 multilingual 大字典)。
-  - 代码层无任何改动:`PaddleOcrEngine.kt` 全部参数通过 yml 读入(asset path 之外无 dict/image_shape hardcode);`app/build.gradle.kts` `ice_ocr_rules` profile 路径对 v5/v6 完全透明;`tools/download-ppocr-models.sh` 默认 variant 切换即可。v5 模型文件已备份至 `%TEMP%/ppocr_v5_backup/` 供回滚。
-  - `tools/download-ppocr-models.sh` 默认参数 `pp-ocrv5_mobile` → `pp-ocrv6_small`(命令行显式传 `pp-ocrv5_mobile` 仍可一键回滚)。
-  - `app/src/main/assets/models/{det,rec}/inference.{onnx,yml}` 5 个文件随发布 APK 体积约 +9.7 MB(解包 + 压缩后);native libs(jniLibs)未变。
-- **决策依据 + 局限性**(写在 [`docs/knowledge/ppocrv6_vs_v5_a_b_test.md`](docs/knowledge/ppocrv6_vs_v5_a_b_test.md) 顶部,供后续维护者复核):测试集 4 张图不构成完整评测集,差异是趋势性的 ±10% noise 范围,但官方 PaddleOCR 公开 benchmark 与 v6_small 中文场景精度提升已与本次实测一致。后续如需做 ≥30 张标注集评测,已留 benchmark 脚本 `D:\tmp\ocr_compare\compare.py` + `D:\tmp\ocr_compare\match_rules.py` 可直接复用。
-- `versionCode 10→11`, `versionName 0.1.10→0.1.11`。
-- 单元测试全绿(代码层无变更,纯 asset 替换);release pipeline 待发版时走 `assembleRelease → generateVisionLatestJson → archiveVisionRelease → uploadVisionReleaseToGitea` 全套。
-
-## v0.1.10 · 2026-08-19
-
-- **产品方向调整**:UI 层只暴露「广告招牌」tab;「食品标识」tab 入口暂时对用户隐藏(原因与可复制模式边界见 CLAUDE.md 「产品方向(v0.1.10 起):广告招牌 单一焦点」段)。
-- 实现层细节:
-  - [RuleTabBar.kt](app/src/main/java/com/icespiritai/offline/ui/home/RuleTabBar.kt) 内部 `visibleTabs = listOf(RuleTab.AdSignage)`,`TabRow` 只渲染一项;`RuleTab.FoodLabeling` enum 项保留,顶部 KDoc 明示"恢复时把 `visibleTabs` 改回 `RuleTab.entries.toList()` 即可"。
-  - 完整代码路径保留:`FoodLabelRuleMatcher` + `FoodLabelRuleLoader` + ViewModel `matcherFor(tab)` 双分支 + `food_label_rules.json`(66 条 / v4)+ `知识库/食品标识/` 9 份 markdown + `FoodLabelRuleMatcherTest` + `IceSpiritVisionViewModelTabTest` 双 tab 路由断言均完整保留,后续广告招牌模式打磨成熟后可直接复用模板启用食品标识 tab。
-  - `app/src/main/res/values/strings.xml` 的 `tab_food_label="食品标识"` 字符串保留(代码 enum 引用)。
-  - `知识库/` 双域 markdown 完整保留;广告业务目录是当前打磨中的成熟参考,食品标识目录是待后续套用的对象。
-- 打磨策略:ad_signage_rules.json 关键词命中 / 严重度分级 / category 显示 / 证据包导出全部以"可复制到下一个视觉判别域"为标尺优化,达标后再以同样模式启用 FoodLabeling tab。
-- `versionCode 9→10`, `versionName 0.1.9→0.1.10`。
-- 单元测试全绿(`./gradlew.bat testDebugUnitTest -PmodelProfile=shell` 路径不变);`IceSpiritVisionViewModelTabTest` 双 tab 路由断言保留,持续覆盖代码路径不被静默损坏。
-
-## v0.1.9 · 2026-08-19
-
-- 修复 v0.1.8 引入的 6 处文档/规则准确性问题(全部为 OCR 命中后援引法规条文不应误导):
-  1. `ad_signage_art11_fake_patent`:`lawText` 拼接伪条文(严重)。原条文把专利条款塞进第十一条 + 杜撰"应当标明许可批准文号"句 — 实际**现行《广告法》第十二条**才是专利条款(三款:标明专利号和专利种类 / 不得谎称取得 / 禁止未授予 + 已终止 + 已撤销 + 无效专利作广告);**第十一条**是行政许可内容相符 + 引证内容(数据 / 统计资料 / 调查结果 / 文摘 / 引用语)。`regulation` 字段同步改为"《广告法》第十二条 + 第五十九条第一款第(三)项",删除"第十一条"误导引用;`lawText` 改写为现行第十二条三款原文 + 第五十九条第一款第(三)项罚则,并增注:专利违法对应 §59(1)(三) 不是 §11。
-  2. `food_art28_function_claim_unauthorized`:`lawText` 拼接《食品安全法》§75 / §76 / §78 错引(严重)。实际**《食品安全法》§75 = 保健功能声称应科学依据 + 不得对人体产生急性、亚急性或慢性危害**(不涉及疾病预防治疗);**§76 = 保健食品注册与备案**(不是"其他食品不得声称保健功能");**§78 = 保健食品的标签、说明书不得涉及疾病预防、治疗功能**(但这条对应的是保健食品而非其他食品);**"保健食品之外的其他食品不得声称具有保健功能"** 实际在《食品安全法实施条例》第三十八条,不是《食品安全法》。`regulation` 改为"食品标识监督管理办法 第七条第二款 + 第四十三条(依食品安全法实施条例第六十八条处罚) + 食品安全法实施条例 第三十八条 + GB 7718-2011 §3.6";`lawText` 删除 §75 / §76 / §78 错引,改为实施条例 §38 原文 + 监督办法 §7(2) + §43 + GB 7718-2011 §3.6 + 注:§75 / §76 与本规则主题"其他食品不得声称保健功能"无直接对应关系。
-  3. `food_health_claim_unapproved` `lawText` 错别字 "虎底条款" → "兜底条款"(食品标识监督管理办法第七条第一款第五项为兜底条款,本身无明示罚则)。
-  4. `food_gb7718_art4_1_4_allergen_disclose` 规则 id 重命名 → `food_gb7718_art4_4_3_allergen_disclose`(原 id 仍用 §4.1.4 配料的定量标示,与 rule body 已对齐的 §4.4.3 致敏原推荐性标示编号不一致;现按内容正确编号命名)。同步更新 `知识库/食品标识/GB_7718-2025_致敏原强制标示.md` L69 表格 + `app/src/test/.../FoodLabelRuleMatcherTest.kt` L522 测试。
-  5. `知识库/广告业务/中华人民共和国广告法.md` `## 原文` L75 / L81 编号错位修正(原档 1994 年旧编号标"第十一条"填的是 2015 / 2021 现行专利条款,应改为第十二条;原档"第十二条"占位填的是 2015 / 2021 现行第十一条行政许可 + 引证内容,应改为第十一条),`## 适用判别要点` L469 同步改"广告法 第十一条"为"广告法 第十二条"并补"第五十九条第一款第(三)项,对广告主处十万元以下的罚款"罚则说明;`§19 / §20` 经核对实际 L129 / L131 已是现行正确编号,不存在 agent 历史批注描述的"互换"问题,本批未动。
-  6. **食品标识域 知识库 10 处 stub 全部回填**(`食品标识管理规定.md` 3 处 + `GB_7718-2011_预包装食品标签通则.md` 5 处 + `GB_13432-2013_预包装特殊膳食用食品标签通则.md` 2 处)。`食品标识管理规定.md` 全文 5 章 42 条逐字回填(国务院公报 2008 年第 14 号刊载页 + 2009 总局令第 123 号修订合并版),头部加注 2027-03-16 起被《食品标识监督管理办法》替代。`GB_7718-2011_预包装食品标签通则.md` §4.3 标示豁免 + §4.4 推荐标示(含 §4.4.3 致敏物质 a-h 完整清单)+ 附录 A / B / C 逐字回填(NHC 官方 PDF)。`GB_13432-2013_预包装特殊膳食用食品标签通则.md` §4.6 包装最大表面面积 < 10 cm² 豁免条款逐字回填(食品伙伴网法规中心比对解读引文 + 多源交叉印证)。`curl -sL -A "Mozilla/5.0"` 绕过 WebFetch 域验证阻断策略实证可用。
-- 单元测试 36 + 新增测试 0 条,沿用现有测试覆盖:`scan_gb7718Art4Allergen_firesOn含花生` 因 id 改名需同步更新 rule id 字段,`scan_art28FunctionClaimUnauthorized_firesOn辅助降血脂` 因 regulation 字段引用已重写为现行 §7(2) + §43 + 实施条例 §38,同步更新。
-- `versionCode 8→9`, `versionName 0.1.8→0.1.9`。
-- 无新增功能,无对外 UI 改动。
-- **(2026-08-19 +1 追订)** `知识库/食品标识/食品标识管理规定.md` `## 适用判别要点` 章节 off-by-one 修正:判别要点 §30-§37 原误对齐到原文 §31-§38(全部 -1 错位),§26 误改为"兜底引用"占位(原文 §26 实际是"未附加标识 1 万元以下"的具体罚款条款),§28 漏掉"第九条"(日期与保质期),§36(违反第二十二条第一款多件混合独立包装)缺失,§37 误指 §38(执法监管条款)。本批按原文 153-179 行 §26-§38 逐条重写判别要点章节,off-by-one 全部消除;关键词集合保持向下兼容(规则引擎 JSON 沿用原关键词未改);`## 数据采集说明(2026-08-19)` 末段改写为修正批注。版本号不变,KB 文档微调不单独 bump。
-- **(2026-08-19 +2 追订)** 4 处微小瑕疵清理:
-  1. `ad_signage_art11_fake_patent` 规则 id 重命名 → `ad_signage_art12_fake_patent`(原 id `art11` 与实际引用的现行《广告法》第十二条编号不一致);同步更新 `app/src/test/.../AdSignageRuleMatcherTest.kt` L165 测试。
-  2. `ad_signage_art12_fake_patent` `lawText` 引用《广告法》第五十九条第一款第(三)项时,"由市场监督管理部门责令改正" → "由市场监督管理部门**责令停止发布广告**"(法条原文用词)。
-  3. `知识库/广告业务/中华人民共和国广告法.md` 末尾 `## 数据采集说明(2026-08-19)` 第 3 条 `结构性遗留` L515 / L516 过时批注改写:明示 v0.1.8 commit `0fe7902` 阶段状态 + v0.1.9 commit `6c45879` 阶段修正结果(§11 / §12 编号已对齐,§19 / §20 经 grep 复核不存在互换)。
-  4. `food_art28_function_claim_unauthorized` `lawText` 末尾"本批已删除先前错引"过程性元注释清理,改为"第七十五条 / 第十六条 / 第七十八条均针对保健食品本身,与本规则主题'其他食品不得声称保健功能'无直接对应关系"。
-- 版本号保持 0.1.9(规则 id 重命名不影响规则匹配;KB / lawText 措辞微调属文档层调整)。
-
-## v0.1.8 · 2026-08-19
-
-- 修复 v0.1.7 引入的 7 处文档/规则准确性问题(全部为 OCR 命中后援引法规条文不应误导):
-  1. `food_gb7718_art4_1_4_allergen_disclose`:清除 "**GB 7718-2025 §5 致敏原十一大类强制**" 误判,该强制性依然为原八大类(麸质谷物 / 甲壳类 / 鱼类 / 蛋类 / 花生 / 大豆 / 乳 / 坚果);芹菜 / 芥末 / 芝麻 / 二氧化硫及亚硫酸盐为 GB 7718-2025 §5 推荐性标识非强制,OCR 命中"含芝麻""含芹菜"等不应误判为强制标示缺失。同时修正 `regulation` 字段:GB 7718-2011 §4.1.4 实为"配料的定量标示"(与致敏原无关),致敏原原文在 §4.4.3。
-  2. `food_health_claim_unapproved`:`regulation` 字段 `第四十四条` → `第四十三条`(依食品安全法实施条例第 68 条处罚);补充注:第七条第一款第五项为兜底条款本身无明示罚则,通过 §7 第二款 + §43 处理。
-  3. `food_art28_function_claim_unauthorized`:`regulation` 字段 `第二十八条 + 第四十四条` → 主体改引 **食品安全法 §75 / §76 + 食品标识监督管理办法 §7 第二款 + 第四十三条 + GB 7718-2011 §3.6**(第二十八条实际是"保健食品名称标注格式",非本规则主题);删除 `第二十八条` 误导引用。
-  4. `food_gb13432_infant_breastmilk_substitute`:`lawText` 食品安全法 §81 句原误将"特殊医学用途婴儿配方食品" 拼入 §81 主体(应属 §80),现拆分清楚:§81 主体是 0~6 月龄婴幼儿配方乳粉 / 婴幼儿配方液态乳配方注册 + 不得分装;同时新增 **广告法 §20** 母乳代用品禁令引用。
-  5. `app/prepare-ocr-rules.gradle.kts` 头注释修复:prompt 仍写「10 golden rules / 6 golden rules」→ 「116 rules / 66 rules / v4」。
-  6. `知识库/食品标识/GB_7718-2025_致敏原强制标示.md` 整份重写:删去"十一大类强制"主线,改为「8 类强制 + 4 类推荐(芹菜 / 芥末 / 芝麻 / 二氧化硫及亚硫酸盐)」;`food_gb7718_art4_1_4_allergen_disclose` 与 JSON 主体一致;增"关键正误"段,明示先前误判。
-  7. `知识库/食品标识/README.md` 第 17 行 GB 7718-2025 条目同步为"**强制清单仍为八大类**,芹菜 / 芥末 / 芝麻 / 亚硫酸盐为推荐性非强制;替换 GB 7718-2011 §4.4.3 推荐性标示"。
-- 顺带:**广告业务知识库 43 处 stub 全部回填**(`中华人民共和国广告法.md` 18 处 + `广告管理条例.md` 2 处 + `药品医疗器械保健食品特殊医学用途配方食品婴幼儿配方乳粉广告管理办法.md` 9 处 + `房地产广告发布规定.md` 1 处 + `医疗广告管理办法.md` 0 处新增 + `城市市容和环境卫生管理条例.md` 5 处 + `农药广告审查发布规定.md` 2 处),逐条引用 flk.npc.gov.cn / gov.cn 国务院公报 / 食品伙伴网 原文校对;Agent 实证可用 `curl -sL` 绕过 WebFetch 域验证阻断。
-- `app/src/main/assets/rules/food_label_rules.json` 总条数保持 66 条(仅 lawText / regulation 字段修正,无新增/删除规则)。
-- `versionCode 7→8`, `versionName 0.1.7→0.1.8`。
-- 无新增功能,无对外 UI 改动。
-
-## v0.1.7 · 2026-08-19
-
-- 修复 7 处文档/规则准确性问题(OCR 命中后援引的法律条文不再误导):
-  1. `ad_signage_rules.json` `ad_signage_art10_minor` 删除 2 句与广告法 §10 无关的伪条文(原文仅一句「广告不得损害未成年人和残疾人的身心健康」);`lawText` 现仅保留 1 句《广告法》第十条 + 1 句《食品标识监督管理办法》第八条。
-  2. `food_label_rules.json` 将 `food_infant_formula_unregistered`(原错误地将食品安全法 §80 特殊医学用途与 §81 婴幼儿配方乳粉合并)拆为 2 条:`food_fsmp_register_required` (§80 + 食品标识监督管理办法 §31) 与 `food_infant_formula_milk_register` (§81 + 总局令第 80 号《婴幼儿配方乳粉产品配方注册管理办法》);`food_label_rules.json` v3 → v4,总 65 → 66 条。
-  3. `food_art30_infant_claim` 移除「第四十一条(依食品安全法第 125 条第 1 款处罚)」引用(§41 处罚列表不含 §30,属错误归责);改为「(依 GB 13432-2013 §3.c 联合落地)」+ lawText 内显式注:第三十条未设明示罚则,涉嫌虚假/引人误解宣传并入第七条第一款第二项查处。
-  4. `food_health_claim_unapproved` + `food_art28_function_claim_unauthorized` 两处曾引用的《食品标识管理规定》§19 为整档 stub [未检索到全文] 的占位引用,统一改为《食品标识监督管理办法》第七条第一款第五项+第二款 + 第四十四条(已落地 KB);`food_art28_function_claim_unauthorized` 同步把 §41 改为 §44(§28 实际落在 §44 罚则列表,§41 不含 §28)。
-  5. `food_gb13432_infant_breastmilk_substitute` regulation 字段原写「卫生部令第 1 号」修正为「卫妇发〔1995〕第 5 号」并标注 2017-12-13 已废止 + 现行替代文件(食药监食监一〔2013〕214 号);`food_gb7718_art4_1_4_allergen_disclose` regulation 原错误引用 GB 31644-2018(实际是《食品安全国家标准 食品添加剂 天然胡萝卜素》),改为 GB/T 23779-2009(2025-03-28 废止) + GB 7718-2025 §5(致敏原强制标示,2027-03-16 施行)联合引用。
-  6. `知识库/广告业务/README.md` 第 11 行《中华人民共和国广告法》条目从「2023年修正」改为「2018 第一次修正 / 2021 第二次修正」(2023 年系误植,实际两轮修正分别在 2018-10 与 2021-04)。
-  7. `CLAUDE.md` + `app/build.gradle.kts` + `知识库/广告业务/医疗广告管理办法.md` 三处过时引用 `ad_law_rules.json` / 「10 条 golden rules」全部更新为 `ad_signage_rules.json` / `food_label_rules.json` + 116/66 条 + AdSignageRuleMatcher + FoodLabelRuleMatcher。
-- 同步知识库 4 处修正:`知识库/广告业务/药品医疗器械保健食品特殊医学用途配方食品婴幼儿配方乳粉广告管理办法.md` header 由「管理办法(拟修订名)+ 婴幼儿配方乳粉未并入 + 总局令第 21 号(2019-12-24 / 2020-03-01) + 暂行办法」替代「总局令第 60 号(2023 拟订)未检索到」占位文本;新增 3 份 markdown:`母乳代用品销售管理办法.md`(卫妇发〔1995〕第 5 号 + 2017-12-13 废止说明)/ `GB_7718-2025_致敏原强制标示.md`(国家卫健委 + SAMR 联合发布,十一大类清单)/ `婴幼儿配方乳粉产品配方注册管理办法.md`(总局令第 80 号 现行版,替代第 26 号令);`知识库/食品标识/README.md` 索引同步追加 3 条。
-- `AssetRuleLoaderTest.load_parsesActualBundledFoodLabelAssetShape` 同步:`assertEquals(3, ...)` → `assertEquals(4, ...)`,最低规则数断言同步上调。
-- 无新增功能,无对外 UI 改动。
-
-## v0.1.6 · 2026-08-19
-
-- 「广告招牌」域规则库 v3 → v4:再扩 31 条,总 116 条(85 既有 v3 + 31 v4)。
-- 覆盖 3 部新增法规:①《化妆品监督管理条例》(国务院令第727号,2021-01-01 施行)12 条 — §23 第(一)-(七)项必载内容缺失(特殊化妆品注册证号/普通化妆品备案号/注册人名称地址/生产许可证号/全成分/净含量/使用期限+使用方法+安全警示)/ §17 特殊化妆品分类(染发/烫发/祛斑美白/防晒/防脱/新功效)/ §20 功效宣称科学依据 / §25 第二款 医疗作用明示暗示 + 第一款 虚假或引人误解;②《关于进一步规范金融营销宣传行为的通知》(银发〔2019〕316 号,央行等四部门,2020-01-25 施行)10 条 — 第三条第(一)-(七)项"八个不得"完整覆盖(超范围/欺诈+保证性承诺/利用监管机构名义/损害知情权/损害公平竞争/利用政府公信力/利用互联网不当营销/违规发送营销信息)+ 强化版 §25(二)代言禁止 + §9(三)+§25 投资广告绝对化用语;③《互联网广告管理办法》(SAMR 令第72号,2023-05-01 施行)9 条 — §6 可识别性 + §6(2) 软文/测评/分享需显著标明"广告" / §21 竞价排名 / §15 一键关闭 + 弹窗广告 / §9(2) 健康养生变相发布医疗药品广告 / §8(1) 互联网发布烟草电子烟 + 处方药 / §7 医疗药品医疗器械等事前审查 / §22 算法推荐告知义务。
-- 「食品标识」域规则库 v2 → v3:再扩 29 条,总 65 条(36 既有 v2 + 29 v3)。
-- 覆盖 3 部法规细化落地:①《GB 28050-2011 预包装食品营养标签通则》12 条 — §4.1 强制标示内容 + §4.4 反式脂肪酸强制标示 + §5.2 含糖声称(无糖/低糖)+ §5.3 脂肪声称(低脂/脱脂)+ §5.4 钠声称(低盐/低钠/无盐)+ §5.5 膳食纤维声称 + §5.6 矿物质声称(钙/铁/锌)+ §5.7 蛋白质声称 + §5.8 比较声称(减少/增加)+ §6 营养成分功能声称(有助于/促进/补充等标准用语)+ §3.2 中外文对照 + §3.6 最小销售单元;②《GB 13432-2013 预包装特殊膳食用食品标签》6 条 — §3.a 不得涉及疾病预防治疗 + §3.c 0-6 月龄婴儿配方不得做含量声称和功能声称 + §4.2 食品名称合规 + §4.3 能量与营养成分标示 + §4.4 适用人群与不适宜人群必标 + §3.c + 《母乳代用品销售管理办法》联合落地婴幼儿配方"代替母乳"宣称禁令;③《GB 7718-2011 预包装食品标签通则》8 条 — §4.1.4.1 配料表按递减顺序 + §4.1.3 食品添加剂具体名称 + §4.1.4 过敏原标识 + §4.1.7 生产批号 + §4.1.6 进口食品原产国/进口商 + §4.1.5 贮存条件 + §4.1.6.2 生产日期与保质期格式 + §4.1.5.3 净含量;另有 3 条食品标识监督管理办法 + 食品安全法细化(质量等级/特殊人群/中外文翻译/未经注册的功能声称)。
-- 新增 2 个 AdSignageCategory 中文 label:「化妆品广告」+「互联网广告」(原 11 个键 → 13 个键)。
-- 新增 62 条单元测试覆盖每条新规则的关键词命中 + 1 条多规则联触发用例。
-- 知识库增 3 份新 markdown + 广告业务 README 索引同步:广告业务目录下现有 15 份法规(原 12 份 + 化妆品监督管理条例/互联网广告管理办法/关于进一步规范金融营销宣传行为的通知)。
-- 严重度分布(广告招牌 116 条):42 Violation + 60 Warning + 14 Info;严重度分布(食品标识 65 条):29 Violation + 25 Warning + 11 Info。
-
-## v0.1.5 · 2026-08-19
-
-- 「广告招牌」域规则库 v2 → v3:再扩 43 条,总 85 条(10 既有 v1 + 32 v2 + 43 v3)。
-- 覆盖 4 部新增法规:①《医疗器械广告审查发布标准》(国家工商总局/卫生部/食药监局令第40号,2009)8 条 — 个人自用必标提示语 / 禁忌必标 / 必载生产企业+注册证号+广告批准文号 / 7 类禁止内容(功效断言/治愈率/比较/科研机构推荐/无效退款承诺);②《农药广告审查发布规定》(国家工商总局令第81号 + SAMR 令第31号修订,2015/2020)10 条 — 未经批准不得发布 / 不得超出登记范围 / 5 类禁止内容 / 贬低同类 / 综合性评价 / 承诺禁止 / 批准文号必标;③《兽药广告审查发布规定》(国家工商总局令第82号 + SAMR 令第31号修订,2015/2020)10 条 — 4 类不得发布 / 5 类禁止内容 / 不得贬低 / 不得绝对化("最高技术"/"包治百病")/ 综合性评价 / 承诺禁止 / 批准文号必标;④《城市市容和环境卫生管理条例》(国务院令第101号,1992/2017/2020)结合《广告法》§32 落地 8 条户外广告细化 — 国家机关/学校医院/交通设施/楼顶/文物古迹/市政设施/风景名胜区/机场净空区域均禁设。
-- 同步补全广告法 §21(农药兽药饲料添加剂广告) / §29(互联网广告可识别性 + 一键关闭) / §30(广告主义务与资质) / §32(户外广告设置禁区) / §44(互联网信息服务提供者审查义务) / §46(发布前审查义务) 共 4 条补漏规则 + 1 条通用法规引致规则。
-- 新增 2 个 AdSignageCategory 中文 label:「农药类广告」+「兽药类广告」(原 9 个键 → 11 个键)。
-- 新增 32 条单元测试覆盖每条新规则的关键词命中 + 1 条多规则联触发用例。
-- 知识库增 4 份新 markdown + 1 份扩展 + README 索引同步:广告业务目录下现有 12 份法规(广告法/广告管理条例/城市市容和环境卫生管理条例/户外广告登记管理规定/房地产广告发布规定/医疗广告管理办法/医疗器械广告审查发布标准/药品医疗器械保健食品特殊医学用途配方食品广告审查管理暂行办法/农药广告审查发布规定/兽药广告审查发布规定/烟草广告管理暂行办法/城市市容和环境卫生管理条例)。
-- 严重度分布(总 85 条):20 Violation(硬性禁令) + 58 Warning(程序/格式/必载) + 7 Info(瑕疵提示)。
-
-## v0.1.4 · 2026-08-19
-
-- 「广告招牌」域规则库扩充 32 条:基于知识库《广告法》《医疗广告管理办法》《房地产广告发布规定》《户外广告登记管理规定》《药品、医疗器械、保健食品、特殊医学用途配方食品广告审查管理暂行办法》《烟草广告管理暂行办法》《广告管理条例》全 7 份现行法规落地 OCR 触发关键词,覆盖广告法 §9 5 项绝对禁止(国旗/国徽/国家机关/赌博迷信淫秽)、§11 假专利、§17 跨界疾病治疗、§20 母乳代用品禁止、§22 烟草广告禁播媒介、§23 酒类广告禁驾 + 暗示功效、§25 投资回报广告禁代言、§26 房地产广告 3 项禁止;医疗广告 §6/§7/§11/§13 八项限定 + 7 类禁 + 必载审查证明 + 新闻形式禁止;房地产广告 §4/§7/§8 面积必须为建筑面积 + 必载预售许可证号 + 禁止迷信;户外广告 §4/§10/§14 未登记不得发布 + 必载登记证号 + 内容真实合法;保健食品/非处方药广告必载警示语与蓝帽子;每条 `regulation` 字段串联到对应处罚条款(§42/§43/§55/§57/§58/§59)。
-- 规则 JSON 版本号 1 → 2;现有规则继续保留(增量模式,不覆盖既有 10 条);新增 26 条单元测试覆盖新规则的关键词命中。
-- 严重度分布:12 Violation(硬性禁令) + 26 Warning(程序/格式) + 4 Info(瑕疵提示)。
-
-## v0.1.3 · 2026-08-19
-
-- 「食品标识」域规则库扩充 30 条:基于《食品标识监督管理办法》(市场监管总局令第 100 号,2027-03-16 起施行)全 54 条落地 OCR 触发关键词,覆盖第七条 5 项禁止内容(疾病治疗 / 绝对化 / 封建迷信 / 特供专供 / 保健功能)、第八条未成年人标称、第十六条食品名称 3 类情形、第十八条分装标注、第十九条计量称重、第二十一至二十三条强制标示内容、第二十六至二十八条保健食品、第二十八条保健食品名称、第三十条婴幼儿配方、第三十三至三十六条销售标示要求、第三十九条 5 类瑕疵认定 + 第四十一至四十九条对应处罚区间。
-- 知识库《食品标识监督管理办法》全文 7 章 54 条已落地(SAMR lawId `4818998214a5419f983c177727527282` + OCR + pymupdf 文本层双重核对);配套下载脚本 `tools/download-samr-laws.py` 已落地,后续 PM 抓新规章可走 `python tools/download-samr-laws.py fetch <lawId> --dst 知识库/<域>/`。
-- 规则 JSON 版本号 1 → 2;现有规则继续保留(增量模式,不覆盖既有 6 条)。
-
-## v0.1.2 · 2026-08-18
-
-- 「拍照」按钮接入相机:点击直接拍照,不再跳到相册选图(首次会请求相机权限)
-- 移除了首页左下角与预览区重复的「请对正图片后点击拍照」提示,只保留预览区居中那一处
-- 首页顶栏「冰灵锐目」标题居中显示
-
-## v0.1.1 · 2026-08-18
-
-- 设置中新增「查看更新日志」入口:从这里可以查看每个版本的功能调整与修复
-- 设置项重排:「外观」提前,「检查更新」放到「外观」下方,逻辑更连贯
-
-## v0.1.0 · 2026-08-14
-
-- Phase 1 上线:PaddleOCR v3.7.0 + 广告法违规识别规则库(10 条 golden rules)
-- 完整工作流:选图/拍照 → OCR → 规则扫描 → 取证包导出
-- 广告法违规按严重等级(信息/警告/违规)分类展示,支持展开查看法条原文
-- 离线取证实景:整个识别与判定流程完全本地,不依赖云端
+
+- 修复了"切换到本地 TTS 引擎后点播放完全没声音"的大问题
+- 修复了底层 3 个根因(动态链接库版本不兼容、5 个必备小文件没下载、配置被误删)
+- 本地 TTS 引擎现在能正常出声了
+
+## v0.1.62 — 2026-09-09
+
+**修复了"语音引擎选择页面点'下载'按钮没反应"问题**。之前选"下载"标签那一块区域不会触发下载,只有点文字才触发,体验很奇怪。
+
+### 修复
+
+- 修复了"点 TTS 引擎选择页面的'下载'标签区没反应"的问题(现在整行点都能触发下载)
+
+## v0.1.61 — 2026-09-09
+
+**修复了 2 个 TTS 引擎问题**。本地引擎选项在选择器里看不到 + 朗读按钮的圆圈描边有点多余。
+
+### 修复
+
+- 修复了"语音引擎选择器里看不到'冰灵 TTS 引擎(本地)'选项"的问题
+- 修复了"首页朗读按钮外围圆圈描边视觉多余"的小问题
+
+## v0.1.60 — 2026-09-08
+
+**新增"冰灵 TTS 引擎(本地)"可选**。如果觉得系统自带的语音引擎声音不好听,可以下载本地引擎,纯本地运行,完全离线用,声音更自然。
+
+### 新增
+
+- 设置 → 语音播报 → 引擎 里多了"冰灵 TTS 引擎(本地)"选项
+- 首次启用时约 130 MB 模型从网络下载,之后纯本地运行,不依赖系统引擎
+
+### 修复
+
+- 修复了 3 个相关 TTS 设置问题(设置界面不动、引擎列表空、点下载无反应)
+
+## v0.1.59 — 2026-09-08
+
+**新增"识别结果朗读"功能**。识别完成后,可以点首页的朗读按钮,系统会把识别到的违规内容一条一条念出来,不用盯着屏幕看。
+
+### 新增
+
+- 首页顶部多了"朗读"按钮,识别完成后点一下开始朗读
+- 朗读内容按严重度排序:违规最严重的先念,然后是警告,最后是信息
+- 首次启用会弹一个"AI 识别仅供参考"的小说明,点"我了解"即可
+- 设置里新增"语音播报"区块,可以选语音引擎(系统默认 / 第三方)
+
+## v0.1.58 — 2026-09-04
+
+**广告业务规则库的法规引用新鲜度审计 + 3 处修复**。有些规则之前引用了已废止的法规或错误的条款号,这次都改正了。
+
+### 修复
+
+- 修复了 3 处引用了已废止法规的规则(比如《烟草广告管理暂行办法》早已被《广告法》吸收),改成引用现行法规
+- 修正了 1 处引用错号条款的规则(法规经过修订后编号变了)
+
+## v0.1.57 — 2026-09-04
+
+**广告业务规则库大扩充 —— 把 17 部现行法规全量阅读后新增 21 条规则**。让识别能力覆盖更广(从原本的 154 条增加到 175 条)。
+
+### 新增
+
+- 广告业务规则库扩充 21 条新规则,覆盖:烟草买赠、性别/年龄歧视、国家领导人形象、特供专供、未成年人诱导家长、贬低同业比较、萝卜坑式绝对化、医疗广告诱导、兽药/农药违规、房地产违规、直播电商违规等
+- 2 条原有规则升级严重度(教育/招商投资领域的极限词从警告升级为违规)
+- 4 条原有规则扩充关键词
+
+## v0.1.56 — 2026-09-04
+
+**修复了"对比式健康暗示广告"识别问题**。之前普通瓶装茶饮料用"每天 8 杯水,不如..."这种对比式宣传,暗示茶比水更健康,规则库没识别出来,现在能识别了。
+
+### 修复
+
+- 新增 1 条规则识别"对比式健康暗示"广告(普通食品用对比方式暗示保健功效)
+- 之前误判为"无违规"的真实广告样本,现在能正确触发
+
+## v0.1.55 — 2026-09-04
+
+**修复了"按摩店宣传治疗颈椎病"识别问题**。之前按"通用性"原则加了一些限定词,结果漏掉了按摩店宣传治病这种典型违规。现在改进了规则识别。
+
+### 修复
+
+- 修复了"非医疗机构宣传疾病治疗"识别不全的问题(比如按摩店宣传能治颈椎病)
+- 改进了规则触发条件,既不会误伤合法按摩服务,也不会漏掉违规按摩店
+
+## v0.1.54 — 2026-09-04
+
+**修复了"茶饮店误报农药/兽药违规"问题**。之前普通茶饮店因为含"不如"两个字,被错误地匹配到农药/兽药规则,现在改进了规则的识别范围。
+
+### 修复
+
+- 修复了"茶饮店、化妆品店等非农药/兽药类广告误触发农药/兽药规则"的问题
+- 给规则加了"领域限定词"——只有同时含特定领域关键词时才会触发,避免误伤
+
+## v0.1.53 — 2026-09-03
+
+**广告业务规则库扩充 2 条规则**。让真机识别能力从 70/71 提升到 71/71 张测试图。
+
+### 新增
+
+- 新增"极限词排名"规则(识别"哈十佳 / 全国十佳 / 十大品牌"等极限词排名)
+- 新增"食品成分宣称"规则(识别"无淀粉 / 零添加 / 纯天然"等无依据的成分宣称)
+
+## v0.1.52 — 2026-09-03
+
+**广告业务规则库扩充 2 条规则 + 修正 1 个误判案例**。之前有张测试图被错误判定为"无违规",实际是极限词违规,这次修正了判定并加新规则覆盖。
+
+### 修复
+
+- 修正了 1 张测试图被误判为"无违规"的问题(实际含"哈十佳"等极限词)
+- 新增"化妆品问题肌肤"规则(识别"皮肤太干 / 皮肤干燥"等暗示医疗作用的化妆品广告)
+- 扩展了"人民/人民共和国"关键词,覆盖 OCR 偶尔误识为"人正"的场景
+
+## v0.1.51 — 2026-09-03
+
+**广告业务规则库扩充 2 条规则**。让真机识别能力从 68/71 提升到 70/71 张测试图。
+
+### 新增
+
+- 新增"免税店冒用"规则(识别非海关监管场所冒充免税店)
+- 新增"教育领域极限词"规则(识别"培养面试状元最多"等公考培训极限词)
+- 扩展了"最 X"类极限词(最多 / 最高 / 最强 / 最新 等)
+
+## v0.1.50 — 2026-09-03
+
+**广告业务规则库扩充 1 条规则**。识别"玩梗式物化促销"广告(比如把女性作为可带走商品)。
+
+### 新增
+
+- 新增"玩梗式物化促销"规则(识别"一元钱带走老板娘"等把人物当商品的可笑营销话术)
+
+## v0.1.49 — 2026-09-03
+
+**广告业务规则库大扩充 + 71 张测试图审计**。分两轮扩展(15 + 2 + 1),让真机识别能力从 49/71 提升到 65/71 张测试图。
+
+### 新增
+
+- 广告业务规则库扩充 15 + 2 + 1 条规则,覆盖:大型赛事冠名、烟草体育赞助、军人形象、天安门政治符号、国家字样冒用、野生动物制品、招工收入保证、医疗承保承诺、外交背书、宣泄性酒类广告、非处方药陈列、医美医疗用语等
+- 71 张测试图对照真机 OCR 全量审计,26 张文件被重命名(原文件名跟实际图像内容对不上)
+
+## v0.1.48 — 2026-09-02
+
+**首页顶部标题字号 + Tab 样式微调**。
+
+### 调整
+
+- 首页标题"冰灵锐目"字号加大到 20sp(用户反馈之前的 16sp 太小)
+- 顶部 tab 改成软色 chip 样式(圆角更大 + 颜色更柔),前加一个小认证图标
+- 标签栏布局改得跟新的 20sp 标题协调
+
+## v0.1.47 — 2026-09-02
+
+**设置页三处微调**。
+
+### 调整
+
+- 设置页"关于"区域堆叠三行内容:应用名 / 版本号 / 监管单位署名
+- "查看更新日志"卡片样式统一(跟其他卡片视觉一致)
+- 首页标题字号短暂调小到 16sp(后被 v0.1.48 回拨到 20sp)
+
+## v0.1.46 — 2026-09-02
+
+**首页空态展示吉祥物胸像 + 后台死循环修复**。
+
+### 调整
+
+- 首页空态装饰图从一行文字改成吉祥物胸像(rembg 去底 PNG,固定 120dp)
+- 修复了一个"下载检测器死循环"问题(导致 gradle 测试任务挂 26 分钟,原因是 VM 构造时启动了定时器)
+
+## v0.1.45 — 2026-09-01
+
+**全项目兼容性审计 + 收口**。覆盖 4 维度(Android API / 中国 ROM / 硬件 / 屏幕形态),识别 6 个严重 + 16 个中等问题,本版本修复其中 2 个。
+
+### 修复
+
+- 修复了"全面屏手势(底部小白条)遮挡 Viewer 文字列表最后一行"的问题
+- 启用了 Google Play 分发用的"按需分包"配置(为将来支持 Play Store 铺路)
+
+## v0.1.44 — 2026-09-01
+
+**选图 / 拍照兼容性硬化**(无 GMS 设备、极简系统)。
+
+### 修复
+
+- 选图三级降级:系统选择器 → OEM 图库 → 兜回,最后兜回也失败时弹"未找到可用图库"
+- 设备没有相机应用时弹"未找到可用相机",不再崩溃
+- 修复了一个选图 Intent 的 bug
+
+## v0.1.43 — 2026-09-01
+
+**审计 round 2 收尾**。
+
+### 修复
+
+- 修了 3 处关键路径问题(防止快速连点拍照/选图时短暂错位、Bitmap 内存不再累积、证书校验 API 统一)
+- 修复了 git hook 的几处漏洞,加了自检脚本
+- 整理了文档(很多文件路径、版本号、规则库版本对齐到实际)
+
+## v0.1.42 — 2026-08-31
+
+**全面审计修复 19 项**。覆盖 6 个维度,做对抗验证。
+
+### 修复
+
+- 修了 3 处关键路径硬化(任务原子性、Bitmap 回收、证书校验)
+- 修了发布流水线(上传顺序优化、避免中途崩溃留下坏 release)
+- 整理了多处文档,确保 CLAUDE.md 跟实际状态一致
+
+## v0.1.41 — 2026-08-31
+
+**底部按钮 6 项微调**(用户反馈上版的不足)。
+
+### 调整
+
+- KPI 严重度数字提示从"长按"改为"点击",更明显
+- 底部按钮按命中数动态 2/3 个(有命中才显示导出按钮)
+- 导出按钮文字从"导出取证包"缩为"导出"(短)
+- 命中卡片字号降一档(从 24sp 到 22sp)
+- 全屏查看图时,文字列表的命中行也高亮,跟图片红框一致
+
+## v0.1.40 — 2026-08-31
+
+**UI 重大调整(4 项联动)**。让界面更聚焦"违规内容"展示,信息更清楚。
+
+### 调整
+
+- 命中结果按严重度分组(违规/警告/信息 3 个 section)
+- 整张卡片用严重度颜色染色(红/琥珀/蓝),加一个明显的"违规/警告/信息"小标签
+- 顶部数字栏长按可看严重度说明
+- 全屏查看图片时也标红框命中位置(可放大看是哪几个字触发)
+
+## v0.1.39 — 2026-08-31
+
+**UI 布局调整**。
+
+### 调整
+
+- 顶部数字栏改成单行布局(之前 2 行竖排),更紧凑
+- 图片与文字区比例从 1:1.6 改回 1:1(用户反馈图被压扁)
+- 导出按钮视觉上从结果区滑开,不容易误点
+- 导出文件格式从 JSON 改成 TXT(手机上直接用记事本就能打开)
+
+## v0.1.38 — 2026-08-31
+
+**规则匹配器去重逻辑优化**。同一条规则下,关键字互为子串时只保留最长的,减少重复命中。
+
+### 修复
+
+- 修了"同一规则下 2 字/3 字/5 字关键词共存时生成多个 hit"的问题,现在只保留最长的
+- 整理了 4 条旧测试,跟新行为对齐
+
+## v0.1.37 — 2026-08-29
+
+**Tab → 初始页快捷复位**。识别完成后,再次点已选中的 tab 直接回到首页初始态,不用再去手动点拍照按钮。
+
+### 新增
+
+- 同 tab 再次点击时,如果识别已完成,直接回到初始页(从结果页退出)
+- 优化了关键字识别的"1 字 OCR 漏检兜底"(PP-OCRv6_small 在密集文字上偶尔漏 1 字,现在能容忍)
+
+## v0.1.36 — 2026-08-28
+
+**App 更新体验优化 + 死代码清理**。
+
+### 修复
+
+- 修复了"App 更新下载进度条一直显示 0%"的问题(网络层提前传文件大小时没更新)
+- 修复了"通知权限每次都问"的问题(现在只问一次)
+- 修复了一个严重度排序的边界 bug(Positive 类型会错误压制 Violation)
+- 整理了多处死代码和文档
+
+## v0.1.35 — 2026-08-28
+
+**修复了"种子广告只说'高产'两字识别不到"的问题**。之前规则只覆盖"保证增产"等短语,简单的"高产"两字识别不到。
+
+### 修复
+
+- 给"种子产量承诺"规则加了 3 个简短关键词(高产 / 丰产 / 稳产)
+- 修正了 changelog 测试的版本号(之前漏了 v0.1.34)
+
+## v0.1.34 — 2026-08-27
+
+**广告业务规则库扩充到 129 条**。新覆盖 8 个真实广告场景:酒类、礼赠、军政形象、减肥食品、教育代言、减重数据、肺部保健、夸大受益人群。
+
+### 新增
+
+- 广告业务规则库新增 8 条规则
+- 扩展了 2 条已有规则的关键词
+
+## v0.1.33 — 2026-08-27
+
+**广告业务规则库新增 1 条规则 + 知识库整理**。
+
+### 新增
+
+- 新增"食品暗示安全性"规则(20 关键词,覆盖"安全放心"、"无副作用"等)
+- 整理了知识库(2 份已废止法规移到归档目录,3 份食品标识法规更新)
+- 66 张真实公开广告图片归档,新发现商业借用军政形象、保健食品暗示安全性等典型违规
+
+## v0.1.32 — 2026-08-26
+
+**底部操作栏升级**。让"选图"和"拍照"两个按钮视觉上更明显,主操作更突出。
+
+### 调整
+
+- 左"选图"按钮加上可见的"选图"文字标签,变得更明显
+- 右"拍照"按钮拉宽到右半区,主操作更显眼
+- 整体用扩展 FAB 组件,视觉上更现代
+
+## v0.1.31 — 2026-08-26
+
+**修复"首页红框位置不对"问题(三轮复盘闭环)**。之前几版修复了类似问题但真机 A/B 验证还是不对,这次终于找到真因。
+
+### 修复
+
+- 修复了"高分辨率照片(>2048px)红框飘到图片角落"的问题
+- 修复了 OCR 框坐标系和图片显示坐标系不一致的根本问题(图片被下采样但坐标用了全分辨率,导致框偏了约 2 倍)
+
+## v0.1.30 — 2026-08-26
+
+**修复"首页红框位置不对"问题(第二轮复盘)**。
+
+### 修复
+
+- 修复了"全分辨率图片的红框计算用了错误参考尺寸"的问题
+- 把全分辨率图片的尺寸正确透传到 UI 层(不依赖下采样的 bitmap 尺寸)
+
+## v0.1.29 — 2026-08-26
+
+**修复"首页红框位置不对"问题(第一轮)**。
+
+### 修复
+
+- 修复了"图片旋转处理重复了一次,导致 OCR 框偏了 90/180/270 度"的问题
+- 增强了边界保护(防止 NaN/0/负尺寸让 Canvas 静默崩)
+
+## v0.1.28 — 2026-08-26
+
+**修复"发布的安装包没带识别模型"问题**。上一版(基于骨架的演示版)没带 OCR 模型和规则,所有图片都识别为"无违规",这次改用正式版。
+
+### 修复
+
+- 修复了"用户实测发现 App 完全识别不到任何违规"的问题
+- 发布版本切换到带完整模型和规则的正式版
+- 修复了发布流水线的一个凭据读取问题
+
+## v0.1.27 — 2026-08-25
+
+**首页标题居中 + 上传图片崩溃修复**。
+
+### 调整
+
+- 首页标题"冰灵锐目"从左对齐改成居中显示
+
+### 修复
+
+- 修复了"用户上传图片后报错"的问题(底层规则库空时,扫描逻辑会崩溃)
+
+## v0.1.26 — 2026-08-25
+
+**首页 tab pill 化 + 滑动崩溃修复**。
+
+### 调整
+
+- 顶部 tab 改成药丸形(pill)风格,选中态更明显
+- 标题和 tab 间距收紧,布局更紧凑
+
+### 修复
+
+- 修复了"全屏查看图时滑动崩溃"的问题(同文字行在 OCR 列表里出现两次时会闪退)
+
+## v0.1.25 — 2026-08-25
+
+**类别显示名修订**。之前"门店招牌"这个分类名对短视频/互联网广告容易误导,改成"广告文案"。
+
+### 调整
+
+- 类别显示名改为更通用的"广告文案"
+
+## v0.1.24 — 2026-08-25
+
+**清理规则库法规引用**。4 条规则之前串了食品标识等不相关法规,改正。
+
+### 修复
+
+- 4 条广告业务规则改正为只引《广告法》对应条款,不再出现食品标识相关法规
+
+## v0.1.23 — 2026-08-25
+
+**规则库补漏**。补"抗氧化"等保健功效关键词。
+
+### 修复
+
+- 之前 OCR 识别出"抗氧化"等保健词没标红,现在能识别
+
+## v0.1.22 — 2026-08-25
+
+**UI 现代化(Phase 3.4-3.5)**。多个页面视觉和交互升级。
+
+### 调整
+
+- 拍照按钮升级为带文字的扩展按钮
+- 加载等待页面改为有骨架占位
+- 设置页改用卡片式布局
+
+## v0.1.21 — 2026-08-25
+
+**UI 现代化(Phase 3.3)**。命中卡片视觉升级。
+
+### 调整
+
+- 命中卡加重了严重度色条,违规框更显眼
+- 图片预览适配全面屏系统栏
+
+## v0.1.20 — 2026-08-25
+
+**UI 现代化(Phase 3.2)**。顶部信息密度提升。
+
+### 调整
+
+- 顶部违规数字栏升级(动画滑入)
+- tab 风格改用 Material 3 新样式
+
+## v0.1.19 — 2026-08-25
+
+**UI 现代化底层(Phase 3.1)**。主题色板和字号扩展。
+
+### 调整
+
+- 加了 3 个字号档位
+- 严重度配色系统扩展
+- 新增统一的严重度色板供全局使用
+
+## v0.1.18 — 2026-08-22
+
+**App 更新下载流程加固**。
+
+### 修复
+
+- 修复了"杀进程后再打开,下载续传不工作"的问题
+- 修复了"Android 12+ 后台启动前台服务可能崩溃"的问题
+- 修复了"安全校验可能被中间人攻击绕过"的问题
+- 关闭了应用备份(防止实拍图片被云端备份)
+
+## v0.1.17 — 2026-08-22
+
+**App 内更新支持后台下载**。锁屏后下载也能继续。
+
+### 新增
+
+- 点"下载更新"后即便立刻锁屏,下载也会继续(在通知栏 + App 内双通道显示进度)
+- 网络断掉后再连上会自动续传
+- 应用重启后正在下载的任务会自动恢复
+
+## v0.1.16 — 2026-08-21
+
+**新增识别规则:农作物种子产量承诺**。种子广告里"必增产""保证丰产"等无根据承诺会标红。
+
+### 新增
+
+- 新增 1 条规则识别"无根据的产量承诺"(种子/农药/兽药/饲料/化肥广告)
+
+## v0.1.15 — 2026-08-21
+
+**新增识别规则:广告数据未标明出处**。"全国技师 9 万人"等数据如果没说来源会标黄。
+
+### 新增
+
+- 新增 1 条规则识别"广告数据未标明出处"
+- 之前"东郊到家 9 万技师"等典型话术识别不到,现在能识别
+
+## v0.1.14 — 2026-08-21
+
+**设置页 UI 缺陷修复 + 规则库扩展**。
+
+### 修复
+
+- 修复了"设置页更新提示下载按钮被挤出屏幕"的问题
+- 新增了"更新详情"独立页面,可滚动查看完整更新日志
+
+### 新增
+
+- 广告业务规则库扩充 2 条(118 条),紫玉米/蟹都汇等典型案例命中数大幅提升
+
+## v0.1.13 — 2026-08-20
+
+**广告业务规则库大扩充**。
+
+### 新增
+
+- 规则库新增 2 条(覆盖普通食品"保健功能宣称"和"疾病指向"两种典型违规)
+- 扩展了 10 个极限词(首个/首家/首选/领导品牌 等)
+- 扩展了 15 个虚假销量/排名关键词(全国第一/行业第一/全网销量第一 等)
+
+## v0.1.12 — 2026-08-20
+
+**OCR 引擎配置对齐 + 修复图片采样边界问题**。
+
+### 修复
+
+- 修复了"OCR 配置参数和模型不匹配"的问题(桌面 A/B 和真机行为不一致)
+- 修复了"图片下采样在 2049 像素处突然砍半"的问题(改为平滑处理)
+
+## v0.1.11 — 2026-08-20
+
+**OCR 模型升级 PP-OCRv5 → PP-OCRv6**。识别能力提升约 12%。
+
+### 新增
+
+- OCR 模型从 v5 升级到 v6,识别文字多了 12%,速度还快 10%
+- 之前漏识的"大闸蟹连锁门店数量全国第一"现在能完整识别并触发违规标记
+
+## v0.1.10 — 2026-08-19
+
+**产品方向调整:先专注广告招牌**。食品标签 tab 暂时对用户隐藏,等广告招牌打磨成熟后再启用。
+
+### 调整
+
+- UI 暂时只显示"广告招牌"tab,"食品标签"tab 代码路径完整保留
+- 内部代码和规则库都为食品标签准备好,后续可直接启用
+
+## v0.1.9 — 2026-08-19
+
+**修复 6 处文档/规则准确性问题**。OCR 识别后援引的法规条文修正,不再误导。
+
+### 修复
+
+- 修了 4 处规则引用的法规条文错误(把食品标识/食品安全法等不相关法规错串到广告法规则)
+- 整理了 1 处文字错别字
+
+## v0.1.8 — 2026-08-19
+
+**修复 7 处文档/规则准确性问题**。OCR 识别后援引的法规条文修正。
+
+### 修复
+
+- 修正了 1 处致敏原标识的强制/推荐描述(原 GB 7718-2025 把"8 类强制 + 4 类推荐"误写成"11 类强制")
+- 修正了 3 处规则的 regulation 字段引用
+- 整理了广告业务知识库 43 处待补充内容
+
+## v0.1.7 — 2026-08-19
+
+**修复 7 处规则条文引用错误**。OCR 识别后援引的法规条文不再误导。
+
+### 修复
+
+- 修正了 4 条规则的法规引用(广告法 / 食品安全法)
+- 修正了 1 条婴幼儿配方乳粉规则的条文归属
+- 整理了相关法规 markdown 文档
+
+## v0.1.6 — 2026-08-19
+
+**规则库大扩充**。
+
+### 新增
+
+- 广告业务规则库扩充 31 条,达到 116 条
+- 新覆盖 3 部法规:化妆品监督管理条例 / 金融营销宣传通知 / 互联网广告管理办法
+- 食品标识规则库扩充 29 条,达到 65 条
+
+## v0.1.5 — 2026-08-19
+
+**规则库第二轮扩充**。
+
+### 新增
+
+- 广告业务规则库扩充 43 条,达到 85 条
+- 新覆盖 4 部法规:医疗器械广告 / 农药广告 / 兽药广告 / 城市市容管理
+
+## v0.1.4 — 2026-08-19
+
+**规则库第一轮扩充**。
+
+### 新增
+
+- 广告业务规则库扩充 32 条,达到 42 条
+- 覆盖 7 部法规:广告法 / 医疗广告 / 房地产广告 / 户外广告 / 药品保健食品 / 烟草广告 / 广告管理条例
+
+## v0.1.3 — 2026-08-19
+
+**食品标识规则库扩充**。
+
+### 新增
+
+- 食品标识规则库扩充 30 条,达到 36 条
+- 覆盖《食品标识监督管理办法》全 54 条
+- 配套下载脚本落地,方便后续追加新规章
+
+## v0.1.2 — 2026-08-18
+
+**拍照功能上线**。点击"拍照"按钮直接调用相机拍照(首次会请求权限)。
+
+### 新增
+
+- "拍照"按钮接入相机,直接拍照识别
+- 首页标题居中显示
+
+## v0.1.1 — 2026-08-18
+
+**设置页结构调整**。
+
+### 调整
+
+- 设置里新增"查看更新日志"入口
+- 设置项重排(外观提前,逻辑更连贯)
+
+## v0.1.0 — 2026-08-14
+
+**首版发布(Phase 1 上线)**。广告法违规识别 + 取证包导出。
+
+### 新增
+
+- 拍照 / 选图 → OCR 识别 → 规则扫描 → 取证包导出,完整工作流跑通
+- 内置 10 条广告法违规识别规则(基础版)
+- 违规按严重等级(信息/警告/违规)分类展示
+- 整个识别流程完全本地,不依赖网络,保护用户隐私

@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.BottomAppBar
@@ -21,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -43,7 +43,7 @@ import com.icespiritai.offline.R
  *    ambiguous "导出".
  *
  * **Smart-glasses button (added v0.4.0, Glass-D15 BLE capture):**
- *  - [onGlassesCapture] is invoked when the user taps the "眼镜拍照" FAB.
+ *  - [onGlassesCapture] is invoked when the user taps the "眼镜" FAB.
  *    The HomeScreen passes a no-op default for tests that don't care about
  *    BLE; production callers wire it to `GlassesCaptureOverlay`'s launcher.
  *  - **4-slot layout** when [hasHits] is true: pick / glasses / export /
@@ -61,6 +61,23 @@ import com.icespiritai.offline.R
  *  - Capture FAB: Extended FAB (icon-then-text "拍照"), stretched to fill
  *    its half of the bar in the 2-button case.
  *
+ * **v0.4.x layout — pick + glasses icon-then-text (user feedback):**
+ *  - All three affordances now follow icon-then-text to match Material 3
+ *    Extended FAB defaults and to keep widths consistent when the
+ *    smart-glasses button is visible.
+ *  - Pick FAB: PhotoLibrary icon → text "选图".
+ *  - Glasses FAB: custom [R.drawable.ic_glasses] vector (two hollow round
+ *    lens frames + nose bridge) → text "眼镜" (was "眼镜拍照" — shortened
+ *    so all three labels are 2-char and the bottom bar reads as three
+ *    equal-weight buttons). The icon was CameraAlt in v0.4.0–v0.4.1; the
+ *    camera silhouette made the affordance read as a duplicate of the
+ *    right-hand "拍照" button, so we ship our own vector instead — note
+ *    that `androidx.compose.material:material-icons-extended:1.7.0` does
+ *    not expose a `Glasses` symbol.
+ *  - a11y desc `action_glasses_capture_desc` keeps the full "通过蓝牙让
+ *    智能眼镜拍照并自动识别违规内容" so TalkBack still announces the
+ *    action, not the bare noun.
+ *
  * `enabled = false` is intentionally only forwarded to the capture FAB — the
  * pick-from-gallery action stays clickable during Loading as an escape hatch.
  * The export FAB inherits the same `enabled` flag (we don't want to call
@@ -76,7 +93,7 @@ fun CaptureBar(
     enabled: Boolean = true,
     /**
      * v0.4.0: smart-glasses capture is opt-in (default `false` per user
-     * requirement). When `false`, the "眼镜拍照" FAB is hidden entirely
+     * requirement). When `false`, the "眼镜" FAB is hidden entirely
      * — defaults stay backwards-compatible for the existing 2/3-button
      * layouts (CaptureBar's [onGlassesCapture] callback is a no-op when
      * the button isn't rendered).
@@ -117,11 +134,11 @@ fun CaptureBar(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text(text = stringResource(R.string.action_pick_image))
                         Icon(
                             imageVector = Icons.Default.PhotoLibrary,
                             contentDescription = null,
                         )
+                        Text(text = stringResource(R.string.action_pick_image))
                     }
                 },
                 modifier = Modifier
@@ -148,11 +165,11 @@ fun CaptureBar(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Text(text = stringResource(R.string.action_glasses_capture))
                             Icon(
-                                imageVector = Icons.Default.CameraAlt,
+                                painter = painterResource(R.drawable.ic_glasses),
                                 contentDescription = null,
                             )
+                            Text(text = stringResource(R.string.action_glasses_capture))
                         }
                     },
                     modifier = Modifier

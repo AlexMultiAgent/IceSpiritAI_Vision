@@ -31,6 +31,11 @@ import org.robolectric.annotation.Config
  *  - Capture FAB: Extended FAB (icon-then-text "拍照"), stretched to fill
  *    its half of the bar in the 2-button case.
  *
+ * v0.4.x layout (user feedback): pick + glasses now also follow
+ * icon-then-text (PhotoLibrary → 选图, Glasses → 眼镜) so all three
+ * affordances read consistently. The bare "眼镜" label (was "眼镜拍照")
+ * is short enough to keep the 3/4-button bottom bar visually balanced.
+ *
  * Pins:
  *  - both base affordances (拍照 + 从相册选图) render with their documented
  *    accessibility labels so TalkBack can find them without the localized text

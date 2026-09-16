@@ -31,7 +31,7 @@
 
     <!-- Smart-glasses (Glass-D15) capture pipeline. See
          docs/glasses/AI识图传图提速_App连接参数配合.md for protocol details. -->
-    <string name="action_glasses_capture">眼镜拍照</string>
+    <string name="action_glasses_capture">眼镜</string>
     <string name="action_glasses_capture_desc">通过蓝牙让智能眼镜拍照并自动识别违规内容</string>
     <string name="glasses_not_paired">请先在系统蓝牙设置中配对智能眼镜</string>
     <string name="glasses_no_adapter">设备不支持蓝牙</string>
