@@ -54,6 +54,41 @@ object UpdateRepository {
     private val _state = MutableStateFlow<UpdateState>(UpdateState.Idle)
 
     /**
+     * Process-global cache of the most recent [AppVersionInfo] handed to
+     * [downloadApk] / [resumeService]. Read by [retry] so the UI's
+     * 「重试」 button can recover the in-flight download target across
+     * `SettingsViewModel` recreation (Activity rotation, navigation
+     * away/back, dark-mode toggle) — and across any code path that
+     * triggers a download without going through `vm.download(...)`
+     * (e.g. WorkManager-driven `UpdateResumeWorker` cold-start resume).
+     *
+     * Pre-fix this was `SettingsViewModel.lastDownloadInfo` (a VM-private
+     * `var`); that cache was lost on every VM recreation and silently
+     * no-op'd `UpdateRepository.retry`'s download branches when `info`
+     * came back null. The user-visible symptom: tapping 「重试」 from a
+     * Failed card after VM recreation did nothing, and only a force-stop
+     * + reopen surfaced a fresh `UpdateAvailable` card via the cold-start
+     * `IceSpiritVisionActivity.onCreate` → [checkForUpdatesAsync] path.
+     *
+     * Lifecycle: set on every entry into a download path, never
+     * explicitly cleared (memory cost: one `AppVersionInfo` reference
+     * per process; negligible). On process restart the field is
+     * re-initialized to `null` along with the rest of the singleton —
+     * the cold-start `checkForUpdatesAsync` from `Activity.onCreate`
+     * already handles that recovery case, so we don't persist.
+     *
+     * `@Volatile` because `downloadApk` / `resumeService` are called
+     * from the main thread (UI tap) and `retry` may be invoked from
+     * any thread that observes the StateFlow (Compose collect is on
+     * Main.immediate, but the `viewModel.retry` call site is also main).
+     * Single-writer / single-reader in practice; the volatile annotation
+     * is belt-and-braces against a future refactor that fires retry
+     * off-thread.
+     */
+    @Volatile
+    private var _lastDownloadInfo: AppVersionInfo? = null
+
+    /**
      * Test hook: tests set this to inject a fake HttpURLConnection factory.
      * Production callers do NOT set this; the default opens real connections.
      */
@@ -147,6 +182,7 @@ object UpdateRepository {
         context: Context,
         info: AppVersionInfo,
     ) {
+        _lastDownloadInfo = info
         val downloadId = sha256Short(info.apkUrl + ":" + info.versionCode)
         val updateDir = File(context.cacheDir, "update").apply { mkdirs() }
         val destPath = File(updateDir, "$downloadId.apk").absolutePath
@@ -314,32 +350,63 @@ object UpdateRepository {
     }
 
     /**
-     * Retry by Failed subtype. Called from SettingsViewModel when user taps "retry".
-     * - Cancelled → restore UpdateAvailable so user can re-tap "Download"
-     * - NetworkUnreachable / Other → resumeService (Service will pick up partial)
-     * - SignatureMismatch → fresh download (Service will re-download, file deleted on mismatch)
-     * - else (NoNetwork / ServerError / ParseError) → re-run checkForUpdates against
-     *   [jsonUrl] (the caller is responsible for the URL — Repository has no
-     *   access to BuildConfig and a hard-coded prod host would silently break
-     *   staging / smoke runs).
+     * Retry by Failed subtype. Called from `SettingsViewModel.retry` when
+     * the user taps the UI's 「重试」 button.
+     *
+     * Recovers the [AppVersionInfo] from the process-global
+     * [_lastDownloadInfo] cache (set by [downloadApk] / [resumeService]),
+     * which survives `SettingsViewModel` recreation (Activity rotation,
+     * navigation away/back, dark-mode toggle, WorkManager cold-start
+     * resume that didn't go through `vm.download`).
+     *
+     * Pre-fix this method took `info: AppVersionInfo?` as a parameter
+     * sourced from `SettingsViewModel.lastDownloadInfo` (a private
+     * `var`); that cache was lost on VM recreation and the function
+     * silently no-op'd every retry branch — the bug reported by the
+     * user. The cache is now process-global and read directly here.
+     *
+     * Branching (unchanged from pre-fix, except `info` source):
+     *  - Cancelled → restore UpdateAvailable so user can re-tap "Download"
+     *  - NetworkUnreachable / Other → resumeService (Service picks up partial)
+     *  - SignatureMismatch → fresh download (Service deletes prior file on Mismatch)
+     *  - else (NoNetwork / ServerError / ParseError) → re-run [checkForUpdatesAsync]
+     *
+     * Defensive fallback when [_lastDownloadInfo] is null (shouldn't
+     * happen in-process after the fix, since every retry path is reached
+     * via a prior [downloadApk] / [resumeService] call that sets the
+     * cache): fall back to [checkForUpdatesAsync] rather than silently
+     * no-op. The pre-fix silent no-op is exactly the bug this method
+     * used to exhibit; it shouldn't survive as a fallback path either.
      */
     fun retry(
         context: Context,
-        info: AppVersionInfo?,
         currentVersionCode: Int,
         jsonUrl: String,
     ) {
+        val info = _lastDownloadInfo
         when (val cur = _state.value) {
             is UpdateState.Failed -> when (val r = cur.result) {
                 is UpdateCheckResult.Failed.DownloadInterrupted.Cancelled -> {
-                    if (info != null) _state.value = UpdateState.UpdateAvailable(info)
+                    if (info != null) {
+                        _state.value = UpdateState.UpdateAvailable(info)
+                    } else {
+                        checkForUpdatesAsync(jsonUrl, currentVersionCode)
+                    }
                 }
                 is UpdateCheckResult.Failed.DownloadInterrupted.NetworkUnreachable,
                 is UpdateCheckResult.Failed.DownloadInterrupted.Other -> {
-                    if (info != null) resumeService(context, info)
+                    if (info != null) {
+                        resumeService(context, info)
+                    } else {
+                        checkForUpdatesAsync(jsonUrl, currentVersionCode)
+                    }
                 }
                 is UpdateCheckResult.Failed.SignatureMismatch -> {
-                    if (info != null) downloadApk(context, info)
+                    if (info != null) {
+                        downloadApk(context, info)
+                    } else {
+                        checkForUpdatesAsync(jsonUrl, currentVersionCode)
+                    }
                 }
                 else -> checkForUpdatesAsync(jsonUrl, currentVersionCode)
             }
@@ -348,6 +415,7 @@ object UpdateRepository {
     }
 
     private fun resumeService(context: Context, info: AppVersionInfo) {
+        _lastDownloadInfo = info
         val downloadId = sha256Short(info.apkUrl + ":" + info.versionCode)
         val intent = Intent(UpdateDownloadActions.ACTION_DOWNLOAD).apply {
             setClass(context, UpdateDownloadService::class.java)

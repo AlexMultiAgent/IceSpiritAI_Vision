@@ -56,18 +56,6 @@ class SettingsViewModel(
     private val clock: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
 
-    /**
-     * Last [AppVersionInfo] passed to [download]. Held so [cancel] can
-     * recompute the same `downloadId` that [UpdateRepository.downloadApk]
-     * minted for the FGS intent (see [sha256Short]). Cleared on VM destroy
-     * (default ViewModel scope) — sufficient for the user-cancellation
-     * flow, which always follows a same-VM [download] call.
-     *
-     * Not a [StateFlow]: no observer needs this externally — it is purely
-     * a write-once-then-read-once hand-off between [download] and [cancel].
-     */
-    private var lastDownloadInfo: AppVersionInfo? = null
-
     val themeMode: StateFlow<ThemeMode> = source.themeMode.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
@@ -320,38 +308,39 @@ class SettingsViewModel(
      * The actual byte-stream download + cert-pin gate live in the FGS
      * (`UpdateDownloadService`); this call only fires the Intent.
      *
-     * Caches [info] in [lastDownloadInfo] so a subsequent [cancel] can recompute
-     * the same downloadId that [UpdateRepository.downloadApk] minted for the
-     * service Intent. The FGS pushes an initial `UpdateState.Downloading`
-     * transition carrying `downloadId` via `UpdateRepository.onDownloadProgress`
-     * before the first body byte lands, so the VM-side cache is now a
-     * belt-and-braces second source for [cancel] (the live StateFlow is the
-     * primary source — covers the cold-resume path where a freshly-created
-     * `SettingsViewModel` has a null `lastDownloadInfo`).
+     * Pre-fix this method also wrote [info] to `lastDownloadInfo` (a VM-
+     * private cache) so [cancel] / [retry] could recover the same
+     * downloadId after VM recreation. That cache has been removed —
+     * `UpdateRepository` now owns the process-global `_lastDownloadInfo`
+     * (set internally by `downloadApk` / `resumeService`), and
+     * `UpdateRepository.retry` reads it directly. [cancel] uses the live
+     * StateFlow's `UpdateState.Downloading.downloadId` instead. Net
+     * surface-area reduction at the VM layer.
      */
     fun download(info: AppVersionInfo, context: Context) {
-        lastDownloadInfo = info
         UpdateRepository.downloadApk(context.applicationContext, info)
     }
 
     /**
      * User-initiated cancellation of the in-flight download. Resolves the
-     * `downloadId` from two possible sources, in priority order:
+     * `downloadId` from [UpdateState.Downloading.downloadId] — extracted
+     * from the live [updateState] StateFlow. Covers both the same-VM
+     * happy path and the cold-resume path (where `UpdateResumeWorker`
+     * woke the app mid-download with a freshly-created SettingsViewModel).
      *
-     *  1. [lastDownloadInfo] — set by a same-VM [download] call. Always
-     *     authoritative when present (covers the in-VM happy path).
-     *  2. [UpdateState.Downloading.downloadId] — extracted from the live
-     *     [updateState] StateFlow. Covers the cold-resume path, where the
-     *     `UpdateResumeWorker` woke the app mid-download with a fresh
-     *     SettingsViewModel whose `lastDownloadInfo` is null.
+     * Pre-fix this method also consulted `SettingsViewModel.lastDownloadInfo`
+     * (a VM-private cache); that field was removed because it was only
+     * authoritative within the same VM and silently fell through to the
+     * StateFlow path on VM recreation anyway. Now StateFlow is the single
+     * source of truth — it is always populated by `onDownloadProgress`
+     * before the cancel button can render (which only happens when state
+     * is `Downloading`).
      *
-     * Falls back to a no-op if neither source has a downloadId — guards
+     * Falls back to a no-op if state is not `Downloading` — guards
      * against a stray cancel tap before any download has been kicked off.
      */
     fun cancel(context: Context) {
-        val infoId = lastDownloadInfo?.let { sha256Short(it.apkUrl + ":" + it.versionCode) }
-        val stateId = (updateState.value as? UpdateState.Downloading)?.downloadId
-        val downloadId = infoId ?: stateId ?: return
+        val downloadId = (updateState.value as? UpdateState.Downloading)?.downloadId ?: return
         UpdateRepository.cancel(context.applicationContext, downloadId)
         // cgroup-frozen devices: FGS handleCancel IO coroutine may never
         // schedule. Write state directly so the UI updates immediately
@@ -400,8 +389,18 @@ class SettingsViewModel(
      * [UpdateRepository.downloadApk] / `resumeService` which take
      * `applicationContext` internally). [jsonUrl] is forwarded so the
      * Repository has no prod-host hard-code.
+     *
+     * Note: pre-fix this method passed `info = lastDownloadInfo` (a
+     * VM-private cache) to [UpdateRepository.retry]. That cache was
+     * lost on VM recreation (rotation, navigation away/back,
+     * `UpdateResumeWorker` cold-start) and the Repository's download
+     * branches silently no-op'd when `info` came back null. The cache
+     * is now process-global inside `UpdateRepository` — see
+     * `UpdateRepository._lastDownloadInfo` and `UpdateRepository.retry`
+     * KDoc — so the VM no longer needs to track it.
      */
     fun retry(context: Context, jsonUrl: String) {
+        Log.i(TAG, "retry tapped, state=${updateState.value::class.simpleName}")
         when (val current = updateState.value) {
             is UpdateState.Failed -> {
                 when (current.result) {
@@ -411,7 +410,6 @@ class SettingsViewModel(
                     is UpdateCheckResult.Failed.DownloadInterrupted.Cancelled -> {
                         UpdateRepository.retry(
                             context = context.applicationContext,
-                            info = lastDownloadInfo,
                             currentVersionCode = BuildConfig.VERSION_CODE,
                             jsonUrl = jsonUrl,
                         )

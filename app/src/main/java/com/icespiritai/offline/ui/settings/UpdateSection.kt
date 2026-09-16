@@ -172,19 +172,23 @@ fun UpdateSection(
                     Column(Modifier.padding(12.dp)) {
                         Text(failureLabel(s.result), style = MaterialTheme.typography.bodyMedium)
                         Spacer(Modifier.height(4.dp))
-                        // User explicitly cancelled — no retry prompt; tapping
-                        // "Download" again from UpdateAvailable is the recovery.
-                        val showRetry = s.result !is
-                            com.icespiritai.offline.updater.UpdateCheckResult.Failed.DownloadInterrupted.Cancelled
-                        if (showRetry) {
-                            TextButton(onClick = {
-                                viewModel.retry(
-                                    context = context,
-                                    jsonUrl = com.icespiritai.offline.BuildConfig.UPDATE_JSON_URL,
-                                )
-                            }) {
-                                Text(stringResource(R.string.update_retry_button))
-                            }
+                        // All Failed branches — including explicit user
+                        // cancellation — surface 「重试」. The user-reported
+                        // bug: cancelling a download leaves them with
+                        // 「已取消」 + no recovery path without closing the
+                        // app. The retry path is harmless for Cancelled —
+                        // it re-runs [UpdateRepository.retry], which for
+                        // the Cancelled branch either restores
+                        // UpdateAvailable (when `_lastDownloadInfo` is
+                        // populated) or falls back to a fresh metadata
+                        // check.
+                        TextButton(onClick = {
+                            viewModel.retry(
+                                context = context,
+                                jsonUrl = com.icespiritai.offline.BuildConfig.UPDATE_JSON_URL,
+                            )
+                        }) {
+                            Text(stringResource(R.string.update_retry_button))
                         }
                     }
                 }

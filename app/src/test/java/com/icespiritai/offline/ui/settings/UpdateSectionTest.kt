@@ -113,13 +113,16 @@ class UpdateSectionTest {
     }
 
     /**
-     * Bug 7 boundary: user-initiated Cancelled explicitly suppresses the
-     * retry button (the user already knows they cancelled; the recovery
-     * path is "go back to UpdateAvailable and re-tap Download"). Lock
-     * this down so a future fix that always shows 重试 doesn't ship.
+     * User-reported bug (2026-09-16): tapping 「取消」 during a download
+     * landed the user on a 「已取消」 card with no recovery path. They had
+     * to close the app and reopen to retry. Fix: every Failed branch —
+     * including explicit user cancellation — now surfaces 「重试」. For
+     * the Cancelled branch the retry restores UpdateAvailable so the
+     * user can re-tap 「下载」, or falls back to a fresh metadata check
+     * if `_lastDownloadInfo` was lost.
      */
     @Test
-    fun `Failed Cancelled state shows cancelled label without retry button`() {
+    fun `Failed Cancelled state shows cancelled label and retry button`() {
         setRepoState(
             UpdateState.Failed(UpdateCheckResult.Failed.DownloadInterrupted.Cancelled),
         )
@@ -127,7 +130,7 @@ class UpdateSectionTest {
             UpdateSection(viewModel = idleViewModel(), onOpenUpdateDetail = {})
         }
         composeRule.onNodeWithText("已取消").assertExists()
-        // No "重试" button — Cancelled must hide it.
-        composeRule.onNodeWithText("重试").assertDoesNotExist()
+        // 重试 button must show — the recovery path now lives there.
+        composeRule.onNodeWithText("重试").assertExists()
     }
 }
