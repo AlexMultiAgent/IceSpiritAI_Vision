@@ -41,8 +41,8 @@ a pure resolver + real prompts instead of a bare-noun Toast.
 
 ## Scope decision: CONNECT only (not SCAN)
 
-Both permissions belong to the `NEARBY_DEVICES` group, whose system dialog is
-*group-level* — verified from the platform resources
+Both permissions belong to the `NEARBY_DEVICES` group, so the group label and
+description are shared — verified from the platform resources
 (`platforms/android-35/data/res/values/strings.xml`):
 
 ```
@@ -50,14 +50,23 @@ permgrouplab_nearby_devices = 附近的设备 / Nearby devices
 permgroupdesc_nearby_devices = 发现并连接到附近的设备 / discover and connect to nearby devices
 ```
 
-Asking for `BLUETOOTH_SCAN` therefore buys **no** UX difference — the dialog
-says "发现并连接到附近的设备" either way — while widening the permission
-surface that a government-app privacy review has to justify. v1 pairs in
-system Bluetooth settings and connects by MAC, so `bondedDevices` +
-`getRemoteDevice` + `connectGatt` need CONNECT alone. The `BLUETOOTH_SCAN`
-declaration stays in the manifest, so wiring in-app pairing in v2 needs no
-manifest change; the request belongs next to the scan button where the user's
-intent is self-evident.
+**Device observation (2026-09-16, v0.4.3 release APK, HONOR ANN-AN00 /
+Android 15)** — the runtime dialog is *not* purely group-level on this ROM.
+With only CONNECT requested it showed the permission's own subtitle
+「连接已配对的蓝牙设备。」 ("connect to paired Bluetooth devices"), which is
+exactly what the flow does; requesting SCAN as well would have added a second
+line about *finding* devices. So CONNECT-only is not merely equal on UX here,
+it is strictly better targeted (see the release-APK section of
+`docs/smoke/2026-09-16-glasses-permission-fix/README.md` for the screenshot
+description).
+
+Asking for `BLUETOOTH_SCAN` therefore buys nothing for v1 — it widens the
+permission surface a government-app privacy review has to justify and muddies
+the dialog copy. v1 pairs in system Bluetooth settings and connects by MAC, so
+`bondedDevices` + `getRemoteDevice` + `connectGatt` need CONNECT alone. The
+`BLUETOOTH_SCAN` declaration stays in the manifest, so wiring in-app pairing in
+v2 needs no manifest change; the request belongs next to the scan button where
+the user's intent is self-evident.
 
 ## Fix shape (v0.4.3)
 

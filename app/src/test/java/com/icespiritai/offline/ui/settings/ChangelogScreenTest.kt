@@ -5,6 +5,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
+import com.icespiritai.offline.BuildConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -71,7 +72,14 @@ class ChangelogScreenTest {
         assertTrue(
             "bundled user-changelog.md must list the shipping version as its first " +
                 "section (got first version=${entries.firstOrNull()?.version})",
-        entries.firstOrNull()?.version == "v0.4.2",
+        // Compare against the *build's* version instead of a literal. The
+        // literal version had to be hand-bumped on every release (v0.1.67 →
+        // v0.3.0, then → v0.4.2, then it went stale again for v0.4.3 and
+        // failed the suite on the release commit). Reading BuildConfig makes
+        // the assertion follow the version bump automatically and keeps the
+        // real invariant — "the changelog's newest entry is the version we
+        // are shipping" — intact.
+        entries.firstOrNull()?.version == "v" + BuildConfig.VERSION_NAME,
         )
     }
 }
