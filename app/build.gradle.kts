@@ -25,6 +25,7 @@ import java.security.cert.X509Certificate
 import java.util.zip.ZipFile
 import com.icespiritai.buildhelpers.ArchiveVision
 import com.icespiritai.buildhelpers.LatestJsonGenerator
+import com.icespiritai.buildhelpers.ReleaseArtifactGuard
 
 plugins {
     alias(libs.plugins.android.application)
@@ -73,8 +74,8 @@ android {
         applicationId = "com.icespiritai.vision"
         minSdk = 26
         targetSdk = 37
-        versionCode = 81
-        versionName = "0.5.1"
+        versionCode = 82
+        versionName = "0.5.2"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -592,6 +593,35 @@ tasks.register("generateVisionLatestJson") {
 
         val vc = android.defaultConfig.versionCode ?: error("defaultConfig.versionCode is unset")
         val vn = android.defaultConfig.versionName ?: error("defaultConfig.versionName is unset")
+
+        // THIRD gate (2026-09-17): refuse to emit a JSON for an APK that has
+        // no OCR model. `modelProfile` defaults to `shell`, which bundles
+        // neither the ONNX models nor the native OCR runtime, and every other
+        // gate passes for it — signing, cert-pin, versionCode, size. A 38 MB
+        // `shell` APK was published to the live `latest` tag as v0.5.1
+        // exactly this way and had to be replaced within minutes.
+        //
+        // Intentional small-payload publishes (testing the in-app updater with
+        // a tiny APK) pass `-PallowShellRelease=true`: an explicit, greppable
+        // opt-out instead of a silent downgrade.
+        val allowShellRelease = providers.gradleProperty("allowShellRelease")
+            .getOrElse("false").toBoolean()
+        val artifactInspection = ReleaseArtifactGuard.inspect(apk)
+        if (!artifactInspection.ok) {
+            if (allowShellRelease) {
+                logger.warn(
+                    "[generateVisionLatestJson] PUBLISHING WITHOUT OCR MODEL " +
+                        "(allowShellRelease=true): ${artifactInspection.explain(apk)}",
+                )
+            } else {
+                throw GradleException(
+                    "generateVisionLatestJson: refusing to publish a model-less APK. " +
+                        artifactInspection.explain(apk) +
+                        " (Override with -PallowShellRelease=true only for deliberate test payloads.)",
+                )
+            }
+        }
+
         val size = apk.length()
         val sha = LatestJsonGenerator.sha256Hex(apk)
         val url = "http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/icespiritai-vision.apk"
