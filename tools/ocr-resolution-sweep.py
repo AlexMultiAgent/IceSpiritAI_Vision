@@ -80,6 +80,15 @@ def main() -> int:
         default="960:max",
         help="作为「识别召回」基准的设置（默认 = Android 当前配置）",
     )
+    parser.add_argument(
+        "--downscale-width",
+        type=int,
+        default=0,
+        help=(
+            "先把每张图缩到这个宽度再跑（模拟眼镜那种小尺寸照片）。"
+            "0 = 用原图。用来回答「小图 + 不放大」会不会明显掉识别"
+        ),
+    )
     args = parser.parse_args()
 
     fixtures = load_fixtures_tool()
@@ -87,6 +96,35 @@ def main() -> int:
     if not images:
         print("没有找到案例图（违规案例/*.jpg）", file=sys.stderr)
         return 1
+
+    if args.downscale_width > 0:
+        import cv2
+
+        scaled_dir = PROJECT_ROOT / "build" / "tmp" / f"downscaled_{args.downscale_width}"
+        scaled_dir.mkdir(parents=True, exist_ok=True)
+        scaled: list[Path] = []
+        for image in images:
+            img = fixtures.load_image_bgr(image)
+            if img is None:
+                continue
+            height, width = img.shape[:2]
+            if width > args.downscale_width:
+                ratio = args.downscale_width / float(width)
+                img = cv2.resize(
+                    img,
+                    (args.downscale_width, max(1, int(round(height * ratio)))),
+                    interpolation=cv2.INTER_AREA,
+                )
+            out = scaled_dir / image.name
+            # cv2.imwrite() silently fails on non-ASCII paths on Windows (the
+            # case images all have Chinese names), so encode + write the bytes.
+            ok, buffer = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+            if not ok:
+                raise RuntimeError(f"JPEG encode failed for {image.name}")
+            out.write_bytes(buffer.tobytes())
+            scaled.append(out)
+        images = scaled
+        print(f"已把图片缩到宽 {args.downscale_width}px（JPEG q80）→ {scaled_dir}")
 
     settings = parse_settings(args.settings)
     ref_side, ref_type = parse_settings(args.reference)[0]
