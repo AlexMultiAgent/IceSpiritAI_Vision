@@ -828,6 +828,14 @@ class BluetoothController(
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     _connectionState.value = ConnectionState.Disconnected
+                    // Resolve an in-flight write *now*. The onCharacteristicWrite
+                    // callback for it will never arrive, and without this every
+                    // queued repair request waits out the full 2 s write budget:
+                    // the 2026-09-17 23:21 session spent ~50 s writing FA11 op2
+                    // frames into a link that had already dropped. The deferred is
+                    // completed rather than nulled — writeCharacteristic still owns
+                    // the field and clears it after its await returns.
+                    runCatching { pendingCharWrite?.complete(false) }
                 }
             }
             if (status != BluetoothGatt.GATT_SUCCESS &&

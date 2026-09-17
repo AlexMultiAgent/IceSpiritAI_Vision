@@ -85,6 +85,18 @@ internal class StatusFrames(private val tap: ReceiveTap<ByteArray>) {
 }
 
 /**
+ * One FA12 repair batch: [requests] FA11 op2 frames written, and whether the
+ * stack refused one.
+ *
+ * A refusal means the transport is gone, so the collector ends the session on
+ * the spot instead of asking a dead handle for the rest of the batch — the
+ * 2026-09-17 23:21 session wrote 40 requests into a dropped link over 14 s and
+ * the user watched 「补传缺块中」 make no progress until the firmware's own
+ * `0x51 FAILED` arrived 50 s later.
+ */
+internal data class RepairBatch(val requests: Int, val linkRejected: Boolean)
+
+/**
  * Resend rounds to tolerate before giving up on a session that has not
  * received a single FA12 block.
  *
@@ -302,18 +314,28 @@ internal suspend fun collectFa12Chunks(
      * offset that a previous reply has already covered is harmless — the
      * stream reports the repeat as a duplicate.
      */
-    suspend fun requestMissingBlocks(from: Int, count: Int, stride: Int): Int {
+    suspend fun requestMissingBlocks(from: Int, count: Int, stride: Int): RepairBatch {
         var cursor = from
         var requested = 0
         while (requested < count && !working.isComplete) {
             val gap = working.nextMissingRangeFrom(cursor) ?: break
             if (!writeFa11(GlassesPhotoProtocol.buildFa11Resend(gap.first))) {
-                Log.w(tag, "FA11 op2 write rejected by the stack (request #${requested + 1})")
+                // A rejected write means the *link* is gone, not that the
+                // glasses are slow. Spamming the rest of the batch buys
+                // nothing: the 2026-09-17 23:21 session pushed 40 requests
+                // into a dead handle over 14 s, and the user watched
+                // 「补传缺块中」 with no progress until the firmware's own
+                // 0x51 FAILED arrived 50 s later.
+                Log.w(
+                    tag,
+                    "FA11 op2 write rejected by the stack (request #${requested + 1}) — link is down",
+                )
+                return RepairBatch(requests = requested + 1, linkRejected = true)
             }
             requested++
             cursor = gap.first + stride
         }
-        return requested
+        return RepairBatch(requests = requested, linkRejected = false)
     }
 
     while (true) {
@@ -446,11 +468,14 @@ internal suspend fun collectFa12Chunks(
                 "(filled=${working.contiguousFilledBytes}/${working.totalSize} " +
                 "missing=${missing.first}..${missing.last})",
         )
-        val requested = requestMissingBlocks(missing.first, resendBatchSize, resendStrideBytes)
+        val batch = requestMissingBlocks(missing.first, resendBatchSize, resendStrideBytes)
         Log.d(
             tag,
-            "FA11 op2 batch #$resendRounds: $requested request(s) for " +
+            "FA11 op2 batch #$resendRounds: ${batch.requests} request(s) for " +
                 "${working.totalSize - working.contiguousFilledBytes} missing byte(s)",
         )
+        if (batch.linkRejected) {
+            return abandon("蓝牙连接已断开,请重试")
+        }
     }
 }
