@@ -60,6 +60,57 @@ object GlassesPhotoProtocol {
     /** Legacy "FTP_READY" command code — pre-FA10 capture path; not used by the AI-photo flow. */
     const val CMD_LEGACY_FTP: Byte = 0x50
 
+    /**
+     * Device-info command code (App → Glass, type=Request) — the TLV
+     * envelope for "read one field" sub-commands.
+     *
+     * Verified twice: the OEM app's `BleCommandConfig.getDeviceInfoCmd = 0x10`
+     * (`com.deepvision_tek.glass_front` 3.1.00, `BleCommandConfig$Companion.default()`
+     * constructor args) and the vendor's reference project, which does the
+     * same read (`docs/glasses/官方技术给的示例（仅参考）/.../BluetoothController.kt`
+     * `requestFirmwareVersion()` → `buildFirmwareVersionRequestPacket`).
+     */
+    const val CMD_DEVICE_INFO: Byte = 0x10
+
+    /**
+     * Sub-command: firmware version, a UTF-8 string in a `[type][len][value]`
+     * TLV. Answered in a `0x10` Response and mirrored inside `0x11` device
+     * status notifies (vendor reference `handleDeviceInfoPayload` /
+     * `handleDeviceStatusNotify`).
+     */
+    const val SUB_FIRMWARE_INFO: Byte = 0x20
+
+    /** Device-status command code (Glass → App) whose TLV list may carry the firmware version. */
+    const val CMD_DEVICE_STATUS: Byte = 0x11
+
+    /** `0x11` TLV: battery level. */
+    const val SUB_BATTERY: Byte = 0x01
+
+    /** `0x11` TLV: the glasses started/stopped recording video on their own. */
+    const val SUB_MEDIA_VIDEO_STATUS: Byte = 0x0B
+
+    /** `0x11` TLV: the glasses started/stopped recording audio on their own. */
+    const val SUB_MEDIA_AUDIO_STATUS: Byte = 0x0C
+
+    /**
+     * `0x11` TLV: whether BT network sharing (PAN) is up. `0` means "on" —
+     * the firmware's boolean convention (OEM `parseDeviceStatusNotifyPayload`
+     * inverts it).
+     */
+    const val SUB_BT_NETWORK_SHARING: Byte = 0x15
+
+    /**
+     * `0x11` TLV: **the glasses took a photo** (hardware shutter button or
+     * device-side capture). One byte, `0` = success.
+     *
+     * This is the event our App was throwing away: the firmware does report
+     * the shutter press, but `parseFirmwareVersion` only looked at the
+     * firmware TLV, so nothing reacted (user report 2026-09-17, real frame
+     * `55aa15 11 03 0300 17 01 00` captured on the device).
+     * OEM equivalent: `BleCommandConfig.mediaPhotoResult` (23).
+     */
+    const val SUB_MEDIA_PHOTO_RESULT: Byte = 0x17
+
     // ────────────────────────────────────────────────────────────────────
     // 0x51 status payload values (first byte of the FFF0 payload)
     // ────────────────────────────────────────────────────────────────────
@@ -196,13 +247,172 @@ object GlassesPhotoProtocol {
      * `docs/glasses/AI识图传图-App端接收处理说明.md` §2.3 Step 4.
      */
     fun isCaptureAckSuccess(payload: ByteArray): Boolean {
-        if (payload.size != 8) return false
-        if (payload[0] != FFF0_MAGIC_BYTE_0 || payload[1] != FFF0_MAGIC_BYTE_1) return false
-        if (payload[3] != CMD_AI_CAPTURE) return false
-        if (payload[4] != TYPE_RESPONSE) return false
+        return captureAckError(payload) == 0
+    }
+
+    /**
+     * Error byte of a `0x33` Response, or `null` when [payload] is not one.
+     *
+     * `0` = accepted; anything else = rejected (low battery, OTA in
+     * progress, _or simply busy taking the photo the wearer just triggered
+     * with the shutter button_). The OEM retries once after 400 ms on a
+     * rejection, which is exactly the case the button watcher hits.
+     */
+    fun captureAckError(payload: ByteArray): Int? {
+        if (payload.size != 8) return null
+        if (payload[0] != FFF0_MAGIC_BYTE_0 || payload[1] != FFF0_MAGIC_BYTE_1) return null
+        if (payload[3] != CMD_AI_CAPTURE) return null
+        if (payload[4] != TYPE_RESPONSE) return null
         // payload length u16 LE == 1
-        if (payload[5] != 0x01.toByte() || payload[6] != 0x00.toByte()) return false
-        return payload[7] == 0x00.toByte()  // err = 0 → accepted
+        if (payload[5] != 0x01.toByte() || payload[6] != 0x00.toByte()) return null
+        return payload[7].toInt() and 0xFF
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // Firmware version (0x10 device-info read, sub-command 0x20)
+    // ────────────────────────────────────────────────────────────────────
+
+    /**
+     * Build the frame that asks the glasses for their firmware version:
+     * `55 AA | seq | 10 | 01 | 02 00 | 20 00`.
+     *
+     * Payload is a zero-length `[type=0x20][len=0]` TLV, exactly like the
+     * vendor reference (`BlePacketBuilder.buildFirmwareVersionRequestPacket`
+     * → `buildSubCommandPacket(seq, subFirmwareInfo)`). Read-only: the
+     * glasses answer with a `0x10` Response and also mirror the TLV in
+     * `0x11` status notifies, so a version read is safe to do at any time.
+     */
+    fun buildFirmwareVersionRequestFrame(seq: Byte): ByteArray = buildFrame(
+        seq = seq,
+        cmd = CMD_DEVICE_INFO,
+        type = TYPE_REQUEST,
+        payload = byteArrayOf(SUB_FIRMWARE_INFO, 0x00),
+    )
+
+    /**
+     * Extract the firmware version from a raw FFF0 frame — either the `0x10`
+     * Response to [buildFirmwareVersionRequestFrame] (payload is the
+     * `[0x20][len][utf8]` TLV) or a `0x11` device-status notify (payload is a
+     * list of TLVs, the version being one of them).
+     *
+     * Returns `null` when the frame isn't a valid FFF0 frame, isn't one of
+     * those two commands, or carries no non-blank version — callers keep
+     * waiting for a later frame in that case, because V2.4.5 also pushes
+     * status notifies unprompted.
+     */
+    fun parseFirmwareVersion(frame: ByteArray): String? {
+        val decoded = parseFrame(frame) ?: return null
+        return when (decoded.cmd) {
+            CMD_DEVICE_INFO -> firmwareFromTlvAt(decoded.payload, 0)
+            CMD_DEVICE_STATUS -> firmwareFromTlvList(decoded.payload)
+            else -> null
+        }
+    }
+
+    /** Is this frame a `0x10` Response carrying a firmware-version TLV? */
+    fun isFirmwareVersionResponse(frame: ByteArray): Boolean {
+        val decoded = parseFrame(frame) ?: return false
+        if (decoded.cmd != CMD_DEVICE_INFO) return false
+        if (decoded.type != TYPE_RESPONSE) return false
+        return firmwareFromTlvAt(decoded.payload, 0) != null
+    }
+
+    /**
+     * One entry from a `0x11` device-status notify: `[type][len][value…]`.
+     *
+     * [flag] decodes the firmware's 1-byte booleans: **`0` means true**
+     * (OEM `parseDeviceStatusNotifyPayload` does the same inversion for the
+     * PAN and photo-result TLVs), so `null` means "this TLV isn't a flag".
+     */
+    data class DeviceStatusTlv(val type: Int, val value: ByteArray) {
+        val flag: Boolean? get() = if (value.size == 1) value[0].toInt() == 0 else null
+
+        override fun equals(other: Any?): Boolean =
+            other is DeviceStatusTlv && type == other.type && value.contentEquals(other.value)
+
+        override fun hashCode(): Int = 31 * type + value.contentHashCode()
+    }
+
+    /**
+     * Decode the TLV list carried by a `0x11` device-status notify.
+     *
+     * Returns an empty list for any frame that is not a valid `0x11` frame.
+     * A malformed TLV stops the walk (same rule as the firmware-version
+     * parser): reading past a broken length would turn payload bytes into
+     * fake headers.
+     */
+    fun parseDeviceStatusTlvs(frame: ByteArray): List<DeviceStatusTlv> {
+        val decoded = parseFrame(frame) ?: return emptyList()
+        if (decoded.cmd != CMD_DEVICE_STATUS) return emptyList()
+        val payload = decoded.payload
+        val out = ArrayList<DeviceStatusTlv>(4)
+        var offset = 0
+        while (offset + 2 <= payload.size) {
+            val type = payload[offset].toInt() and 0xFF
+            val len = payload[offset + 1].toInt() and 0xFF
+            if (offset + 2 + len > payload.size) return out
+            out += DeviceStatusTlv(type, payload.copyOfRange(offset + 2, offset + 2 + len))
+            offset += 2 + len
+        }
+        return out
+    }
+
+    /**
+     * Did the glasses just take a photo on their own (hardware shutter)?
+     *
+     * True for a `0x11` frame whose `mediaPhotoResult` TLV reports success
+     * (`17 01 00`). Deliberately does not require anything else in the frame:
+     * V2.5.8 packs the photo result together with other TLVs.
+     */
+    fun reportsShutterPhoto(frame: ByteArray): Boolean =
+        parseDeviceStatusTlvs(frame).any {
+            it.type == (SUB_MEDIA_PHOTO_RESULT.toInt() and 0xFF) && it.flag == true
+        }
+
+    /** BT network-sharing (PAN) state as reported by the glasses, or `null`. */
+    fun reportsNetworkSharingOn(frame: ByteArray): Boolean? =
+        parseDeviceStatusTlvs(frame)
+            .firstOrNull { it.type == (SUB_BT_NETWORK_SHARING.toInt() and 0xFF) }
+            ?.flag
+
+    /** `[0x20][len][utf8…]` at [offset], or `null` if this isn't that TLV. */
+    private fun firmwareFromTlvAt(payload: ByteArray, offset: Int): String? {
+        if (offset + 2 > payload.size) return null
+        if (payload[offset] != SUB_FIRMWARE_INFO) return null
+        val len = payload[offset + 1].toInt() and 0xFF
+        if (len == 0 || offset + 2 + len > payload.size) return null
+        return payload.copyOfRange(offset + 2, offset + 2 + len)
+            .toString(Charsets.UTF_8)
+            .trim { it <= ' ' || it == '\u0000' }
+            .takeIf { it.isNotBlank() }
+    }
+
+    /** Walk a `[type][len][value]…` list and return the 0x20 entry, if any. */
+    private fun firmwareFromTlvList(payload: ByteArray): String? {
+        var offset = 0
+        while (offset + 2 <= payload.size) {
+            val len = payload[offset + 1].toInt() and 0xFF
+            if (offset + 2 + len > payload.size) return null
+            if (payload[offset] == SUB_FIRMWARE_INFO) {
+                firmwareFromTlvAt(payload, offset)?.let { return it }
+            }
+            offset += 2 + len
+        }
+        return null
+    }
+
+    /** Generic FFF0 frame builder used by the version read (and future OTA frames). */
+    private fun buildFrame(seq: Byte, cmd: Byte, type: Byte, payload: ByteArray): ByteArray {
+        val frame = ByteArray(7 + payload.size)
+        frame[0] = FFF0_MAGIC_BYTE_0
+        frame[1] = FFF0_MAGIC_BYTE_1
+        frame[2] = seq
+        frame[3] = cmd
+        frame[4] = type
+        frame[5] = (payload.size and 0xFF).toByte()
+        frame[6] = ((payload.size shr 8) and 0xFF).toByte()
+        payload.copyInto(frame, 7)
+        return frame
     }
 
     /**

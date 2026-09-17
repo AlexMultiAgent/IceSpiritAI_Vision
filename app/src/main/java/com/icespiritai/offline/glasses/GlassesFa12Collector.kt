@@ -118,7 +118,7 @@ internal const val FA12_NO_SIGNAL_ABORT_ROUNDS = 3
  * cycle repaired 49 KB at ~10 blocks/s, i.e. the pipe sat idle between
  * batches).
  */
-internal const val FA12_REPAIR_BATCH = 20
+internal const val FA12_REPAIR_BATCH = 40
 
 /**
  * Spacing between the offsets requested inside one cycle.

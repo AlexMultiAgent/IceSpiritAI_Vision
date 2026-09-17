@@ -488,6 +488,22 @@ fun HomeScreen(
         )
     }
 
+    // Glasses hardware shutter button. The firmware reports the press as a
+    // 0x11 status notify carrying the mediaPhotoResult TLV but does not push
+    // that photo over BLE (the official app pulls normal photos over
+    // FTP/SPP), so we answer with an AI-photo capture on the channel we have
+    // and reuse the usual analysis + spoken verdict. The watcher holds a
+    // long-lived FFF2 tap, hence "only while the glasses feature is on".
+    LaunchedEffect(glassesEnabled, glassesRepository) {
+        if (!glassesEnabled) return@LaunchedEffect
+        val target = resolveGlassesTargetSafely()
+        if (target !is GlassesTarget.Ready) return@LaunchedEffect
+        glassesDeviceStore.saveLastPaired(target.device.address)
+        glassesRepository.watchShutterButton(target.device).collect { uri ->
+            viewModel.startAnalysis(uri, autoSpeak = true)
+        }
+    }
+
     // Smart-glasses capture overlay (BLE → OCR → TTS). The overlay
     // observes `glassesRepository.state` and drives its own pipeline; on
     // Success it calls back to `viewModel.startAnalysis(uri)` so the
@@ -498,7 +514,10 @@ fun HomeScreen(
             deviceStore = glassesDeviceStore,
             scope = rememberCoroutineScope(),
             onCaptured = { uri ->
-                viewModel.startAnalysis(uri)
+                // Glasses captures auto-speak: the wearer is looking at the
+                // scene, not at the phone, so the verdict has to come out of
+                // the glasses (TTS respects the 语音播报 setting).
+                viewModel.startAnalysis(uri, autoSpeak = true)
                 glassesOverlayVisible = false
             },
             onDismiss = {

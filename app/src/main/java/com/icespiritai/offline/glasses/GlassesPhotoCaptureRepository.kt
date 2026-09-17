@@ -14,11 +14,16 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -119,6 +124,40 @@ class GlassesPhotoCaptureRepository(
          * before `GlassesPhotoStream` allocates, not after.
          */
         const val MAX_AI_PHOTO_BYTES = 2 * 1024 * 1024
+
+        /**
+         * Sequence byte for the firmware-version read. The glasses echo it
+         * but nothing demuxes on it (only one request is ever in flight),
+         * so a fixed value keeps the frame byte-identical to the vendor
+         * reference's first read.
+         */
+        const val FIRMWARE_READ_SEQ: Byte = 0x01
+
+        /** Re-arm the button tap at least this often (also re-checks the link). */
+        const val SHUTTER_TAP_REARM_MS = 60_000L
+
+        /** How long to wait before retrying a failed connect while watching. */
+        const val RECONNECT_RETRY_MS = 5_000L
+
+        /** OEM backoff before the single 0x33 retry after a busy rejection. */
+        const val BUSY_RETRY_DELAY_MS = 400L
+
+        /**
+         * How many times a busy rejection is retried (400 ms, 800 ms, 1600 ms).
+         * The OEM does one; the shutter-button flow needs more, because the
+         * glasses are busy with the shot the wearer just took.
+         */
+        const val MAX_BUSY_RETRIES = 3
+
+        /**
+         * Attempts per shutter press. The first 0x33 of a button session can
+         * land while the glasses are still finishing that same shot, and the
+         * firmware answers `0x51 FAILED` rather than the retryable `err=1`.
+         */
+        const val MAX_BUTTON_CAPTURE_ATTEMPTS = 3
+
+        /** Pause between button-capture attempts (the busy window is ~1-2 s). */
+        const val BUTTON_CAPTURE_RETRY_MS = 1_500L
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -147,7 +186,7 @@ class GlassesPhotoCaptureRepository(
      * next cycle's drain, and a request whose block arrives late is simply
      * re-asked next cycle — the stream reports the repeat as a duplicate.
      */
-    private val resendWaitMs = 250L
+    private val resendWaitMs = 120L
 
     /**
      * FA11 op2 requests issued per repair cycle, spaced
@@ -175,6 +214,12 @@ class GlassesPhotoCaptureRepository(
     private var activeCaptureJob: Job? = null
     private var currentTempFile: File? = null
 
+    /**
+     * Guards [watchShutterButton] so only one watcher loop is ever active —
+     * see the comment in that function.
+     */
+    private val shutterWatchMutex = Mutex()
+
     // ────────────────────────────────────────────────────────────────────
     // Public API
     // ────────────────────────────────────────────────────────────────────
@@ -182,13 +227,29 @@ class GlassesPhotoCaptureRepository(
     /**
      * Connect + negotiate MTU + discover services + enable notifies.
      * Suspends until [GlassesCaptureState.Ready] or a terminal
-     * [GlassesCaptureState.Failed]. Safe to call repeatedly (no-op if
-     * already Ready / Capturing).
+     * [GlassesCaptureState.Failed].
+     *
+     * **Safe to call repeatedly, but "Ready" is re-verified first.** The
+     * repository state is a record of what *did* happen, not proof the link
+     * is still up: when the glasses reboot (they do, at the end of every
+     * firmware upgrade) or the GATT drops, `_state` stays [Ready] while the
+     * handle is gone. The old early-return then made every later read/write
+     * talk into a dead handle — the firmware-version row reported
+     * 「固件版本读取超时」 and only an App restart helped (user report
+     * 2026-09-17). Now the state has to agree with
+     * [BluetoothController.connectionState] or we rebuild the link.
      */
     suspend fun ensureConnected(device: GlassesDevice) {
-        when (_state.value) {
-            is GlassesCaptureState.Ready, is GlassesCaptureState.Capturing -> return
-            else -> Unit
+        if (_state.value is GlassesCaptureState.Capturing) return
+        if (isGlassesLinkUsable(_state.value, bluetoothController.connectionState.value, device.address)) {
+            return
+        }
+        if (_state.value is GlassesCaptureState.Ready) {
+            // Stale "Ready": the link is gone even though we last saw it up.
+            // Close the dead handle so BluetoothController.connect() does not
+            // early-return on its own (equally stale) Connected state.
+            bluetoothController.resetLink()
+            _state.value = GlassesCaptureState.Idle
         }
 
         val captureDevice = GlassesCaptureDevice.from(device)
@@ -233,8 +294,84 @@ class GlassesPhotoCaptureRepository(
             fail("通知订阅失败", retryable = true)
             return
         }
+        // NOTE (2026-09-17): subscribing to FA00/EA01 here — the third
+        // notify channel the OEM app_config lists — destabilised the link on
+        // V2.5.8: right after the CCCD write, every FA11 write came back
+        // `onCharacteristicWrite Status=133` and the transfer could not be
+        // repaired. It is therefore NOT part of the capture pipeline;
+        // `BluetoothController.enableSecondaryNotifies()` stays available for
+        // an explicit diagnostic session (and the callback logs any frame
+        // that arrives on those channels).
 
         _state.value = GlassesCaptureState.Ready(captureDevice)
+    }
+
+    /**
+     * Read the glasses' firmware version (FFF0 `0x10` device-info read,
+     * sub-command `0x20`) and return it, or `null` if the link could not be
+     * established or the glasses stayed silent for [timeoutMs].
+     *
+     * Read-only and safe at any time: it reuses [ensureConnected] (so it
+     * cannot run while a capture owns the session — [capture] refuses to
+     * start unless the state is [GlassesCaptureState.Ready]), sends one
+     * 7-byte request, and accepts the answer either as the `0x10` Response
+     * or from a `0x11` device-status notify, because V2.4.5 mirrors the
+     * firmware TLV there too (vendor reference
+     * `handleDeviceInfoPayload` / `handleDeviceStatusNotify`).
+     *
+     * This is the piece the firmware-upgrade UI needs before it can say
+     * anything useful (which version is installed, and after a flash whether
+     * the glasses actually moved), and it is the only part of the OTA story
+     * that can be exercised without a firmware image.
+     */
+    suspend fun readFirmwareVersion(device: GlassesDevice, timeoutMs: Long = 5_000L): String? {
+        readFirmwareVersionOnce(device, timeoutMs)?.let { return it }
+        // Second chance. The glasses reboot at the end of a firmware upgrade
+        // and the GATT can drop between reads, so a single silent attempt is
+        // exactly the case where the user would otherwise have to restart the
+        // App to get an answer.
+        Log.i(TAG, "firmware version: no answer — forcing a fresh link and retrying once")
+        bluetoothController.resetLink()
+        if (_state.value is GlassesCaptureState.Ready) {
+            _state.value = GlassesCaptureState.Idle
+        }
+        return readFirmwareVersionOnce(device, timeoutMs)
+    }
+
+    /** One attempt: ensure the link, ask `0x10|0x20`, wait [timeoutMs]. */
+    private suspend fun readFirmwareVersionOnce(device: GlassesDevice, timeoutMs: Long): String? {
+        ensureConnected(device)
+        if (_state.value !is GlassesCaptureState.Ready) return null
+
+        // Same single-subscription discipline as the capture pipeline: the
+        // notify flow is replay=0, so the tap has to be live *before* the
+        // request goes out or the answer lands in the void.
+        val status = StatusFrames(scope.tapSharedFlow(bluetoothController.fff0Notifications))
+        status.drainBuffered()
+        try {
+            val sent = bluetoothController.writeFff0(
+                GlassesPhotoProtocol.buildFirmwareVersionRequestFrame(seq = FIRMWARE_READ_SEQ),
+            )
+            if (!sent) {
+                Log.w(TAG, "firmware version request rejected by the stack")
+                return null
+            }
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (true) {
+                val remaining = deadline - System.currentTimeMillis()
+                if (remaining <= 0) {
+                    Log.w(TAG, "firmware version: no answer within ${timeoutMs}ms")
+                    return null
+                }
+                val frame = status.receiveWithin(remaining) ?: return null
+                GlassesPhotoProtocol.parseFirmwareVersion(frame)?.let {
+                    Log.d(TAG, "firmware version: $it")
+                    return it
+                }
+            }
+        } finally {
+            status.stop()
+        }
     }
 
     /**
@@ -244,8 +381,21 @@ class GlassesPhotoCaptureRepository(
      */
     suspend fun capture(): Uri? {
         if (_state.value is GlassesCaptureState.Capturing) return null
-        val ready = _state.value as? GlassesCaptureState.Ready
-            // (smoke 20 2026-09-15) The "未连接眼镜" path used to set
+        val state = _state.value
+        val ready = state as? GlassesCaptureState.Ready
+        if (ready != null && !isGlassesLinkUsable(
+                state,
+                bluetoothController.connectionState.value,
+                ready.device.address,
+            )
+        ) {
+            // Same stale-Ready trap as ensureConnected(): saying "未连接眼镜"
+            // and letting the Retry button re-run the pipeline (which
+            // reconnects) beats sending 0x33 into a dead handle.
+            _state.value = GlassesCaptureState.Idle
+            return fail("蓝牙连接已断开", retryable = true).let { null }
+        }
+        // (smoke 20 2026-09-15) The "未连接眼镜" path used to set
             // retryable=false, which hid the 重试 button — the user
             // saw only "关闭" and had no way to recover. In practice
             // this failure means "ensureConnected didn't reach Ready
@@ -256,6 +406,7 @@ class GlassesPhotoCaptureRepository(
             // retry the 0x33 capture). The Retry button already
             // calls repository.reset() + ensureConnected() + capture(),
             // which is exactly the right sequence. Mark this retryable.
+        val liveReady = ready
             ?: return fail("未连接眼镜", retryable = true).let { null }
 
         // HIGH for the duration of the session, exactly like the official
@@ -270,7 +421,7 @@ class GlassesPhotoCaptureRepository(
         // subscription bug, not the radio (see runCapturePipeline).
         bluetoothController.requestPriority(android.bluetooth.BluetoothGatt.CONNECTION_PRIORITY_HIGH)
 
-        val captureDevice = ready.device
+        val captureDevice = liveReady.device
         val startedMs = System.currentTimeMillis()
 
         activeCaptureJob = scope.launch(Dispatchers.IO) {
@@ -321,6 +472,83 @@ class GlassesPhotoCaptureRepository(
      * — sends FA11 op4 to the glasses, but if the link is down the
      * firmware will time out on its own.
      */
+    /**
+     * Turn the glasses' **hardware shutter button** into a capture, emitting
+     * the image URI for each press.
+     *
+     * **Why a re-capture, not "the" photo.** The firmware does report the
+     * press — a `0x11` device-status notify carrying the `mediaPhotoResult`
+     * TLV (real frame captured on the device 2026-09-17:
+     * `55aa15 11 03 0300 17 01 00` = type 0x17, len 1, value 0 = success) —
+     * but it does **not** push that photo over BLE. The official app fetches
+     * normal/button photos over FTP (`captureOnly` → `downloadPhotoFromFtp`)
+     * or SPP/GFSP, i.e. a Wi-Fi/AP subsystem this App does not have.
+     *
+     * Until the firmware offers a BLE push for button shots (requested from
+     * the vendor), the pragmatic answer is to fire the AI-photo path
+     * (`0x33`) the moment the event lands: it returns the same scene ~1-2 s
+     * later over the channel we already have, and the usual analysis +
+     * spoken verdict follow.
+     */
+    fun watchShutterButton(device: GlassesDevice): Flow<Uri> = flow {
+        // Only one watcher may be live at a time. The Home screen can be
+        // composed more than once (recomposition, duplicate nav entries), and
+        // with two watchers every press produces two 0x33 writes — the glasses
+        // then reject both as busy (`err=1`) and nothing gets captured
+        // (observed on the device 2026-09-17 08:35: two identical `Stage 1`
+        // lines, both ending in "rejected again").
+        shutterWatchMutex.withLock {
+            while (currentCoroutineContext().isActive) {
+            ensureConnected(device)
+            if (_state.value !is GlassesCaptureState.Ready) {
+                delay(RECONNECT_RETRY_MS)
+                continue
+            }
+            // Long-lived tap: the notify flow is replay=0, so a frame that
+            // arrives with no subscriber is gone, and the button can be
+            // pressed at any time.
+            val status = StatusFrames(scope.tapSharedFlow(bluetoothController.fff0Notifications))
+            status.drainBuffered()
+            try {
+                while (currentCoroutineContext().isActive) {
+                    val frame = status.receiveWithin(SHUTTER_TAP_REARM_MS) ?: break
+                    if (!GlassesPhotoProtocol.reportsShutterPhoto(frame)) continue
+                    Log.i(TAG, "glasses shutter button: taking an AI photo over BLE")
+                    // The glasses often answer the first 0x33 of a button
+                    // session with `0x51 FAILED` (or `err=1`) because they are
+                    // still finishing the shot the wearer just took — seen on
+                    // the device 2026-09-17 08:40:49 (press → FAILED 0.9 s
+                    // later) while the press 7 s later succeeded. Give them a
+                    // moment and try again before giving up on the press.
+                    for (attempt in 1..MAX_BUTTON_CAPTURE_ATTEMPTS) {
+                        ensureConnected(device)
+                        if (_state.value !is GlassesCaptureState.Ready) {
+                            delay(BUTTON_CAPTURE_RETRY_MS)
+                            continue
+                        }
+                        val uri = capture()
+                        if (uri != null) {
+                            emit(uri)
+                            break
+                        }
+                        if (attempt < MAX_BUTTON_CAPTURE_ATTEMPTS) {
+                            Log.w(
+                                TAG,
+                                "button capture attempt $attempt failed — retrying in ${BUTTON_CAPTURE_RETRY_MS}ms",
+                            )
+                            delay(BUTTON_CAPTURE_RETRY_MS)
+                        }
+                    }
+                    // capture() ran its own taps; re-arm for the next press.
+                    break
+                }
+            } finally {
+                status.stop()
+            }
+            }
+        }
+    }.flowOn(Dispatchers.IO)
+
     fun cancel() {
         // Launch the cancel packet on the repository scope rather than the
         // capture job, which is being cancelled right now: without FA11
@@ -501,6 +729,12 @@ class GlassesPhotoCaptureRepository(
             ),
         )
         var totalSize: Int? = null
+        // The glasses decline a capture while they are busy — most obviously
+        // right after the wearer pressed the shutter button (the button
+        // watcher fires 0x33 in that exact moment, and V2.5.8 answers
+        // `55aa003302010001`, err=1). The OEM retries once after 400 ms;
+        // without this the first button press after a shot always failed.
+        var busyRetries = 0
         val startDeadline = System.currentTimeMillis() + captureTimeoutMs
         while (totalSize == null) {
             val remaining = startDeadline - System.currentTimeMillis()
@@ -512,6 +746,33 @@ class GlassesPhotoCaptureRepository(
                 return false
             }
             val hex = frame.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
+            val ackError = GlassesPhotoProtocol.captureAckError(frame)
+            if (ackError != null && ackError != 0) {
+                if (busyRetries < MAX_BUSY_RETRIES) {
+                    // Growing backoff: the glasses are busy with the very photo
+                    // the wearer just took, and that window is longer than the
+                    // OEM's single 400 ms retry (V2.5.8 answered err=1 twice in
+                    // a row on the device).
+                    val delayMs = BUSY_RETRY_DELAY_MS shl busyRetries
+                    busyRetries++
+                    Log.w(TAG, "0x33 rejected (err=$ackError) — retry #$busyRetries after ${delayMs}ms")
+                    delay(delayMs)
+                    val resent = bluetoothController.writeFff0(
+                        GlassesPhotoProtocol.buildCaptureRequestFrame(seq = 0x00),
+                    )
+                    Log.d(TAG, "0x33 retry writeFff0 returned: $resent")
+                    if (!resent) {
+                        cleanupTempFile()
+                        fail("0x33 重试发送失败", retryable = true)
+                        return false
+                    }
+                    continue
+                }
+                Log.w(TAG, "0x33 rejected $busyRetries time(s) (err=$ackError) — giving up")
+                cleanupTempFile()
+                fail("眼镜拒绝拍照 (err=$ackError)", retryable = true)
+                return false
+            }
             when (val notify = GlassesPhotoProtocol.parseStatusNotify(frame)) {
                 is GlassesPhotoProtocol.StatusNotify.Start -> {
                     Log.d(TAG, "0x51 START received: ${frame.size} bytes; raw=$hex")
@@ -581,7 +842,20 @@ class GlassesPhotoCaptureRepository(
             stream = stream,
             fa12 = fa12Tap,
             status = status,
-            writeFa11 = bluetoothController::writeFa11,
+            // Gap repair is the one FA11 opcode whose throughput the user
+            // actually feels (a lossy burst leaves tens to hundreds of
+            // blocks behind, and each request buys 1-3 of them). Send those
+            // as ATT write commands when the firmware says FA11 accepts
+            // them, so the repair is not capped at one round trip per block.
+            // CRC (0x03) and cancel (0x04) stay write-with-response: they
+            // are single, terminal, and worth a delivery guarantee.
+            writeFa11 = { payload ->
+                bluetoothController.writeFa11(
+                    payload,
+                    noResponse = payload.isNotEmpty() &&
+                        payload[0] == GlassesPhotoProtocol.FA11_OP_RESEND,
+                )
+            },
             onProgress = { filled, total, repairing ->
                 _state.value = GlassesCaptureState.Capturing(
                     CaptureProgress(
@@ -663,4 +937,28 @@ class GlassesPhotoCaptureRepository(
         }
         currentTempFile = null
     }
+}
+
+/**
+ * Is the repository's [repositoryState] backed by a **live** link to
+ * [address]?
+ *
+ * [GlassesPhotoCaptureRepository.GlassesCaptureState.Ready] alone only means
+ * "we reached Ready at some point". The glasses reboot at the end of a
+ * firmware upgrade and the GATT can drop at any moment, and neither event
+ * demotes the repository state — so every caller that wants to *use* the
+ * link has to check the controller's live connection state too (user report
+ * 2026-09-17: after the OTA reboot the firmware-version read timed out until
+ * the App was restarted).
+ *
+ * Pure and file-scope so the rule is unit-testable without Android.
+ */
+internal fun isGlassesLinkUsable(
+    repositoryState: GlassesPhotoCaptureRepository.GlassesCaptureState,
+    connectionState: BluetoothController.ConnectionState,
+    address: String,
+): Boolean {
+    if (repositoryState !is GlassesPhotoCaptureRepository.GlassesCaptureState.Ready) return false
+    if (connectionState !is BluetoothController.ConnectionState.Connected) return false
+    return connectionState.device.address.equals(address, ignoreCase = true)
 }
