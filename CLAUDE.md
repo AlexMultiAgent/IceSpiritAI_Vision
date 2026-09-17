@@ -124,7 +124,11 @@ Gradle property `modelProfile` 控制当前构建启用哪个模型配置:
 | `ice_ocr_rules` | Phase 1(shipped) | **PP-OCRv6_small**(2026-08-20 升级,rec dict 18708 条)经 PaddleOCR v3.7.0 SDK(走 ONNX Runtime + OpenCV)+ AdSignageRuleMatcher + FoodLabelRuleMatcher 已接入;rules JSON 从 `assets/rules/ad_signage_rules.json`(广告招牌 189 条 / v20 / 14 类,含 2026-08-27 新增 `ad_signage_signage_food_safety_implication` 暗示安全性规则)与 `assets/rules/food_label_rules.json`(食品标识 95 条 / v5)出;ONNX 模型(bundled in APK)在 `assets/models/{det,rec}/inference.onnx` + `inference.yml` |
 | `ice_vision` | 未来 | 多标签 + 法规依据的端侧 VLM |
 
-切换方式:`./gradlew assembleDebug -PmodelProfile=<name>`
+切换方式:`./gradlew assembleDebug -PmodelProfile=<name>`;**发版必须显式带 `ice_ocr_rules`**
+(`./gradlew assembleRelease -PmodelProfile=ice_ocr_rules`)——不带就是默认 `shell`,打出来的
+APK 没有 ONNX 模型、没有 Paddle/OpenCV native 库(约 38 MB 而非 ~75 MB),装到用户机上 OCR
+根本跑不起来。2026-09-17 曾把这样一个包发到线上 `latest`(v0.5.1,38 332 240 B)并已回滚重发,
+发版前请确认 APK 内含 `assets/models/{det,rec}/inference.onnx`。
 
 ### profile → sourceSet 拆分
 

@@ -53,7 +53,7 @@ keytool -list -v -keystore ~/.gradle/release.jks -alias icespiritai -storepass "
 
 | Step | Gradle task | Purpose | Known footgun |
 |---|---|---|---|
-| 1 | `assembleRelease` | Build signed APK | R8 + Lint + native may OOM the daemon. Use ≥8 GiB. |
+| 1 | `assembleRelease -PmodelProfile=ice_ocr_rules` | Build signed APK | **`-PmodelProfile=ice_ocr_rules` is mandatory.** The property defaults to `shell`, and `shell` bundles **no OCR model and no native OCR libs** (`app/build.gradle.kts:3-5`) — a 38 MB APK instead of ~75 MB whose OCR can never run. On 2026-09-17 exactly that build was published as v0.5.1 to the live `latest` tag (38 332 240 B, no `assets/models/det|rec/*.onnx`) and had to be replaced. Verify before upload: APK must contain `assets/models/det/inference.onnx` and `assets/models/rec/inference.onnx`. R8 + Lint + native may also OOM the daemon — use ≥8 GiB. |
 | 2 | `generateVisionLatestJson` | Write `app/build/outputs/apk/release/vision-latest.json` with `apkUrl` / `versionCode` / `signerCertSha256` | URL is hardcoded to `releases/download/latest/icespiritai-vision.apk`; rewrite happens in step 4 |
 | 3 | `archiveVisionRelease` | Stage to `build/generated/release-staging/` (per memory: never write to `发布版历史存档/`) | — |
 | 4 | `uploadVisionReleaseToGitea` | POST APK + JSON to Gitea, with cert-pin verify, rewrite `apkUrl` to `/attachments/<uuid>` | Large-file POST sometimes returns HTTP 100 and stalls. Mitigation: POST APK first (capture uuid for url rewrite), then JSON with `--max-time 900` |
@@ -178,7 +178,8 @@ above), so the tag points at the exact SHA whose APK + JSON are live on Gitea.
 + manifest `versionCode` / `versionName` attribute). The flow is:
 
 1. `app/build.gradle.kts`: edit `versionCode = N` + `versionName = "0.1.N"`
-2. `./gradlew assembleRelease` — APK now contains N
+2. `./gradlew assembleRelease -PmodelProfile=ice_ocr_rules` — APK now contains N
+   (never omit the profile — see the pipeline table above)
 3. `./gradlew generateVisionLatestJson + uploadVisionReleaseToGitea` —
    JSON's `versionCode` reads from `BuildConfig` (N), APK is the binary
    just compiled (N), `apkSha256` matches both.
