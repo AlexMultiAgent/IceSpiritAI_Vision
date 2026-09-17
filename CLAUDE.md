@@ -63,7 +63,7 @@
 |---|---|
 | UI tab 渲染 | [RuleTabBar.kt](app/src/main/java/com/icespiritai/offline/ui/home/RuleTabBar.kt) `visibleTabs: Set<RuleTab>` 为**必填参数**(无默认值),`TabRow` 按 `RuleTab.entries.filter { it in visibleTabs }` 渲染;`selected !in visibleTabs` 时自动 coerce 到首个可见 tab |
 | ViewModel 路由 | [IceSpiritVisionViewModel.kt](app/src/main/java/com/icespiritai/offline/IceSpiritVisionViewModel.kt) `matcherFor(tab)` 双分支保留,`FoodLabelRuleMatcher` 已可路由;`setTab` / `startAnalysis` 对 `tab !in visibleFeatures` 走拒绝分支 |
-| 规则 + 加载器 | `AdSignageRuleLoader` + `FoodLabelRuleLoader` 双装载入口保留;`food_label_rules.json`(66 条 / v4)+ `ad_signage_rules.json`(189 条 / v20,14 个类别:absolute / agricultural / cosmetic / education / finance / internet_ad / medical / minor / outdoor / pesticide / realestate / restricted / signage / veterinary)均随 APK 出 |
+| 规则 + 加载器 | `AdSignageRuleLoader` + `FoodLabelRuleLoader` 双装载入口保留;`food_label_rules.json`(95 条 / v5,v0.2.0 增量 29 条覆盖 8 部法规)+ `ad_signage_rules.json`(189 条 / v20,14 个类别:absolute / agricultural / cosmetic / education / finance / internet_ad / medical / minor / outdoor / pesticide / realestate / restricted / signage / veterinary)均随 APK 出 |
 | 知识库 | [知识库/](知识库/) 双域 markdown 完整保留(`广告业务/` + `食品标签/`);`广告业务/` 是成熟参考,`食品标签/` 按同一模式跟进 |
 | 测试 | [FoodLabelRuleMatcherTest.kt](app/src/test/java/com/icespiritai/offline/rules/FoodLabelRuleMatcherTest.kt) + [IceSpiritVisionViewModelTabTest.kt](app/src/test/java/com/icespiritai/offline/IceSpiritVisionViewModelTabTest.kt) 双 tab 路由断言保留 |
 | 打磨策略 | ad_signage_rules.json 关键词命中 / 严重度分级 / category 显示 / 证据包导出全部以"可复制到下一个视觉判别域"为标尺优化 —— 该标尺达标后,v0.1.69 以同样模式启用 FoodLabeling tab |
@@ -121,7 +121,7 @@ Gradle property `modelProfile` 控制当前构建启用哪个模型配置:
 | Profile | 状态 | 含义 |
 | --- | --- | --- |
 | `shell` | **默认 / 首版** | 仅展示骨架;UI 可跑,Fake OCR + slim rules,APK 不带模型 |
-| `ice_ocr_rules` | Phase 1(shipped) | **PP-OCRv6_small**(2026-08-20 升级,rec dict 18708 条)经 PaddleOCR v3.7.0 SDK(走 ONNX Runtime + OpenCV)+ AdSignageRuleMatcher + FoodLabelRuleMatcher 已接入;rules JSON 从 `assets/rules/ad_signage_rules.json`(广告招牌 189 条 / v20 / 14 类,含 2026-08-27 新增 `ad_signage_signage_food_safety_implication` 暗示安全性规则)与 `assets/rules/food_label_rules.json`(食品标识 66 条 / v4)出;ONNX 模型(bundled in APK)在 `assets/models/{det,rec}/inference.onnx` + `inference.yml` |
+| `ice_ocr_rules` | Phase 1(shipped) | **PP-OCRv6_small**(2026-08-20 升级,rec dict 18708 条)经 PaddleOCR v3.7.0 SDK(走 ONNX Runtime + OpenCV)+ AdSignageRuleMatcher + FoodLabelRuleMatcher 已接入;rules JSON 从 `assets/rules/ad_signage_rules.json`(广告招牌 189 条 / v20 / 14 类,含 2026-08-27 新增 `ad_signage_signage_food_safety_implication` 暗示安全性规则)与 `assets/rules/food_label_rules.json`(食品标识 95 条 / v5)出;ONNX 模型(bundled in APK)在 `assets/models/{det,rec}/inference.onnx` + `inference.yml` |
 | `ice_vision` | 未来 | 多标签 + 法规依据的端侧 VLM |
 
 切换方式:`./gradlew assembleDebug -PmodelProfile=<name>`

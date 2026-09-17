@@ -171,6 +171,13 @@ app/src/test/resources/fixtures/audit66_ocr/
 # real-device debugging. Stay local — they're scratch not source.
 _screenshots/
 
+# Vendor APK attachments under docs/glasses/ — only add to git on a case-by-case
+# basis with an explicit doc reference (e.g. AI眼镜官方app.apk is tracked because
+# docs/glasses/AI识图传图提速_App连接参数配合.md cites it as the reference build).
+# Bare vendor downloads (e.g. AI驾舱定向app.apk downloaded on 2026-09-17) must
+# NOT be committed without a doc citation; they pollute the diff with binary noise.
+docs/glasses/*.apk
+
 # Local audit scratch — one-off scripts that scan rules.json + KB and
 # dump JSON reports. Output is regenerable by re-running the script;
 # the scripts themselves rarely warrant committing. If a particular
