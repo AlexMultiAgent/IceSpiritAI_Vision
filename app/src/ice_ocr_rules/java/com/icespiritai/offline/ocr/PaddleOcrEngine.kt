@@ -4,8 +4,10 @@ import android.content.Context
 import android.graphics.Rect
 import android.net.Uri
 import android.os.PowerManager
+import android.util.Log
 import com.icespiritai.offline.domain.OcrEngineUnavailable
 import com.icespiritai.offline.domain.OcrFailed
+import kotlin.math.roundToInt
 import com.icespiritai.offline.domain.OcrResult
 import com.icespiritai.offline.domain.TextLine
 import com.paddle.ocr.EngineConfig
@@ -60,6 +62,7 @@ class PaddleOcrEngine(
     @Volatile private var paddleOcr: PaddleOCR? = null
 
     companion object {
+        private const val TAG = "PaddleOcrEngine"
         /** v0.1.11 / v0.1.12 default. Validated on Huawei nova 6 ARM64. */
         const val DEFAULT_REC_BATCH_SIZE = 6
 
@@ -220,6 +223,17 @@ class PaddleOcrEngine(
                 val loaded = BitmapLoader.downsampledBitmapWithScale(bytes)
                     ?: throw OcrFailed("Failed to decode image: $uri")
                 val bitmap = loaded.bitmap
+                // One line per recognition so a photo that OCRs badly can be
+                // traced to what we actually fed the detector. The glasses'
+                // camera ships ~1280x720 JPEGs (vs 2736x3648 from the phone
+                // camera), and knowing the real input size is the difference
+                // between "our downscale ate the text" and "the photo itself
+                // is blurry" — see docs/knowledge/ocr-resolution-tradeoff.md.
+                Log.i(
+                    TAG,
+                    "ocr input: ${bitmap.width}x${bitmap.height} scale=${loaded.coordinateScale} " +
+                        "jpeg=${bytes.size}B",
+                )
 
                 val result: OcrResult
                 try {
@@ -248,7 +262,7 @@ class PaddleOcrEngine(
 
                     result = OcrResult(
                         fullText = runResult.results.joinToString("\n") { it.text },
-                        lineBoxes = runResult.results.map { it.toTextLine(loaded.sampleSize) },
+                        lineBoxes = runResult.results.map { it.toTextLine(loaded.coordinateScale) },
                         avgConfidence = if (runResult.results.isEmpty()) 0f
                         else runResult.results.map { it.confidence }.average().toFloat(),
                         // Display-oriented dimensions of the FULL bitmap (post-EXIF
@@ -264,8 +278,17 @@ class PaddleOcrEngine(
                         // (boxes drift toward the canvas's right/bottom letterbox —
                         // see the 2026-08-26 smoke-test repro on a 4032×3024 bus
                         // photo: red box landed in the upper-right empty area).
-                        imageWidth = bitmap.width * loaded.sampleSize,
-                        imageHeight = bitmap.height * loaded.sampleSize,
+                        imageWidth = (bitmap.width * loaded.coordinateScale).roundToInt(),
+                        imageHeight = (bitmap.height * loaded.coordinateScale).roundToInt(),
+                    )
+                    // The recognized text itself, so a "OCR misbehaved on this
+                    // photo" report can be checked against what the engine
+                    // actually read (first 120 chars, one line: logcat-friendly).
+                    Log.i(
+                        TAG,
+                        "ocr text: ${runResult.results.size} lines " +
+                            "conf=${"%.2f".format(result.avgConfidence)} " +
+                            "«${result.fullText.replace('\n', ' ').take(120)}»",
                     )
                 } finally {
                     // Release the native pixel storage as soon as the result is
@@ -294,17 +317,25 @@ class PaddleOcrEngine(
         paddleOcr = null
     }
 
-    private fun OCRResult.toTextLine(scale: Int): TextLine =
+    private fun OCRResult.toTextLine(scale: Float): TextLine =
         TextLine(text = text, box = box.toBoundingRect(scale), confidence = confidence)
 
-    private fun OCRBox.toBoundingRect(scale: Int): Rect {
+    /**
+     * Map a box from the OCR bitmap's space into the original image's space.
+     *
+     * [scale] is `BitmapLoader.DownsampledBitmap.coordinateScale` — it is a
+     * `Float`, not an `Int`, because small photos (the glasses' 640×480) are
+     * upscaled before OCR, so the factor is < 1 there and a whole number ≥ 1
+     * for downsampled album photos.
+     */
+    private fun OCRBox.toBoundingRect(scale: Float): Rect {
         if (points.isEmpty()) return Rect()
         val xs = points.map { it.x }
         val ys = points.map { it.y }
-        val left = xs.min().toInt() * scale
-        val top = ys.min().toInt() * scale
-        val right = xs.max().toInt() * scale
-        val bottom = ys.max().toInt() * scale
+        val left = (xs.min() * scale).roundToInt()
+        val top = (ys.min() * scale).roundToInt()
+        val right = (xs.max() * scale).roundToInt()
+        val bottom = (ys.max() * scale).roundToInt()
         return Rect(left, top, right, bottom)
     }
 }

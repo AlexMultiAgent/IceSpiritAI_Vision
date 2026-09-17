@@ -13,12 +13,30 @@ object BitmapLoader {
     private const val DEFAULT_MAX_EDGE_PX = 2048
 
     /**
-     * A decoded bitmap plus the power-of-two [inSampleSize] that was applied
-     * during downsampling. OCR box coordinates are produced in the
-     * downsampled space, so callers need [sampleSize] to map them back onto
-     * the original image that the preview shows.
+     * Below this longest edge the decoded bitmap is enlarged before OCR.
+     *
+     * The smart glasses hand us **640x480** JPEGs (`ocr input: 640x480` on
+     * device, 2026-09-17) while the phone camera gives 2736x3648. PaddleOCR's
+     * detector runs with `det_limit_type = "max"`, i.e. it only ever *shrinks*
+     * — so at 640 px a 5 mm text line is a couple of pixels tall and is never
+     * detected at all. Measured on 12 real case images downscaled to 640 px:
+     * character recall 0.908 without upscaling vs 1.000 with it
+     * (`docs/knowledge/ocr-resolution-tradeoff.md`).
      */
-    data class DownsampledBitmap(val bitmap: Bitmap, val sampleSize: Int)
+    private const val UPSCALE_BELOW_MAX_EDGE_PX = 960
+
+    /** Longest edge small photos are enlarged to before OCR. */
+    private const val UPSCALE_TO_MAX_EDGE_PX = 1280
+
+    /**
+     * A decoded bitmap plus [coordinateScale]: multiply a coordinate in this
+     * bitmap's space by it to get the coordinate in the **original** image
+     * (the space the preview and the highlight overlay use).
+     *
+     * It is a `Float` because the bitmap may be larger than the original:
+     * downsampling gives a factor > 1, upscaling small photos gives < 1.
+     */
+    data class DownsampledBitmap(val bitmap: Bitmap, val coordinateScale: Float)
 
     fun bytes(context: Context, uri: Uri): ByteArray? = try {
         context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
@@ -38,8 +56,27 @@ object BitmapLoader {
         val opts = BitmapFactory.Options().apply {
             inSampleSize = sample
         }
-        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts) ?: return null
-        DownsampledBitmap(bitmap = bitmap, sampleSize = sample)
+        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts) ?: return null
+        // Enlarge genuinely small photos (the glasses' 640x480) so the OCR
+        // detector sees more than a couple of pixels per text line. Large
+        // photos (the album) are untouched — the factor stays 1.
+        val longest = maxOf(decoded.width, decoded.height)
+        val factor = if (longest in 1 until UPSCALE_BELOW_MAX_EDGE_PX) {
+            UPSCALE_TO_MAX_EDGE_PX.toFloat() / longest
+        } else {
+            1f
+        }
+        val bitmap = if (factor > 1f) {
+            Bitmap.createScaledBitmap(
+                decoded,
+                (decoded.width * factor).toInt().coerceAtLeast(1),
+                (decoded.height * factor).toInt().coerceAtLeast(1),
+                true,
+            )
+        } else {
+            decoded
+        }
+        return DownsampledBitmap(bitmap = bitmap, coordinateScale = sample / factor)
     } catch (e: Exception) {
         null
     }
