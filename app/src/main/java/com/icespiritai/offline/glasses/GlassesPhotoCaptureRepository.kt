@@ -500,7 +500,11 @@ class GlassesPhotoCaptureRepository(
             // number the whole question turns on — our BLE path needs ~7.5 s
             // for a 34 KB frame, so a cold AP join has to beat (or be
             // amortised across) that to be worth building.
-            val direct = if (device != null && info != null && !info.apSsid.isNullOrBlank()) {
+            // Run the Wi-Fi half even when the read shows no AP config: the
+            // glasses only provision that config *after* the switches are
+            // sent (V2.4.6 behaviour), and the scan inside the probe is the
+            // judge of whether an AP really came up.
+            val direct = if (device != null && info != null) {
                 _wifiTransferProbe.value = WifiTransferProbe(
                     running = true,
                     phase = WifiProbePhase.DIRECT,
