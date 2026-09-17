@@ -111,6 +111,33 @@ object GlassesPhotoProtocol {
      */
     const val SUB_MEDIA_PHOTO_RESULT: Byte = 0x17
 
+    // ── Device-info sub-commands (`0x10` Request → `0x10` Response) ──────
+    // Values taken from the OEM app's `BleCommandConfig$Companion.default()`
+    // and mirrored in the APK's `assets/app_config.json` (`bleProtocol.*`).
+
+    /** AP-mode account/credential blob (Wi-Fi transfer path). */
+    const val SUB_AP_ACCOUNT: Byte = 0x14
+
+    /**
+     * Number of files waiting to be synced. The glasses also push this
+     * unprompted as a `0x11` TLV (real frame `…11 03 0300 17 01 00` = count 0).
+     */
+    const val SUB_FILE_COUNT: Byte = 0x17
+
+    /** Wi-Fi Direct (P2P) MAC of the glasses — the media-sync rendezvous. */
+    const val SUB_P2P_MAC: Byte = 0xF2.toByte()
+
+    /** FTP server IP the glasses expose in AP/P2P mode (`downloadPhotoFromFtp`). */
+    const val SUB_FTP_IP: Byte = 0xF3.toByte()
+
+    /**
+     * Storage information. The OEM app treats "no storage" as *memoryless*
+     * and switches its photo path from FTP-over-Wi-Fi to SPP/RFCOMM
+     * (`isMemorylessDevice()` → 「开始普通拍照，走 SPP/GFSP 传输」).
+     * Reading it is how we find out which world our glasses live in.
+     */
+    const val SUB_MEMORY: Byte = 0xF4.toByte()
+
     // ────────────────────────────────────────────────────────────────────
     // 0x51 status payload values (first byte of the FFF0 payload)
     // ────────────────────────────────────────────────────────────────────
@@ -282,12 +309,43 @@ object GlassesPhotoProtocol {
      * glasses answer with a `0x10` Response and also mirror the TLV in
      * `0x11` status notifies, so a version read is safe to do at any time.
      */
-    fun buildFirmwareVersionRequestFrame(seq: Byte): ByteArray = buildFrame(
+    fun buildFirmwareVersionRequestFrame(seq: Byte): ByteArray =
+        buildDeviceInfoRequestFrame(seq, SUB_FIRMWARE_INFO)
+
+    /**
+     * Ask for one device-info field: `55 AA | seq | 10 | 01 | 02 00 | <sub> 00`.
+     *
+     * The OEM app uses this envelope for every field it reads (firmware
+     * version, battery, memory, file count, FTP IP, P2P MAC, AP account), and
+     * answers arrive either as a `0x10` Response or inside a `0x11` status
+     * notify — see [deviceInfoValue].
+     */
+    fun buildDeviceInfoRequestFrame(seq: Byte, subCmd: Byte): ByteArray = buildFrame(
         seq = seq,
         cmd = CMD_DEVICE_INFO,
         type = TYPE_REQUEST,
-        payload = byteArrayOf(SUB_FIRMWARE_INFO, 0x00),
+        payload = byteArrayOf(subCmd, 0x00),
     )
+
+    /**
+     * Value of [subType] from a `0x10` Response (TLV at offset 0) or from the
+     * TLV list of a `0x11` status notify, whichever the firmware chose to
+     * answer with. `null` when the frame carries no such field.
+     *
+     * Deliberately format-agnostic: the same sub-command answers with a
+     * UTF-8 string (IP), a little-endian integer (memory/file count) or a raw
+     * byte blob (P2P MAC) depending on the field, and guessing wrong is worse
+     * than handing the caller the bytes (see `GlassesDeviceInfo`).
+     */
+    fun deviceInfoValue(frame: ByteArray, subType: Byte): ByteArray? {
+        val decoded = parseFrame(frame) ?: return null
+        val type = subType.toInt() and 0xFF
+        return when (decoded.cmd) {
+            CMD_DEVICE_INFO -> tlvRawValueAt(decoded.payload, 0, type)
+            CMD_DEVICE_STATUS -> tlvRawValueInList(decoded.payload, type)
+            else -> null
+        }
+    }
 
     /**
      * Extract the firmware version from a raw FFF0 frame — either the `0x10`
@@ -375,31 +433,51 @@ object GlassesPhotoProtocol {
             .firstOrNull { it.type == (SUB_BT_NETWORK_SHARING.toInt() and 0xFF) }
             ?.flag
 
-    /** `[0x20][len][utf8…]` at [offset], or `null` if this isn't that TLV. */
-    private fun firmwareFromTlvAt(payload: ByteArray, offset: Int): String? {
+    /**
+     * `[type][len][value…]` at [offset], or `null` if this isn't that TLV,
+     * declares zero length, or runs past the payload.
+     */
+    private fun tlvRawValueAt(payload: ByteArray, offset: Int, type: Int): ByteArray? {
         if (offset + 2 > payload.size) return null
-        if (payload[offset] != SUB_FIRMWARE_INFO) return null
+        if ((payload[offset].toInt() and 0xFF) != type) return null
         val len = payload[offset + 1].toInt() and 0xFF
         if (len == 0 || offset + 2 + len > payload.size) return null
         return payload.copyOfRange(offset + 2, offset + 2 + len)
-            .toString(Charsets.UTF_8)
-            .trim { it <= ' ' || it == '\u0000' }
-            .takeIf { it.isNotBlank() }
     }
 
-    /** Walk a `[type][len][value]…` list and return the 0x20 entry, if any. */
-    private fun firmwareFromTlvList(payload: ByteArray): String? {
+    /**
+     * First [type] entry of a `[type][len][value]…` list, or `null`.
+     *
+     * A malformed length stops the walk with `null` instead of skipping
+     * ahead: reading past a broken boundary would turn payload bytes into
+     * fake headers (same rule as [parseDeviceStatusTlvs]).
+     */
+    private fun tlvRawValueInList(payload: ByteArray, type: Int): ByteArray? {
         var offset = 0
         while (offset + 2 <= payload.size) {
             val len = payload[offset + 1].toInt() and 0xFF
             if (offset + 2 + len > payload.size) return null
-            if (payload[offset] == SUB_FIRMWARE_INFO) {
-                firmwareFromTlvAt(payload, offset)?.let { return it }
+            if ((payload[offset].toInt() and 0xFF) == type) {
+                return tlvRawValueAt(payload, offset, type)
             }
             offset += 2 + len
         }
         return null
     }
+
+    /** `[0x20][len][utf8…]` at [offset], or `null` if this isn't that TLV. */
+    private fun firmwareFromTlvAt(payload: ByteArray, offset: Int): String? =
+        tlvRawValueAt(payload, offset, SUB_FIRMWARE_INFO.toInt() and 0xFF)
+            ?.toString(Charsets.UTF_8)
+            ?.trim { it <= ' ' || it == '\u0000' }
+            ?.takeIf { it.isNotBlank() }
+
+    /** Walk a `[type][len][value]…` list and return the 0x20 entry, if any. */
+    private fun firmwareFromTlvList(payload: ByteArray): String? =
+        tlvRawValueInList(payload, SUB_FIRMWARE_INFO.toInt() and 0xFF)
+            ?.toString(Charsets.UTF_8)
+            ?.trim { it <= ' ' || it == '\u0000' }
+            ?.takeIf { it.isNotBlank() }
 
     /** Generic FFF0 frame builder used by the version read (and future OTA frames). */
     private fun buildFrame(seq: Byte, cmd: Byte, type: Byte, payload: ByteArray): ByteArray {

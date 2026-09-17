@@ -338,6 +338,72 @@ class GlassesPhotoCaptureRepository(
         return readFirmwareVersionOnce(device, timeoutMs)
     }
 
+    /**
+     * Ask the glasses for firmware / memory / file count / FTP IP / P2P MAC /
+     * AP account and return whatever they answer within [timeoutMs].
+     *
+     * Read-only and safe: six small `0x10` requests on the management channel.
+     * Exists because the media-sync decision (FTP-over-Wi-Fi vs SPP/RFCOMM)
+     * hinges on `memory`, and nothing in the BLE photo path ever asked.
+     *
+     * Returns `null` only when the link itself could not be used; a reachable
+     * glasses that answers nothing still comes back as an all-`null`
+     * [GlassesDeviceInfo], which is the difference between "no such feature"
+     * and "we never got to ask".
+     */
+    suspend fun readDeviceInfo(
+        device: GlassesDevice,
+        timeoutMs: Long = 6_000L,
+        clock: () -> Long = System::currentTimeMillis,
+    ): GlassesDeviceInfo? {
+        ensureConnected(device)
+        if (_state.value !is GlassesCaptureState.Ready) return null
+
+        val fields = GlassesDeviceInfo.Field.entries
+        val answers = LinkedHashMap<String, ByteArray>()
+        val status = StatusFrames(scope.tapSharedFlow(bluetoothController.fff0Notifications))
+        status.drainBuffered()
+        try {
+            var seq: Byte = 0x41
+            fields.forEach { field ->
+                if (!bluetoothController.writeFff0(
+                        GlassesPhotoProtocol.buildDeviceInfoRequestFrame(seq++, field.subCmd),
+                    )
+                ) {
+                    Log.w(TAG, "deviceInfo ${field.label}: request rejected by the stack")
+                }
+            }
+            val deadline = clock() + timeoutMs
+            while (answers.size < fields.size) {
+                val remaining = deadline - clock()
+                if (remaining <= 0) break
+                val frame = status.receiveWithin(remaining) ?: break
+                fields.forEach { field ->
+                    if (answers.containsKey(field.label)) return@forEach
+                    GlassesPhotoProtocol.deviceInfoValue(frame, field.subCmd)
+                        ?.let { answers[field.label] = it }
+                }
+            }
+        } finally {
+            status.stop()
+        }
+
+        val info = GlassesDeviceInfo.fromAnswers(answers)
+        fields.forEach { field ->
+            Log.i(TAG, "deviceInfo ${field.label} = ${info.rawHex[field.label] ?: "—"}")
+        }
+        Log.i(
+            TAG,
+            "deviceInfo: firmware=${info.firmwareVersion} " +
+                "storage=${info.usedStorageMb}/${info.totalStorageMb}MB " +
+                "files=${info.unsyncedFiles} ftp=${info.ftpIp} p2p=${info.p2pMac} " +
+                "apSsid=${info.apSsid} apAccountBytes=${info.apAccountBytes} " +
+                "memoryless=${info.memoryless} usableStorage=${info.hasUsableStorage} " +
+                "wifiTransfer=${info.offersWifiTransfer}",
+        )
+        return info
+    }
+
     /** One attempt: ensure the link, ask `0x10|0x20`, wait [timeoutMs]. */
     private suspend fun readFirmwareVersionOnce(device: GlassesDevice, timeoutMs: Long): String? {
         ensureConnected(device)

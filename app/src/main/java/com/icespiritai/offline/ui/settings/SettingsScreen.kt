@@ -575,7 +575,15 @@ private fun GlassesFirmwareRow(
                     )
                 }.getOrElse { GlassesTarget.NotPaired }
                 if (target !is GlassesTarget.Ready) return@runCatching null
-                AppGraph.glassesPhotoCaptureRepository(context).readFirmwareVersion(target.device)
+                val repository = AppGraph.glassesPhotoCaptureRepository(context)
+                val version = repository.readFirmwareVersion(target.device)
+                // Same button, one extra read: memory / file count / FTP IP /
+                // P2P MAC say whether this hardware could use the Wi-Fi
+                // media-sync path at all, which decides whether chasing the
+                // vendor's SPP route is even the right investment. Log-only
+                // (tag GlassesCapture) — it changes nothing the user sees.
+                runCatching { repository.readDeviceInfo(target.device) }
+                version
             }.getOrNull()
             version = result
             failed = result == null
