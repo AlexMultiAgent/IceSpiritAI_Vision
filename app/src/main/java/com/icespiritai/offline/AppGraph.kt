@@ -7,6 +7,8 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 import com.icespiritai.offline.glasses.BluetoothController
 import com.icespiritai.offline.glasses.GlassesDeviceStore
+import com.icespiritai.offline.glasses.GlassesFirmwareService
+import com.icespiritai.offline.glasses.GlassesFirmwareUpdater
 import com.icespiritai.offline.glasses.GlassesPhotoCaptureRepository
 import com.icespiritai.offline.updater.DownloadStateStore
 import kotlinx.coroutines.CoroutineScope
@@ -47,6 +49,7 @@ object AppGraph {
     @Volatile private var glassesScope: CoroutineScope? = null
     @Volatile private var bluetoothControllerInstance: BluetoothController? = null
     @Volatile private var glassesCaptureRepositoryInstance: GlassesPhotoCaptureRepository? = null
+    @Volatile private var glassesFirmwareUpdaterInstance: GlassesFirmwareUpdater? = null
 
     @Synchronized
     fun glassesDeviceStore(context: Context): GlassesDeviceStore {
@@ -80,5 +83,20 @@ object AppGraph {
             scope = glassesScope(),
         ).also { glassesCaptureRepositoryInstance = it }
     }
-}
 
+    /**
+     * Firmware OTA orchestrator (check via the vendor OTA API → hand the
+     * download URL to the glasses over BLE → watch the version change).
+     * Process-scoped for the same reason as the capture repository: a
+     * 20-minute watch must survive Activity recreation.
+     */
+    @Synchronized
+    fun glassesFirmwareUpdater(context: Context): GlassesFirmwareUpdater {
+        return glassesFirmwareUpdaterInstance ?: GlassesFirmwareUpdater(
+            photoRepository = glassesPhotoCaptureRepository(context.applicationContext),
+            controller = bluetoothController(context.applicationContext),
+            service = GlassesFirmwareService(),
+            scope = glassesScope(),
+        ).also { glassesFirmwareUpdaterInstance = it }
+    }
+}

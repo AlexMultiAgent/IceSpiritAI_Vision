@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Card
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -45,6 +47,7 @@ import com.icespiritai.offline.AppGraph
 import com.icespiritai.offline.BuildConfig
 import com.icespiritai.offline.R
 import com.icespiritai.offline.glasses.GlassesDevice
+import com.icespiritai.offline.glasses.GlassesFirmwareUpdater
 import com.icespiritai.offline.glasses.GlassesSystemIntents
 import com.icespiritai.offline.glasses.GlassesTarget
 import com.icespiritai.offline.glasses.resolveGlassesTarget
@@ -53,6 +56,7 @@ import com.icespiritai.offline.settings.SettingsSnackbar
 import com.icespiritai.offline.settings.SettingsViewModel
 import com.icespiritai.offline.tts.TtsState
 import com.icespiritai.offline.ui.home.RuleTab
+import kotlinx.coroutines.launch
 
 /**
  * Modernized Settings screen (Phase 3.5 Task 21).
@@ -279,6 +283,14 @@ fun SettingsScreen(
                             }
                         }
                     }
+                    GlassesFirmwareRow(
+                        context = glassesCtx,
+                        enabled = glassesEnabled,
+                    )
+                    GlassesFirmwareUpgradeRow(
+                        context = glassesCtx,
+                        enabled = glassesEnabled,
+                    )
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
@@ -526,6 +538,208 @@ private sealed interface GlassesSettingsStatus {
  * uses — one source of truth, so the card and the 「眼镜」 button can never
  * disagree about whether capture is possible.
  */
+/**
+ * Firmware version of the paired glasses, with a manual read.
+ *
+ * `0x10`-with-sub-`0x20` is the vendor-documented read (see
+ * [com.icespiritai.offline.glasses.GlassesPhotoProtocol.buildFirmwareVersionRequestFrame]),
+ * so this is the one part of the firmware story that needs no new protocol
+ * risk. The version line is what makes an OTA actionable: without it the
+ * user cannot tell whether a flash did anything, and neither can we when
+ * the vendor ships the FA12 pacing fix.
+ *
+ * The read connects on demand (the same `ensureConnected` the capture path
+ * uses) instead of demanding that the user capture a photo first.
+ */
+@Composable
+private fun GlassesFirmwareRow(
+    context: Context,
+    enabled: Boolean,
+) {
+    val scope = rememberCoroutineScope()
+    var version by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
+
+    fun read() {
+        if (busy) return
+        busy = true
+        failed = false
+        scope.launch {
+            val result = runCatching {
+                val target = runCatching {
+                    resolveGlassesTarget(
+                        lastPairedAddress = AppGraph.glassesDeviceStore(context).loadLastPaired(),
+                        snapshot = GlassesDevice.bondedSnapshot(context),
+                        nowMs = System.currentTimeMillis(),
+                    )
+                }.getOrElse { GlassesTarget.NotPaired }
+                if (target !is GlassesTarget.Ready) return@runCatching null
+                AppGraph.glassesPhotoCaptureRepository(context).readFirmwareVersion(target.device)
+            }.getOrNull()
+            version = result
+            failed = result == null
+            busy = false
+        }
+    }
+
+    Spacer(modifier = Modifier.height(4.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = when {
+                busy -> stringResource(R.string.settings_glasses_firmware_reading)
+                version != null ->
+                    stringResource(R.string.settings_glasses_firmware_version, version!!)
+                failed -> stringResource(R.string.settings_glasses_firmware_failed)
+                else -> stringResource(R.string.settings_glasses_firmware_unknown)
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = if (failed) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = { read() }, enabled = enabled && !busy) {
+            Text(stringResource(R.string.settings_glasses_firmware_read))
+        }
+    }
+}
+
+/**
+ * 「检查固件更新」 row + the upgrade dialog.
+ *
+ * Check = vendor OTA API through a guest token (no account); upgrade = hand
+ * the download URL to the glasses over BLE, let *them* fetch and flash the
+ * `.rbl`, then watch the firmware version change. The dialog therefore says
+ * what the user must do (蓝牙共享网络 / 别断电) instead of pretending the App
+ * is downloading anything.
+ */
+@Composable
+private fun GlassesFirmwareUpgradeRow(
+    context: Context,
+    enabled: Boolean,
+) {
+    val scope = rememberCoroutineScope()
+    val updater = remember(context) { AppGraph.glassesFirmwareUpdater(context) }
+    val state by updater.state.collectAsStateWithLifecycle()
+    var dialogOpen by remember { mutableStateOf(false) }
+
+    fun currentDevice(): GlassesDevice? = runCatching {
+        resolveGlassesTarget(
+            lastPairedAddress = AppGraph.glassesDeviceStore(context).loadLastPaired(),
+            snapshot = GlassesDevice.bondedSnapshot(context),
+            nowMs = System.currentTimeMillis(),
+        )
+    }.getOrNull().let { (it as? GlassesTarget.Ready)?.device }
+
+    val busy = state is GlassesFirmwareUpdater.UpgradeState.Checking ||
+        state is GlassesFirmwareUpdater.UpgradeState.Sending ||
+        state is GlassesFirmwareUpdater.UpgradeState.Upgrading
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = stringResource(R.string.settings_glasses_firmware_check),
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(
+            enabled = enabled && !busy,
+            onClick = {
+                dialogOpen = true
+                scope.launch {
+                    val device = currentDevice()
+                    if (device == null) {
+                        updater.reportPreflightFailure("未找到已配对的眼镜,请先在系统蓝牙里配对")
+                    } else {
+                        updater.checkForUpdate(device)
+                    }
+                }
+            },
+        ) {
+            Text(stringResource(R.string.settings_glasses_firmware_read))
+        }
+    }
+
+    if (!dialogOpen) return
+    val upgradeInfo = (state as? GlassesFirmwareUpdater.UpgradeState.Available)?.info
+    AlertDialog(
+        onDismissRequest = {
+            // Never drop the dialog while frames are going out or the glasses
+            // are mid-flash — the user would lose the only progress display.
+            if (!busy) dialogOpen = false
+        },
+        title = { Text(stringResource(R.string.settings_glasses_firmware_dialog_title)) },
+        text = {
+            Text(
+                text = when (val s = state) {
+                    is GlassesFirmwareUpdater.UpgradeState.Idle,
+                    is GlassesFirmwareUpdater.UpgradeState.Checking ->
+                        stringResource(R.string.settings_glasses_firmware_checking)
+                    is GlassesFirmwareUpdater.UpgradeState.UpToDate ->
+                        stringResource(
+                            R.string.settings_glasses_firmware_uptodate,
+                            s.currentVersion ?: "?",
+                        )
+                    is GlassesFirmwareUpdater.UpgradeState.Available -> stringResource(
+                        R.string.settings_glasses_firmware_dialog_body,
+                        s.info.currentVersion ?: "?",
+                        s.info.latestVersion,
+                        s.info.firmwareName ?: "?",
+                        formatFirmwareSize(s.info.sizeBytes),
+                    )
+                    is GlassesFirmwareUpdater.UpgradeState.Sending -> stringResource(
+                        R.string.settings_glasses_firmware_sending,
+                        s.framesSent,
+                        s.framesTotal,
+                    )
+                    is GlassesFirmwareUpdater.UpgradeState.Upgrading -> stringResource(
+                        R.string.settings_glasses_firmware_upgrading,
+                        (s.elapsedMs / 1000).toInt(),
+                    )
+                    is GlassesFirmwareUpdater.UpgradeState.Success -> stringResource(
+                        R.string.settings_glasses_firmware_success,
+                        s.previousVersion ?: "?",
+                        s.newVersion,
+                    )
+                    is GlassesFirmwareUpdater.UpgradeState.Failed ->
+                        stringResource(R.string.settings_glasses_firmware_upgrade_failed, s.reason)
+                },
+            )
+        },
+        confirmButton = {
+            if (upgradeInfo != null) {
+                val device = currentDevice()
+                TextButton(
+                    onClick = {
+                        if (device != null) updater.startUpgrade(device, upgradeInfo)
+                    },
+                    enabled = device != null,
+                ) {
+                    Text(stringResource(R.string.settings_glasses_firmware_action_upgrade))
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = { if (!busy) dialogOpen = false },
+                enabled = !busy,
+            ) {
+                Text(stringResource(R.string.settings_glasses_firmware_action_close))
+            }
+        },
+    )
+}
+
+/** `2 655 536 B` → `2.5 MB`, for the upgrade dialog. */
+private fun formatFirmwareSize(bytes: Long?): String = when {
+    bytes == null || bytes <= 0 -> "未知"
+    bytes >= 1024 * 1024 -> "%.1f MB".format(bytes / 1024.0 / 1024.0)
+    bytes >= 1024 -> "%.0f KB".format(bytes / 1024.0)
+    else -> "$bytes B"
+}
+
 private fun glassesSettingsStatus(context: Context): GlassesSettingsStatus {
     val target = runCatching {
         resolveGlassesTarget(

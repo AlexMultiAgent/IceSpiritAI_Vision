@@ -98,7 +98,13 @@ class SettingsScreenTest {
         composeRule.setContent {
             SettingsScreen(onBack = {}, onOpenChangelog = {}, onOpenUpdateDetail = {})
         }
-        // string is "版本: %1$s" — the prefix "版本:" must appear.
-        composeRule.onNodeWithText("版本:", substring = true).assertExists()
+        // string is "版本: %1$s". Match the app's own footer exactly: the
+        // glasses card carries a separate "固件版本: …" row, so a substring
+        // match on "版本:" is ambiguous (it matches both since v0.4.5).
+        composeRule
+            .onNodeWithText(
+                "版本: ${com.icespiritai.offline.BuildConfig.VERSION_NAME}",
+            )
+            .assertExists()
     }
 }
