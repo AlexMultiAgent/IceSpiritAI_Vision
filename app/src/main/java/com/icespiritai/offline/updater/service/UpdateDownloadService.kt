@@ -5,6 +5,7 @@ import android.app.Service
 import android.content.Intent
 import android.os.IBinder
 import android.os.PowerManager
+import android.util.Log
 import com.icespiritai.offline.BuildConfig
 import com.icespiritai.offline.AppGraph
 import com.icespiritai.offline.updater.ApkDownloader
@@ -260,7 +261,9 @@ class UpdateDownloadService : Service() {
                 }
                 is FetchOutcome.Retryable -> {
                     attempt += 1
+                    Log.w(TAG, "fetch attempt $attempt failed (Retryable): ${outcome.cause.javaClass.simpleName}: ${outcome.cause.message}")
                     if (attempt >= 3) {
+                        Log.w(TAG, "fetch gave up after $attempt attempts, surfacing DownloadInterrupted.NetworkUnreachable")
                         UpdateRepository.onDownloadFailed(record, DownloadInterrupted.NetworkUnreachable(outcome.cause))
                         cleanup(record)
                         return
@@ -271,6 +274,7 @@ class UpdateDownloadService : Service() {
                     resumeOffset = null
                 }
                 is FetchOutcome.Fatal -> {
+                    Log.w(TAG, "fetch Fatal: ${outcome.cause.javaClass.simpleName}: ${outcome.cause.message}")
                     UpdateRepository.onDownloadFailed(record, DownloadInterrupted.Other(outcome.cause))
                     cleanup(record)
                     return

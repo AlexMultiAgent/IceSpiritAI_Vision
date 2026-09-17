@@ -1,5 +1,6 @@
 package com.icespiritai.offline.updater
 
+import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -53,6 +54,7 @@ sealed class FetchOutcome {
  * already set by the caller if needed). `disconnect()` is called in `finally`.
  */
 object ApkDownloader {
+    private const val TAG = "ApkDownloader"
     private const val BUF_SIZE = 8192
 
     fun fetch(
@@ -125,20 +127,36 @@ object ApkDownloader {
                         )
                     )
                 }
-                code == 416 -> return FetchOutcome.Fatal(
-                    IOException("HTTP 416 Range Not Satisfiable (resumeFrom=$resumeFrom)"),
-                )
-                code in 500..599 -> return FetchOutcome.Retryable(IOException("HTTP $code"))
-                code in 400..499 -> return FetchOutcome.Fatal(IOException("HTTP $code"))
-                else -> return FetchOutcome.Fatal(IOException("unexpected HTTP $code"))
+                code == 416 -> {
+                    Log.w(TAG, "fetch HTTP 416 Range Not Satisfiable (resumeFrom=$resumeFrom)")
+                    return FetchOutcome.Fatal(
+                        IOException("HTTP 416 Range Not Satisfiable (resumeFrom=$resumeFrom)"),
+                    )
+                }
+                code in 500..599 -> {
+                    Log.w(TAG, "fetch HTTP $code (Retryable)")
+                    return FetchOutcome.Retryable(IOException("HTTP $code"))
+                }
+                code in 400..499 -> {
+                    Log.w(TAG, "fetch HTTP $code (Fatal)")
+                    return FetchOutcome.Fatal(IOException("HTTP $code"))
+                }
+                else -> {
+                    Log.w(TAG, "fetch unexpected HTTP $code")
+                    return FetchOutcome.Fatal(IOException("unexpected HTTP $code"))
+                }
             }
         } catch (e: java.net.SocketTimeoutException) {
+            Log.w(TAG, "fetch SocketTimeoutException (connect=15s read=30s)", e)
             return FetchOutcome.Retryable(e)
         } catch (e: java.net.UnknownHostException) {
+            Log.w(TAG, "fetch UnknownHostException", e)
             return FetchOutcome.Retryable(e)
         } catch (e: IOException) {
+            Log.w(TAG, "fetch IOException", e)
             return FetchOutcome.Retryable(e)
         } catch (e: Exception) {
+            Log.w(TAG, "fetch unexpected Exception", e)
             return FetchOutcome.Fatal(e)
         } finally {
             conn.disconnect()
