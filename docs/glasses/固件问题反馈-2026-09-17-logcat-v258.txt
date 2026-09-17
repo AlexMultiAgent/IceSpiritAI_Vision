@@ -1,0 +1,316 @@
+# 附件 B — 2026-09-17 真机 logcat（Glasses-A88 V2.5.8, nova 6, 升级后复测）
+# 过滤规则：GlassesCapture / BluetoothController / BluetoothGatt / 蓝牙栈 gatt_process_notification、bta_gattc_proc_other_indication
+# 两轮拍照（05:03 与 05:16），均为 App 主动 0x33 拍照：
+#   05:03  18 579 B → 突发到 14 400 B（77%），补洞 1 轮，6.5 s 收齐
+#   05:16  18 499 B → 突发到 14 400 B（78%），补洞 2 轮，4.9 s 收齐
+# 关键对照（同一份日志可直接统计）：
+#   onNotify(handle=36) 条数 = collectChunks complete 的 blocks = 该照片块数 = 78/78（05:16）
+#   FA12 notify LOST 条数 = 0  ← App 侧一块没丢
+#   → 判定：缺的块从未送达手机（丢失发生在眼镜发送端 → 手机协议栈之间）
+# 大图（43 119 B）那一轮实测：突发只到 7 440 B（17%），补洞 9 轮 14.5 s，见反馈正文 1.1 表。
+09-17 05:16:14.739 D/BluetoothGatt(32162): connect() - device: C4:12:22:**:**:**, auto: false
+09-17 05:16:14.740 D/BluetoothGatt(32162): registerApp()
+09-17 05:16:14.740 D/BluetoothGatt(32162): registerApp() - UUID=4630a0e2-ad0b-4f38-9dd8-87238a7d3093
+09-17 05:16:14.746 D/BluetoothGatt(32162): onClientRegistered() - status=0 clientIf=7
+09-17 05:16:14.754 D/BluetoothGatt(32162): onClientConnectionState() - status=0 clientIf=7 connected=true device=C4:12:22:**:**:**
+09-17 05:16:14.956 D/BluetoothGatt(32162): configureMTU() - device: C4:12:22:**:**:** mtu: 517
+09-17 05:16:14.960 D/BluetoothGatt(32162): onConfigureMTU() - Device=C4:12:22:**:**:** mtu=517 status=0
+09-17 05:16:14.961 D/BluetoothGatt(32162): discoverServices() - device: C4:12:22:**:**:**
+09-17 05:16:14.964 D/BluetoothGatt(32162): onSearchComplete() = Device=C4:12:22:**:**:** Status=0
+09-17 05:16:14.964 D/BluetoothController(32162): onServicesDiscovered status=0 services=5
+09-17 05:16:14.964 D/BluetoothController(32162):   service 00001800-0000-1000-8000-00805f9b34fb chars=2
+09-17 05:16:14.964 D/BluetoothController(32162):   service 00001801-0000-1000-8000-00805f9b34fb chars=1
+09-17 05:16:14.964 D/BluetoothController(32162):   service 0000fa00-0000-1000-8000-00805f9b34fb chars=5
+09-17 05:16:14.964 D/BluetoothController(32162):   service 0000fff0-0000-1000-8000-00805f9b34fb chars=3
+09-17 05:16:14.964 D/BluetoothController(32162):   service 0000fa10-0000-1000-8000-00805f9b34fb chars=2
+09-17 05:16:14.964 D/BluetoothController(32162): FA11 properties=0x8 writeNoResponse=false FA12 properties=0x10
+09-17 05:16:14.965 D/BluetoothGatt(32162): setCharacteristicNotification() - uuid: 0000fff2-0000-1000-8000-00805f9b34fb enable: true
+09-17 05:16:14.966 D/BluetoothGatt(32162): writeDescriptor() - uuid: 00002902-0000-1000-8000-00805f9b34fb
+09-17 05:16:15.017 D/BluetoothGatt(32162): onDescriptorWrite() - Device=C4:12:22:**:**:** handle=28
+09-17 05:16:15.100 D/BluetoothGatt(32162): setCharacteristicNotification() - uuid: 0000fa12-0000-1000-8000-00805f9b34fb enable: true
+09-17 05:16:15.103 D/BluetoothGatt(32162): writeDescriptor() - uuid: 00002902-0000-1000-8000-00805f9b34fb
+09-17 05:16:15.167 D/BluetoothGatt(32162): onDescriptorWrite() - Device=C4:12:22:**:**:** handle=37
+09-17 05:16:15.169 D/BluetoothGatt(32162): requestConnectionPriority() - params: 1
+09-17 05:16:15.176 D/GlassesCapture(32162): Stage 1: SendingCommand — writing 0x33 to FFF1
+09-17 05:16:15.177 D/BluetoothGatt(32162): writeCharacteristic() - uuid: 0000fff1-0000-1000-8000-00805f9b34fb
+09-17 05:16:15.225 D/BluetoothGatt(32162): onCharacteristicWrite() - Device=C4:12:22:**:**:** handle=25 Status=0
+09-17 05:16:15.225 D/GlassesCapture(32162): 0x33 writeFff0 returned: true
+09-17 05:16:15.254 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:15.254 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=27 p_data->handle=4
+09-17 05:16:15.254 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:15.256 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=27
+09-17 05:16:15.257 D/BluetoothController(32162): FFF2 notify size=8 tryEmit=true raw=55aa105103010001
+09-17 05:16:15.258 D/GlassesCapture(32162): 0x51 START received: 8 bytes; raw=55aa105103010001
+09-17 05:16:15.258 D/GlassesCapture(32162): 0x51 START without fileSize — waiting for the next one
+09-17 05:16:15.527 D/BluetoothGatt(32162): onConnectionUpdated() - Device=C4:12:22:**:**:** interval=12 latency=0 timeout=500 status=0
+09-17 05:16:17.082 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.082 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=27 p_data->handle=4
+09-17 05:16:17.082 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.083 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=27
+09-17 05:16:17.085 D/BluetoothController(32162): FFF2 notify size=12 tryEmit=true raw=55aa11510305000143480000
+09-17 05:16:17.085 D/GlassesCapture(32162): 0x51 START received: 12 bytes; raw=55aa11510305000143480000
+09-17 05:16:17.088 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.088 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.088 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.090 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.092 D/BluetoothController(32162): FA12 first block, interval=12 — no HIGH re-push
+09-17 05:16:17.092 D/GlassesCapture(32162): chunk #1 offset=0 size=240 filled=240/18499 highest=239
+09-17 05:16:17.102 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.102 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.102 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.103 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.105 D/GlassesCapture(32162): chunk #2 offset=240 size=240 filled=480/18499 highest=479
+09-17 05:16:17.117 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.117 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.117 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.120 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.121 D/GlassesCapture(32162): chunk #3 offset=480 size=240 filled=720/18499 highest=719
+09-17 05:16:17.132 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.132 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.132 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.134 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.146 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.147 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.147 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.148 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.161 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.161 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.161 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.162 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.177 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.177 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.177 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.178 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.191 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.191 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.192 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.193 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.207 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.207 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.207 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.208 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.221 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.222 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.222 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.223 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.242 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.242 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.242 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.242 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.243 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.243 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.244 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.245 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.245 D/BluetoothGatt(32162): onConnectionUpdated() - Device=C4:12:22:**:**:** interval=12 latency=0 timeout=600 status=0
+09-17 05:16:17.257 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.257 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.257 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.258 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.272 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.272 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.272 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.274 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.287 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.287 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.287 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.288 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.301 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.302 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.302 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.303 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.316 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.317 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.317 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.318 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.332 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.332 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.332 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.333 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.347 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.347 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.347 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.348 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.361 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.362 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.362 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.364 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.365 D/GlassesCapture(32162): chunk #20 offset=4560 size=240 filled=4800/18499 highest=4799
+09-17 05:16:17.376 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.376 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.376 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.377 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.391 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.391 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.391 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.393 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.406 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.406 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.406 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.407 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.421 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.421 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.421 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.422 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.437 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.437 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.437 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.439 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.451 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.452 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.452 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.453 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.467 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.467 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.467 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.468 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.481 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.481 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.481 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.482 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.498 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.498 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.498 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.499 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.511 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.511 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:17.511 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:17.512 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:17.513 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.514 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=27
+09-17 05:16:17.514 D/BluetoothController(32162): FFF2 notify size=8 tryEmit=true raw=55aa003302010000
+09-17 05:16:17.528 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.543 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.557 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.573 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.589 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.603 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.633 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.648 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.662 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.678 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.680 D/GlassesCapture(32162): chunk #40 offset=9360 size=240 filled=9600/18499 highest=9599
+09-17 05:16:17.694 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.708 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.723 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.739 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.752 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.767 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.783 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.797 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.813 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.828 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.844 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.858 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.872 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.888 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.903 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.917 D/BluetoothGatt(32162): onPhyUpdate() - status=0 address=C4:12:22:**:**:** txPhy=2 rxPhy=1
+09-17 05:16:17.919 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.933 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.949 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.963 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.979 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:17.980 D/GlassesCapture(32162): chunk #60 offset=14160 size=240 filled=14400/18499 highest=14399
+09-17 05:16:17.994 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:18.008 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:18.008 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:18.008 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:18.009 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:18.023 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:18.023 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:18.023 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:18.025 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:18.038 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:18.038 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:18.038 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:18.040 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:18.053 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:18.053 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:18.053 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:18.055 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:18.068 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:18.068 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:18.068 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:18.070 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:18.083 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:18.083 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:18.083 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:18.085 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:18.097 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:18.097 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:18.097 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:18.099 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:18.113 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:18.113 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:18.113 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:18.115 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:18.128 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:18.128 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:18.128 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:18.129 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:18.143 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:18.143 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:18.144 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:18.145 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:18.158 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:18.158 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:18.158 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:18.159 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:18.173 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:18.173 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:18.173 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:18.174 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:18.188 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:18.188 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:18.188 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:18.188 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:18.188 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:18.189 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:18.190 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:18.191 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:18.191 D/BluetoothController(32162): FA12 notify size=23 (unusual size)
+09-17 05:16:19.909 D/BluetoothGatt(32162): onPhyUpdate() - status=0 address=C4:12:22:**:**:** txPhy=2 rxPhy=2
+09-17 05:16:21.695 W/GlassesCapture(32162): FA12 silent — FA11 op2 batch #1 from 17040 (filled=17040/18499 missing=17040..17279)
+09-17 05:16:21.696 D/BluetoothController(32162): FA11 write size=5 type=DEFAULT raw=0290420000
+09-17 05:16:21.696 D/BluetoothGatt(32162): writeCharacteristic() - uuid: 0000fa11-0000-1000-8000-00805f9b34fb
+09-17 05:16:21.725 D/BluetoothGatt(32162): onCharacteristicWrite() - Device=C4:12:22:**:**:** handle=34 Status=0
+09-17 05:16:21.725 D/BluetoothController(32162): FA11 write ok=true
+09-17 05:16:21.726 D/BluetoothController(32162): FA11 write size=5 type=DEFAULT raw=0270440000
+09-17 05:16:21.726 D/BluetoothGatt(32162): writeCharacteristic() - uuid: 0000fa11-0000-1000-8000-00805f9b34fb
+09-17 05:16:21.741 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:21.741 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:21.741 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:21.741 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:21.755 D/BluetoothGatt(32162): onCharacteristicWrite() - Device=C4:12:22:**:**:** handle=34 Status=0
+09-17 05:16:21.755 D/BluetoothController(32162): FA11 write ok=true
+09-17 05:16:21.755 D/BluetoothController(32162): FA11 write size=5 type=DEFAULT raw=0240470000
+09-17 05:16:21.756 D/BluetoothGatt(32162): writeCharacteristic() - uuid: 0000fa11-0000-1000-8000-00805f9b34fb
+09-17 05:16:21.785 D/BluetoothGatt(32162): onCharacteristicWrite() - Device=C4:12:22:**:**:** handle=34 Status=0
+09-17 05:16:21.785 D/BluetoothController(32162): FA11 write ok=true
+09-17 05:16:21.785 D/GlassesCapture(32162): FA11 op2 batch #1: 3 request(s) for 1459 missing byte(s)
+09-17 05:16:21.801 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:21.801 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:21.801 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:21.802 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:21.925 W/GlassesCapture(32162): FA12 silent — FA11 op2 batch #2 from 17520 (filled=17520/18499 missing=17520..17759)
+09-17 05:16:21.926 D/BluetoothController(32162): FA11 write size=5 type=DEFAULT raw=0270440000
+09-17 05:16:21.926 D/BluetoothGatt(32162): writeCharacteristic() - uuid: 0000fa11-0000-1000-8000-00805f9b34fb
+09-17 05:16:21.950 D/BluetoothGatt(32162): onCharacteristicWrite() - Device=C4:12:22:**:**:** handle=34 Status=0
+09-17 05:16:21.951 D/BluetoothController(32162): FA11 write ok=true
+09-17 05:16:21.951 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:21.951 D/GlassesCapture(32162): FA11 op2 batch #2: 1 request(s) for 979 missing byte(s)
+09-17 05:16:21.951 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=36 p_data->handle=4
+09-17 05:16:21.952 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:21.952 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=36
+09-17 05:16:21.955 D/GlassesCapture(32162): collectChunks complete: 18499/18499 bytes covered by 78 blocks in 4864ms (resends=2)
+09-17 05:16:21.958 D/BluetoothController(32162): FA11 write size=5 type=DEFAULT raw=03ac655261
+09-17 05:16:21.958 D/BluetoothGatt(32162): writeCharacteristic() - uuid: 0000fa11-0000-1000-8000-00805f9b34fb
+09-17 05:16:21.981 D/BluetoothGatt(32162): onCharacteristicWrite() - Device=C4:12:22:**:**:** handle=34 Status=0
+09-17 05:16:21.982 D/BluetoothController(32162): FA11 write ok=true
+09-17 05:16:21.986 D/BluetoothGatt(32162): requestConnectionPriority() - params: 0
+09-17 05:16:22.010 I/bluetooth(30750): gatt_process_notification: 
+09-17 05:16:22.010 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: check p_data->att_value.handle=27 p_data->handle=4
+09-17 05:16:22.010 I/bt_bta_gattc(30750): bta_gattc_proc_other_indication: is_notify false
+09-17 05:16:22.012 D/BluetoothGatt(32162): onNotify() - Device=C4:12:22:**:**:** handle=27
+09-17 05:16:22.013 D/BluetoothController(32162): FFF2 notify size=8 tryEmit=true raw=55aa125103010002
+09-17 05:16:22.171 D/BluetoothGatt(32162): onConnectionUpdated() - Device=C4:12:22:**:**:** interval=24 latency=0 timeout=500 status=0
