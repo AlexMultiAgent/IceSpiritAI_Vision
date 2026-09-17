@@ -116,6 +116,35 @@ object GlassesPhotoProtocol {
     /** Payload of `0x39`: transfer-AP mode / stop P2P (OEM uses `0x00` for both). */
     const val P2P_STOP_PAYLOAD: Byte = 0x00
 
+    /**
+     * BT network sharing switch (App → Glass, `01 01 <on>`).
+     *
+     * OEM `BleCommandConfig.cmdBluetoothNetwork = 62`, built by
+     * `BlePacketBuilder.buildBluetoothNetworkSharingPacket(seq, on)` — payload
+     * `[0x01, 0x01, on]` — and sent from
+     * `BluetoothController.enableBluetoothNetworkSharingForCurrentConnection()`
+     * whenever the App needs the glasses to have internet (the OTA flow calls
+     * it through `enqueueOtaPayloadAfterPanReady`: *ask for PAN, wait until it
+     * is up, then hand over the download URL*).
+     *
+     * This is the step our own upgrade flow was missing, and it is why an
+     * upgrade can stall in "downloading" even with the phone's 「蓝牙共享网络」
+     * toggled on: the toggle only makes the phone *offer* PAN, the glasses
+     * still have to be told to connect (`0x11` TLV `0x15` then reports `1`).
+     */
+    const val CMD_BLUETOOTH_NETWORK: Byte = 0x3E
+
+    /** `0x3E` payload: `[0x01][0x01][on ? 0x01 : 0x00]`. */
+    fun buildBluetoothNetworkSharingPayload(on: Boolean): ByteArray =
+        byteArrayOf(0x01, 0x01, if (on) 0x01 else 0x00)
+
+    /** `0x3E` frame asking the glasses to (stop) using the phone's network. */
+    fun buildBluetoothNetworkSharingFrame(seq: Byte, on: Boolean): ByteArray = buildRequestFrame(
+        seq = seq,
+        cmd = CMD_BLUETOOTH_NETWORK,
+        payload = buildBluetoothNetworkSharingPayload(on),
+    )
+
     /** `0x11` TLV: battery level. */
     const val SUB_BATTERY: Byte = 0x01
 

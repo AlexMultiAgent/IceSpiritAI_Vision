@@ -223,3 +223,63 @@ GET  https://s1.deepvision-tek.com:8089/user/me/ota/check
 2. **刷写流程**：协议已够写，但**没有固件包就无法真机验证**，且刷写中断有变砖风险；
    PAN 前置是否必需也未验证。建议先拿到厂商的 OTA 说明或一个可刷的包再实现。
 3. 升级进度上报/断点续传（官方有，本仓暂无账号侧，不需要）。
+
+---
+
+## 8. 2026-09-17（下午）实测：缺的是 `0x3E`，补上后 V2.4.6 → V2.6.2 一次成功
+
+背景：同一天早些时候，两次升级都在「正在下载并刷写…」里干等到 20 分钟超时（版本一直是 V2.4.6）。
+当时的现场是：手机「蓝牙共享网络」开着、`PanService mTetherOn=true`、眼镜的 PAN 策略=100（允许）、
+经典链路连着 A2DP——**但眼镜就是不来连 PAN**，手机侧始终没有 `bt-pan` 网卡。
+
+### 8.1 眼镜自己说了原因
+
+眼镜会用 `0x43` 通知回报 OTA 状态，那两次报的就是：
+
+```
+55 aa 03 43 03 0c00 02 06 0001 00000000 64000000      ← 进度类
+55 aa 04 43 03 1700 04 01 "PAN connection failed"     ← 错误文本(ASCII)
+```
+
+也就是说：**不是 App 没发地址，而是眼镜没有可用的上网通路**。
+
+### 8.2 官方是怎么解决的：`0x3E` + 等 PAN 就绪再发 URL
+
+| 位置 | 行为 |
+|---|---|
+| `BlePacketBuilder.buildBluetoothNetworkSharingPacket(seq, on)` | 组包 `0x3E`，载荷 `01 01 <on>` |
+| `BluetoothController.setBluetoothNetworkSharing(on, force)` | 真正发出去的那一层 |
+| `enableBluetoothNetworkSharingForCurrentConnection()` | 需要网络时调 `setBluetoothNetworkSharing(true, true)`，已激活则跳过 |
+| `enqueueOtaPayloadAfterPanReady` | **先等 PAN ready，再下发 OTA URL**——即本仓原先缺的那一步 |
+
+同时确认：`0x11` 的 `0x15` TLV 是「共享网络状态」，**1=在用**（`isBluetoothNetworkSharingActive = (value == 1)`），
+0=不可用；本仓原先按“0=开”理解是反的，已修。
+
+### 8.3 补上之后的实测（同一部手机、同一副眼镜）
+
+```
+15:05:13  App → 0x3E payload 01 01 01（让眼镜用手机的网络）
+15:05:14  Tethering: [bt-pan] TetheredState enter；netd 配 192.168.44.1/24
+15:05:14  RoutingCoordinator: Adding interface forward bt-pan → wlan0
+15:05:14  眼镜回报 0x11 TLV 15 01 01（共享网络可用）→ App 才发 0x43 URL
+15:06:37  bt-pan 网卡被移除（下载完毕，约 83 s / 2.6 MB ≈ 32 KB/s）
+15:08:08  BLE 无应答（眼镜刷写重启）
+15:08:09  读到固件版本 V2.6.2 → 「升级完成:V2.4.6 → V2.6.2」
+```
+
+结论：**PAN 前置确实必需，且必须由 App 主动下发 `0x3E`**；只把手机设置里的开关打开是不够的
+（开关只代表「手机愿意提供 NAP」，眼镜不会自己连上来）。
+
+### 8.4 厂商参考工程（`官方技术给的示例（仅参考）`）里没有答案
+
+那份工程里 `BleCommandConfig.bluetoothNetworkCmd = 0x3E` 只有**声明**，全项目搜不到任何调用；
+OTA / 网络共享 / `0x43` 都没有实现，因此它只能用来核对命令字，不能作为这条流程的参考。
+
+### 8.5 本仓落地
+
+- `GlassesPhotoProtocol.CMD_BLUETOOTH_NETWORK = 0x3E` + `buildBluetoothNetworkSharingFrame(seq, on)`（载荷 `01 01 <on>`）；
+- 升级流程改为：先 `0x3E` on → 等 `0x15=1`（最长 20 s，OEM 同款条件）→ 再发 URL；
+  结束后（含失败路径）自动 `0x3E` off 并释放通知 tap；
+- 升级过程中继续监听 `0x15`：>60 s 版本没变且眼镜说「共享网络不可用」→ 对话框红字提示 +
+  「去打开设置」按钮（跳到系统网络共享页）；>180 s 毫无进展 → 更模糊的兜底提示；
+- 仍未实现：`0x43` 进度/错误文本的解析（现在只数秒数，眼镜其实一直在报）。

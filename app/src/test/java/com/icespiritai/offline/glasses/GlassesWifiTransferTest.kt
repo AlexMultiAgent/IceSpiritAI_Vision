@@ -22,11 +22,44 @@ class GlassesWifiTransferTest {
     fun switchPayloadsMatchTheVendorConfig() {
         assertEquals(54, GlassesPhotoProtocol.CMD_OPEN_WIFI.toInt())
         assertEquals(57, GlassesPhotoProtocol.CMD_START_P2P.toInt())
+        assertEquals(62, GlassesPhotoProtocol.CMD_BLUETOOTH_NETWORK.toInt())
         assertEquals(1, GlassesPhotoProtocol.WIFI_ON_PAYLOAD.toInt())
         assertEquals(0, GlassesPhotoProtocol.WIFI_OFF_PAYLOAD.toInt())
         assertEquals(2, GlassesPhotoProtocol.P2P_START_PAYLOAD.toInt())
         // `startTransferApMode` and `stopP2pMode` both send 0.
         assertEquals(0, GlassesPhotoProtocol.P2P_STOP_PAYLOAD.toInt())
+    }
+
+    /**
+     * The command that makes the glasses actually *use* the phone's network.
+     *
+     * OEM `BlePacketBuilder.buildBluetoothNetworkSharingPacket(seq, on)` builds
+     * payload `01 01 <on>`, and the OTA flow calls it before handing over the
+     * URL (`enqueueOtaPayloadAfterPanReady`). Without it an upgrade can sit in
+     * "downloading" forever: the phone's tethering toggle only *offers* PAN.
+     */
+    @Test
+    fun networkSharingCommandMatchesTheVendorPayload() {
+        assertArrayEquals(
+            byteArrayOf(0x01, 0x01, 0x01),
+            GlassesPhotoProtocol.buildBluetoothNetworkSharingPayload(on = true),
+        )
+        assertArrayEquals(
+            byteArrayOf(0x01, 0x01, 0x00),
+            GlassesPhotoProtocol.buildBluetoothNetworkSharingPayload(on = false),
+        )
+        // `55 AA | 61 | 3E | 01 | 03 00 | 01 01 01`
+        assertArrayEquals(
+            byteArrayOf(
+                0x55, 0xAA.toByte(),
+                0x61,
+                0x3E,
+                0x01,
+                0x03, 0x00,
+                0x01, 0x01, 0x01,
+            ),
+            GlassesPhotoProtocol.buildBluetoothNetworkSharingFrame(seq = 0x61, on = true),
+        )
     }
 
     @Test
