@@ -409,6 +409,21 @@ class GlassesPhotoCaptureRepository(
         val liveReady = ready
             ?: return fail("未连接眼镜", retryable = true).let { null }
 
+        // Pre-capture channel pre-flight (vendor reference
+        // `ensureAiPhotoChannelReady`): a capture must not start on a channel
+        // nobody is listening to. `ensureConnected` subscribes once per GATT
+        // handle, but a firmware-side CCCD reset does not necessarily drop
+        // the link — then FA12 simply goes quiet and the session waits out the
+        // whole stall budget before failing. Checking here is one volatile
+        // read when healthy, and re-subscribes when not.
+        val mtu = bluetoothController.mtu.value
+        if (mtu < BluetoothController.REQUIRED_MIN_MTU) {
+            return fail("识图通道未就绪(MTU=$mtu)，请断开重连后再试", retryable = true).let { null }
+        }
+        if (!bluetoothController.ensureFa12NotifyReady()) {
+            return fail("识图通道未就绪(FA12 未订阅)，请断开重连后再试", retryable = true).let { null }
+        }
+
         // HIGH for the duration of the session, exactly like the official
         // app's `prewarmAiPhotoBlePriority` / `boostAiPhotoConnectionPriority`
         // (both call requestGattConnectionPriority(1, …), i.e.

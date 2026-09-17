@@ -313,6 +313,22 @@ class BluetoothController(
      */
     private var fa11WriteWithoutResponse: Boolean = false
 
+    /**
+     * Whether the FA12 CCCD write has been acknowledged since the current
+     * GATT handle was opened.
+     *
+     * Tracked because a capture must not start on a channel nobody is
+     * listening to: if the firmware resets its side of the CCCD without the
+     * GATT link dropping, notifications simply stop and the App would wait
+     * out the whole stall budget. The vendor reference guards every capture
+     * with `ensureAiPhotoChannelReady()`
+     * (`docs/glasses/官方技术给的示例（仅参考）/…/BluetoothController.kt:805`),
+     * which re-subscribes and short-waits; [ensureFa12NotifyReady] is the
+     * same idea.
+     */
+    @Volatile
+    private var fa12NotifyEnabled: Boolean = false
+
     /** Address currently connecting / connected; cleared on disconnect / release. */
     private var currentDevice: GlassesDevice? = null
 
@@ -494,9 +510,31 @@ class BluetoothController(
     suspend fun enableFa12Notify(): Boolean {
         fa12CccdRetryCount = 0
         delay(80L)
-        return enableNotify(FA10_SERVICE_UUID, FA12_CHAR_UUID) {
+        val ok = enableNotify(FA10_SERVICE_UUID, FA12_CHAR_UUID) {
             fa12Desc = it
         }
+        fa12NotifyEnabled = ok
+        return ok
+    }
+
+    /**
+     * Make sure FA12 notifications are actually subscribed before a capture.
+     *
+     * Cheap when everything is fine (one volatile read), and it repairs the
+     * case where the subscription was silently lost — otherwise that shows up
+     * as a capture that stalls and then times out. Mirrors the vendor
+     * reference's `ensureAiPhotoChannelReady()`.
+     */
+    suspend fun ensureFa12NotifyReady(timeoutMs: Long = 3_000L): Boolean {
+        if (fa12NotifyEnabled) return true
+        Log.w(TAG, "FA12 notify not subscribed — re-subscribing before capture")
+        if (enableFa12Notify()) return true
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            delay(100L)
+            if (fa12NotifyEnabled) return true
+        }
+        return fa12NotifyEnabled
     }
 
     /**
@@ -573,6 +611,7 @@ class BluetoothController(
         fa11Char = null
         fff2Desc = null
         fa12Desc = null
+        fa12NotifyEnabled = false
         fa12CccdRetryCount = 0
         _connectionState.value = ConnectionState.Idle
         cancelPendingDeferreds()
@@ -601,6 +640,7 @@ class BluetoothController(
         fff2Desc = null
         fa12Desc = null
         fa11WriteWithoutResponse = false
+        fa12NotifyEnabled = false
         fa12CccdRetryCount = 0
         _mtu.value = 23
         _lastConnInterval.value = INTERVAL_NOT_OBSERVED
@@ -634,6 +674,7 @@ class BluetoothController(
         fff2Desc = null
         fa12Desc = null
         fa11WriteWithoutResponse = false
+        fa12NotifyEnabled = false
         fa12CccdRetryCount = 0
         _lastConnInterval.value = INTERVAL_NOT_OBSERVED
         _mtu.value = 23
