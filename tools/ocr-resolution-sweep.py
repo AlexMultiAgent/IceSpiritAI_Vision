@@ -65,6 +65,57 @@ def recall_vs_reference(reference: str, candidate: str) -> float:
     return covered / sum(ref.values())
 
 
+def apply_preprocess(images: list[Path], steps: list[str]) -> list[Path]:
+    """Write copies of `images` with the OEM-style enhancement applied.
+
+    Mirrors what `com.deepvision_tek.glass_front.image.ImageProcessingPipeline`
+    does on the media-sync path (`denoise` → `enhance`), so we can measure on
+    our own det/rec stack whether the same ideas help the glasses' soft
+    640x480 photos:
+
+      * `median`  — 3x3 median on the luminance (their default MEDIAN denoise)
+      * `gamma`   — gamma 0.85 lift, the "brightness/gamma" half of `enhance`
+      * `unsharp` — unsharp mask (their `unsharp`/`unsharp$channel`), amount 0.6
+    """
+    import cv2
+    import numpy as np
+
+    out_dir = PROJECT_ROOT / "build" / "tmp" / f"pre_{'_'.join(steps)}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+    for image in images:
+        img = fixtures_load(image)
+        if img is None:
+            continue
+        for step in steps:
+            if step == "median":
+                img = cv2.medianBlur(img, 3)
+            elif step == "gamma":
+                inv = 1.0 / 0.85
+                lut = np.array([((i / 255.0) ** inv) * 255 for i in range(256)], dtype=np.uint8)
+                img = cv2.LUT(img, lut)
+            elif step == "unsharp":
+                blurred = cv2.GaussianBlur(img, (0, 0), 1.0)
+                img = cv2.addWeighted(img, 1.6, blurred, -0.6, 0)
+            else:
+                raise SystemExit(f"未知的预处理步骤: {step}")
+        out = out_dir / image.name
+        ok, buffer = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
+        if not ok:
+            raise RuntimeError(f"JPEG encode failed for {image.name}")
+        out.write_bytes(buffer.tobytes())
+        written.append(out)
+    return written
+
+
+def fixtures_load(path: Path):
+    import cv2
+    import numpy as np
+
+    data = np.fromfile(str(path), dtype=np.uint8)  # cv2.imread fails on CJK paths
+    return None if data.size == 0 else cv2.imdecode(data, cv2.IMREAD_COLOR)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--images", type=int, default=20, help="取前 N 张案例图（按文件名排序）")
@@ -89,13 +140,44 @@ def main() -> int:
             "0 = 用原图。用来回答「小图 + 不放大」会不会明显掉识别"
         ),
     )
+    parser.add_argument(
+        "--image",
+        type=str,
+        default=None,
+        help="直接对单张图片跑（例如眼镜拍的真实照片），而不是 违规案例/ 里的图",
+    )
+    parser.add_argument(
+        "--preprocess",
+        type=str,
+        default="none",
+        help=(
+            "在送检前做增强，逗号分隔可叠加：none / median / gamma / unsharp。"
+            "对应官方 ImageProcessingPipeline 的 denoise/enhance 两步"
+        ),
+    )
+    parser.add_argument(
+        "--expect",
+        type=str,
+        default=None,
+        help="逗号分隔的期望关键词（取自同一场景的清晰照片），报每个设置的命中数",
+    )
     args = parser.parse_args()
 
     fixtures = load_fixtures_tool()
-    images = fixtures.collect_image_files()[: args.images]
+    images = (
+        [Path(args.image)]
+        if args.image
+        else fixtures.collect_image_files()[: args.images]
+    )
     if not images:
         print("没有找到案例图（违规案例/*.jpg）", file=sys.stderr)
         return 1
+
+    preprocess_steps = [s.strip() for s in args.preprocess.split(",") if s.strip() and s.strip() != "none"]
+    expected = [w.strip() for w in (args.expect or "").split(",") if w.strip()]
+    if preprocess_steps:
+        images = apply_preprocess(images, preprocess_steps)
+        print(f"预处理 {preprocess_steps} → {images[0].parent}")
 
     if args.downscale_width > 0:
         import cv2
@@ -151,10 +233,17 @@ def main() -> int:
             lines_found.append(len(lines))
             texts[key][image.name] = text_of(lines)
         results[key] = {"times": times, "lines": lines_found}
+        chars = sum(len(texts[key][name]) for name in texts[key])
         print(
             f"  {key:>9}  中位 {statistics.median(times):7.1f} ms  "
-            f"均值 {statistics.fmean(times):7.1f} ms  行数中位 {statistics.median(lines_found):5.1f}"
+            f"均值 {statistics.fmean(times):7.1f} ms  行数中位 {statistics.median(lines_found):5.1f}  "
+            f"总字符 {chars}"
         )
+        if expected:
+            joined = "".join(texts[key].values()).replace(" ", "")
+            hits = [w for w in expected if w.replace(" ", "") in joined]
+            results[key]["hits"] = hits
+            print(f"            关键词命中 {len(hits)}/{len(expected)}  {hits}")
 
     # 召回：以基准设置为 1.0
     reference_key = f"{ref_side}:{ref_type}"
