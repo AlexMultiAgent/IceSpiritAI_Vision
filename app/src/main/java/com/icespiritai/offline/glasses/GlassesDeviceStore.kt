@@ -57,8 +57,27 @@ class GlassesDeviceStore(context: Context) {
         prefs.edit().remove(KEY_LAST_PAIRED_ADDRESS).apply()
     }
 
+    /**
+     * Last firmware version this App actually read from the glasses.
+     *
+     * Written by [GlassesPhotoCaptureRepository.readFirmwareVersion], so the
+     * settings row can show a version immediately after a cold start — and,
+     * more importantly, so a **finished firmware upgrade stays visible**: the
+     * upgrade watch runs in a process-scoped object, so if the App is
+     * restarted (or was closed) while the glasses flashed, the in-memory
+     * result is gone and the user saw nothing (report 2026-09-17 22:08:
+     * 「固件升级成功后没有提示」).
+     */
+    fun saveFirmwareVersion(version: String) {
+        prefs.edit().putString(KEY_FIRMWARE_VERSION, version).apply()
+    }
+
+    /** Last read firmware version, or `null` if we never got one. */
+    fun loadFirmwareVersion(): String? = prefs.getString(KEY_FIRMWARE_VERSION, null)
+
     companion object {
         private const val PREFS_NAME = "glasses_device_store"
         private const val KEY_LAST_PAIRED_ADDRESS = "last_paired_address"
+        private const val KEY_FIRMWARE_VERSION = "firmware_version"
     }
 }

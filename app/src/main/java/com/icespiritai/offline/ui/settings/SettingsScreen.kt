@@ -58,6 +58,8 @@ import com.icespiritai.offline.settings.SettingsViewModel
 import com.icespiritai.offline.tts.TtsState
 import com.icespiritai.offline.ui.home.RuleTab
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Modernized Settings screen (Phase 3.5 Task 21).
@@ -291,6 +293,7 @@ fun SettingsScreen(
                     GlassesFirmwareUpgradeRow(
                         context = glassesCtx,
                         enabled = glassesEnabled,
+                        snackbarHostState = snackbarHostState,
                     )
                     GlassesWifiTransferRow(
                         context = glassesCtx,
@@ -562,9 +565,17 @@ private fun GlassesFirmwareRow(
     enabled: Boolean,
 ) {
     val scope = rememberCoroutineScope()
+    val store = remember(context) { AppGraph.glassesDeviceStore(context) }
     var version by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
+
+    // Seed from the last version we read (persisted by the repository): it
+    // survives cold starts, so a firmware upgrade that finished while the App
+    // was closed still shows the new version here instead of 「未读取」.
+    LaunchedEffect(store) {
+        version = withContext(Dispatchers.IO) { runCatching { store.loadFirmwareVersion() }.getOrNull() }
+    }
 
     fun read() {
         if (busy) return
@@ -729,11 +740,36 @@ private fun GlassesWifiTransferRow(
 private fun GlassesFirmwareUpgradeRow(
     context: Context,
     enabled: Boolean,
+    snackbarHostState: SnackbarHostState,
 ) {
     val scope = rememberCoroutineScope()
     val updater = remember(context) { AppGraph.glassesFirmwareUpdater(context) }
     val state by updater.state.collectAsStateWithLifecycle()
     var dialogOpen by remember { mutableStateOf(false) }
+
+    // The dialog can be closed while the glasses download/flash (the row keeps
+    // showing the elapsed time), and the upgrade keeps running in the
+    // process-scoped updater. Before this the *result* was only visible inside
+    // that dialog, so a successful upgrade finished silently for anyone who had
+    // closed it (user report 2026-09-17 22:08). Now every terminal state also
+    // shows up as a snackbar and stays in the row text below.
+    LaunchedEffect(updater) {
+        updater.state.collect { s ->
+            val message = when (s) {
+                is GlassesFirmwareUpdater.UpgradeState.Success -> context.getString(
+                    R.string.settings_glasses_firmware_success,
+                    s.previousVersion ?: "?",
+                    s.newVersion,
+                )
+                is GlassesFirmwareUpdater.UpgradeState.Failed -> context.getString(
+                    R.string.settings_glasses_firmware_upgrade_failed,
+                    s.reason,
+                )
+                else -> null
+            }
+            if (message != null) snackbarHostState.showSnackbar(message)
+        }
+    }
 
     fun currentDevice(): GlassesDevice? = runCatching {
         resolveGlassesTarget(
@@ -746,6 +782,13 @@ private fun GlassesFirmwareUpgradeRow(
     val busy = state is GlassesFirmwareUpdater.UpgradeState.Checking ||
         state is GlassesFirmwareUpdater.UpgradeState.Sending ||
         state is GlassesFirmwareUpdater.UpgradeState.Upgrading
+
+    // A finished upgrade (or a failure) keeps showing in this row: the dialog is
+    // dismissable while the glasses work, so the row is where the result has to
+    // survive (user report 2026-09-17 22:08 — "升级成功后没有提示").
+    val finishedState = state as? GlassesFirmwareUpdater.UpgradeState.Success
+        ?: state as? GlassesFirmwareUpdater.UpgradeState.Failed
+    val showResult = busy || finishedState != null
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
@@ -762,16 +805,31 @@ private fun GlassesFirmwareUpgradeRow(
                 is GlassesFirmwareUpdater.UpgradeState.Sending,
                 is GlassesFirmwareUpdater.UpgradeState.Checking ->
                     stringResource(R.string.settings_glasses_firmware_checking)
+                is GlassesFirmwareUpdater.UpgradeState.Success -> stringResource(
+                    R.string.settings_glasses_firmware_success,
+                    s.previousVersion ?: "?",
+                    s.newVersion,
+                )
+                is GlassesFirmwareUpdater.UpgradeState.Failed ->
+                    stringResource(R.string.settings_glasses_firmware_upgrade_failed, s.reason)
                 else -> stringResource(R.string.settings_glasses_firmware_check)
             },
             style = MaterialTheme.typography.bodySmall,
+            color = if (finishedState is GlassesFirmwareUpdater.UpgradeState.Failed) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
             modifier = Modifier.weight(1f),
         )
         TextButton(
-            enabled = if (busy) true else enabled,
+            enabled = if (showResult) true else enabled,
             onClick = {
                 dialogOpen = true
-                if (busy) return@TextButton
+                // With a result on screen (or work in flight) the button only
+                // re-opens the dialog — it must not silently start another
+                // check that overwrites the outcome the user just got.
+                if (showResult) return@TextButton
                 scope.launch {
                     val device = currentDevice()
                     if (device == null) {
@@ -784,7 +842,7 @@ private fun GlassesFirmwareUpgradeRow(
         ) {
             Text(
                 stringResource(
-                    if (busy) {
+                    if (showResult) {
                         R.string.settings_glasses_firmware_action_view
                     } else {
                         R.string.settings_glasses_firmware_read

@@ -344,7 +344,7 @@ class GlassesPhotoCaptureRepository(
      * that can be exercised without a firmware image.
      */
     suspend fun readFirmwareVersion(device: GlassesDevice, timeoutMs: Long = 5_000L): String? {
-        readFirmwareVersionOnce(device, timeoutMs)?.let { return it }
+        readFirmwareVersionOnce(device, timeoutMs)?.let { return it.also(::rememberFirmwareVersion) }
         // Second chance. The glasses reboot at the end of a firmware upgrade
         // and the GATT can drop between reads, so a single silent attempt is
         // exactly the case where the user would otherwise have to restart the
@@ -354,7 +354,17 @@ class GlassesPhotoCaptureRepository(
         if (_state.value is GlassesCaptureState.Ready) {
             _state.value = GlassesCaptureState.Idle
         }
-        return readFirmwareVersionOnce(device, timeoutMs)
+        return readFirmwareVersionOnce(device, timeoutMs)?.also(::rememberFirmwareVersion)
+    }
+
+    /**
+     * Keep the last version we actually read, so the settings row can show it
+     * without another BLE round trip (and so a finished upgrade is still
+     * visible after an App restart — the upgrade watch itself is
+     * process-scoped and its result dies with the process).
+     */
+    private fun rememberFirmwareVersion(version: String) {
+        runCatching { GlassesDeviceStore(context).saveFirmwareVersion(version) }
     }
 
     /**
