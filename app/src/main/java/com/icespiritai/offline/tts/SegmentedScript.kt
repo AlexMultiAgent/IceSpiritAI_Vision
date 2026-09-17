@@ -22,10 +22,22 @@ object SegmentedScript {
     private const val DISCLAIMER = "AI识别仅供参考,合规判断以现场检查为准"
 
     fun build(report: ViolationReport, options: BuildOptions = BuildOptions.Default): List<HitSegment> {
-        // v0.3.3 (post v0.3.2 correction): 0 hits -> completely silent.
+        // v0.3.3 (post v0.3.2 correction): 0 hits -> silent by default.
         // User 原话 "如果为0就不播" — no fallback, no disclaimer, nothing.
         // `trailingDisclaimer` is a no-op for empty inputs.
-        if (report.hits.isEmpty()) return emptyList()
+        //
+        // 2026-09-17: that default is wrong for the *glasses* path, where the
+        // wearer has no screen to read. There the caller opts in with
+        // [BuildOptions.emptyResultText] and gets a spoken verdict either
+        // way; the phone path (null) stays exactly as it was.
+        if (report.hits.isEmpty()) {
+            val conclusion = options.emptyResultText?.takeIf { it.isNotBlank() }
+                ?: return emptyList()
+            // 用户 2026-09-17:「如果全为0,需要播一下"未发现违规用语"+兜底」
+            // — 结论句 + 免责声明,和错误路径(buildError)同一形状。
+            val text = if (options.trailingDisclaimer) "$conclusion。$DISCLAIMER" else conclusion
+            return listOf(metaSegment(text))
+        }
 
         val sorted = report.hits.sortedByDescending { severityRank(it.severity) }
         val truncated = options.topN?.let { sorted.take(it) } ?: sorted
@@ -64,7 +76,16 @@ object SegmentedScript {
         val i = hits.count { it.severity == Severity.Info }
         val p = hits.count { it.severity == Severity.Positive }
         val prefix = domainPrefix?.let { "$it。" } ?: ""
-        return "${prefix}共 ${v} 条违规,${w} 条警告,${i} 条信息${if (p > 0) ",${p} 条合规" else ""}"
+        // 用户 2026-09-17:只念**非零**的分类 —— 「违规 1、警告 0、信息 0」
+        // 时不该念「0 条警告,0 条信息」;有结果就说明结果,没结果的类别闭嘴。
+        val parts = buildList {
+            if (v > 0) add("$v 条违规")
+            if (w > 0) add("$w 条警告")
+            if (i > 0) add("$i 条信息")
+            if (p > 0) add("$p 条合规")
+        }
+        if (parts.isEmpty()) return prefix
+        return prefix + "共 " + parts.joinToString(",")
     }
 
     private fun buildBucketSegment(

@@ -5,6 +5,7 @@ import com.icespiritai.offline.domain.RuleHit
 import com.icespiritai.offline.domain.Severity
 import com.icespiritai.offline.domain.ViolationReport
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import android.net.StubUri
@@ -22,23 +23,43 @@ class SegmentedScriptTest {
         regulation = reg, severity = sev, domain = domain, lawText = lawText,
     )
 
-    @Test fun `empty hits returns empty list (no TTS, no disclaimer)`() {
-        // v0.3.3 (post v0.3.2 correction): 0 hits -> completely silent.
-        // No "未筛查出违规事项" fallback, no disclaimer — 用户原话
-        // "如果为0就不播"。`trailingDisclaimer` flag must not leak a
-        // segment when there are no hits.
+    @Test fun `empty hits speaks the clean verdict plus disclaimer`() {
+        // v0.3.3 曾规定 0 命中完全静默(用户原话「如果为0就不播」)。
+        // 2026-09-17 用户改了口径:「如果全为0,需要播一下"未发现违规用语"+兜底」
+        // —— 眼镜自动播报时佩戴者看不到屏幕,静默无法与「App 没工作」区分。
         val report = ViolationReport(StubUri(), "", emptyList(), 0)
         val segs = SegmentedScript.build(report, BuildOptions.Default)
-        assertEquals(emptyList<HitSegment>(), segs)
+
+        assertEquals(1, segs.size)
+        assertTrue(segs[0].isMeta)
+        assertTrue(
+            "expected the verdict sentence, got '${segs[0].text}'",
+            segs[0].text.contains(NO_VIOLATION_SPOKEN_TEXT),
+        )
+        assertTrue(
+            "expected the disclaimer to be part of the same utterance",
+            segs[0].text.contains("仅供参考"),
+        )
     }
 
-    @Test fun `empty hits with trailingDisclaimer false still returns empty list`() {
-        // Defense: even with trailingDisclaimer = false the contract is
-        // "no hits = no segments" — the flag is a no-op for empty inputs.
+    @Test fun `empty hits with trailingDisclaimer false speaks only the verdict`() {
         val report = ViolationReport(StubUri(), "", emptyList(), 0)
         val segs = SegmentedScript.build(
             report,
             BuildOptions.Default.copy(trailingDisclaimer = false),
+        )
+
+        assertEquals(1, segs.size)
+        assertEquals(NO_VIOLATION_SPOKEN_TEXT, segs[0].text)
+    }
+
+    @Test fun `empty hits stays silent when the caller opts out`() {
+        // The phone UI can still ask for silence by passing no text; only the
+        // built-in Default speaks the clean verdict.
+        val report = ViolationReport(StubUri(), "", emptyList(), 0)
+        val segs = SegmentedScript.build(
+            report,
+            BuildOptions.Default.copy(emptyResultText = null),
         )
         assertEquals(emptyList<HitSegment>(), segs)
     }
@@ -86,15 +107,41 @@ class SegmentedScriptTest {
         assertEquals("disclaimer hitIndex = -1", -1, segs[4].hitIndex)
     }
 
-    @Test fun `count summary includes zero buckets`() {
+    @Test fun `count summary omits zero buckets`() {
+        // 用户 2026-09-17:「如果违规为1,警告为0、信息为0,此时警告和信息就可以
+        // 不播,只播违规内容就好,因为有结果」 —— 只说存在的类别。
         val hits = listOf(hit("100% 中国第一", Severity.Violation))
         val segs = SegmentedScript.build(
             ViolationReport(StubUri(), "", hits, 0),
             BuildOptions.Default,
         )
         assertTrue(segs[0].text.contains("1 条违规"))
-        assertTrue(segs[0].text.contains("0 条警告"))
-        assertTrue(segs[0].text.contains("0 条信息"))
+        assertFalse("0 条警告 must not be read aloud", segs[0].text.contains("警告"))
+        assertFalse("0 条信息 must not be read aloud", segs[0].text.contains("信息"))
+    }
+
+    @Test fun `count summary lists only the categories that exist`() {
+        val hits = listOf(
+            hit("100% 中国第一", Severity.Violation),
+            hit("国家级 特供", Severity.Warning),
+        )
+        val segs = SegmentedScript.build(
+            ViolationReport(StubUri(), "", hits, 0),
+            BuildOptions.Default,
+        )
+        assertEquals("共 1 条违规,1 条警告", segs[0].text)
+    }
+
+    @Test fun `count summary prefixes the domain and keeps positive counts`() {
+        val hits = listOf(
+            hit("维生素A", Severity.Info),
+            hit("配料表完整", Severity.Positive),
+        )
+        val segs = SegmentedScript.build(
+            ViolationReport(StubUri(), "", hits, 0),
+            BuildOptions.Default.copy(domainPrefix = "食品标签"),
+        )
+        assertEquals("食品标签。共 1 条信息,1 条合规", segs[0].text)
     }
 
     /**

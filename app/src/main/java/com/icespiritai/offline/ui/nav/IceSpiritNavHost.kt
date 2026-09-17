@@ -18,6 +18,7 @@ import com.icespiritai.offline.domain.AnalysisState
 import com.icespiritai.offline.settings.SettingsRepository
 import com.icespiritai.offline.tts.EngineInfo
 import com.icespiritai.offline.tts.TtsController
+import com.icespiritai.offline.R
 import com.icespiritai.offline.tts.TtsState
 import com.icespiritai.offline.ui.home.HomeScreen
 import com.icespiritai.offline.ui.settings.ChangelogScreen
@@ -154,6 +155,22 @@ fun IceSpiritNavHost(
                     ttsController.setLatestReport(
                         (state as? AnalysisState.Complete)?.report
                     )
+                    // Glasses captures ask to be spoken automatically: the
+                    // wearer cannot reach the 朗读 button, so the result has
+                    // to reach the glasses' speakers on its own. One-shot —
+                    // takePendingAutoSpeak() clears the flag, so phone
+                    // captures keep the manual behaviour.
+                    if (state is AnalysisState.Complete && sharedVm.takePendingAutoSpeak()) {
+                        android.util.Log.i(
+                            "TtsAutoSpeak",
+                            "glasses capture complete — auto-speaking report (hits=${state.report.hits.size})",
+                        )
+                        // BuildOptions.Default already speaks
+                        // 「未发现违规用语」+ 免责声明 when nothing was found
+                        // (user rule 2026-09-17), so a clean report still
+                        // gives the wearer a verdict instead of silence.
+                        ttsController.speakSegments(state.report)
+                    }
                 }
             }
         }

@@ -217,6 +217,25 @@ class IceSpiritVisionViewModel(
     private var currentJob: Job? = null
 
     /**
+     * Set when an analysis should be spoken the moment it completes, without
+     * the user tapping the top-bar 朗读 button.
+     *
+     * Only the smart-glasses path asks for this
+     * (`HomeScreen` → `startAnalysis(uri, autoSpeak = true)`): the point of
+     * the glasses flow is that the wearer is *looking away from the phone*,
+     * so the verdict has to come out of the glasses' own speakers. Phone
+     * captures keep the manual button, because there the user is already
+     * looking at the screen.
+     *
+     * Read-and-clear ([takePendingAutoSpeak]) so a stale flag can never make
+     * a later phone-capture result play unexpectedly.
+     */
+    private val autoSpeakPending = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** Consume the one-shot auto-speak request, if any. */
+    fun takePendingAutoSpeak(): Boolean = autoSpeakPending.getAndSet(false)
+
+    /**
      * Switch the active tab. Returns `true` iff the call actually changed
      * the selected tab. **`false` is overloaded** — it does not mean
      * "nothing happened"; inspect the case below:
@@ -286,7 +305,8 @@ class IceSpiritVisionViewModel(
      * Callers do not need to wrap this in a coroutine; [viewModelScope] is
      * the parent scope.
      */
-    fun startAnalysis(uri: Uri) {
+    fun startAnalysis(uri: Uri, autoSpeak: Boolean = false) {
+        if (autoSpeak) autoSpeakPending.set(true)
         val matcher = matcherFor(_currentTab.value)
         if (matcher == null) {
             Log.w(

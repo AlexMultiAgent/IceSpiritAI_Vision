@@ -16,15 +16,14 @@ class ScriptBuilderTest {
         regulation = "广告法 §9", severity = sev,
     )
 
-    @Test fun `empty hits returns empty list (no TTS, no disclaimer)`() {
-        // v0.3.3 (post v0.3.2 correction): 0 hits -> completely silent.
-        // User 原话 "如果为0就不播" — no FALLBACK_TEXT, no disclaimer,
-        // nothing. This is the v0.3.2 behavior inverted: v0.3.2 emitted
-        // "未筛查出违规事项" + disclaimer; user feedback clarified that
-        // 0 hits should produce no audio at all.
+    @Test fun `empty hits still speaks the clean verdict`() {
+        // v0.3.3 said 0 hits -> completely silent. The user revised that on
+        // 2026-09-17: 「如果全为0,需要播一下"未发现违规用语"+兜底」 — the
+        // glasses path has no screen, so silence was unreadable.
         val report = ViolationReport(StubUri(), "", emptyList(), 0)
         val segs = ScriptBuilder.buildSegments(report)
-        assertEquals(emptyList<HitSegment>(), segs)
+        assertEquals(1, segs.size)
+        assertTrue(segs[0].text.contains(NO_VIOLATION_SPOKEN_TEXT))
     }
 
     @Test fun `single Violation hit emits prefix + bucket + disclaimer`() {

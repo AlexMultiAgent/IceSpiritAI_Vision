@@ -1,5 +1,6 @@
 package com.icespiritai.offline.tts
 
+import android.util.Log
 import com.icespiritai.offline.domain.AnalysisState
 import com.icespiritai.offline.domain.ViolationReport
 import kotlinx.coroutines.CoroutineScope
@@ -53,6 +54,9 @@ class TtsController(
     private val settings: TtsSettingRepositoryLike,
     private val scope: CoroutineScope,
 ) {
+    private companion object {
+        const val TAG = "TtsController"
+    }
     private val _state = MutableStateFlow<TtsState>(TtsState.Idle)
     val state: StateFlow<TtsState> = _state.asStateFlow()
 
@@ -151,7 +155,14 @@ class TtsController(
      */
     fun speakSegments(report: ViolationReport, options: BuildOptions = BuildOptions.Default) {
         val current = _state.value
-        if (current is TtsState.Disabled || current is TtsState.InitFailed) return
+        if (current is TtsState.Disabled || current is TtsState.InitFailed) {
+            // Silent returns here were invisible in field logs: the glasses
+            // auto-speak path calls this with no UI to show why nothing came
+            // out (user report 2026-09-17 "拍照后没有声音").
+            Log.w(TAG, "speakSegments skipped: tts state=$current")
+            return
+        }
+        Log.i(TAG, "speakSegments: engine=${currentEngine()::class.simpleName} state=$current")
         latestReport = report
         // v0.3.0 Phase C: Settings → longReportSummaryEnabled overrides options.topN.
         // Caller-passed topN (test path) wins; otherwise, when the toggle is on,

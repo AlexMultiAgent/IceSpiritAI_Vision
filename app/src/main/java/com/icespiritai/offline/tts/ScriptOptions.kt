@@ -17,11 +17,26 @@ data class BuildOptions(
     val includeLawCitation: Boolean = true,
     /** 域前缀("广告招牌" / "食品标签")— null = 不前缀。 */
     val domainPrefix: String? = null,
+    /**
+     * 0 命中时朗读的文案;null = 不播(仅测试/特殊场景会传 null)。
+     *
+     * v0.3.3 的旧决定是「如果为0就不播」(手机端视角:屏幕上有卡片,再念一遍
+     * 是噪音)。v0.4.x 用户改为要求**全为零也播报结论**:眼镜佩戴者看不到屏幕,
+     * 「什么都没说」与「App 根本没工作」无法区分(2026-09-17 反馈:眼镜上没声音)。
+     * 默认值即 [NO_VIOLATION_SPOKEN_TEXT]。
+     */
+    val emptyResultText: String? = null,
 ) {
     companion object {
-        val Default = BuildOptions()
+        val Default = BuildOptions(emptyResultText = NO_VIOLATION_SPOKEN_TEXT)
     }
 }
+
+/**
+ * 0 命中时朗读的结论句。与 UI 卡片 `status_no_violation_card`
+ * (「未发现违规用语」)保持同一措辞,便于佩戴者把听到的和看到的对上。
+ */
+const val NO_VIOLATION_SPOKEN_TEXT = "未发现违规用语"
 
 /**
  * 单段朗读内容 + metadata。`hitIndex` 用于 UI 端 scroll-to-item 同步;
