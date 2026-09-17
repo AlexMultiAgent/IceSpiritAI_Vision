@@ -228,6 +228,44 @@ deviceInfo: firmware=V2.4.6 storage=479/4MB files=17 ftp=null
 3. **AP/P2P 路线能否真的更快**：需要一次真机实验（`0x39 p2pStart` → 手机侧连上 → FTP 拉一张 40 KB 照片计时），
    本仓目前没有这条实现。
 
+### 7.5 Wi-Fi 取图路线实测（2026-09-17，Glasses-A88 / V2.4.6 / nova 6）
+
+§7.4 第 3 条已经做了，结论是**这条路在本机走不通**，卡点不在 FTP，而在「眼镜的 AP 根本没出现在手机侧」。
+
+复刻官方所需的一切都有出处：开关命令取 `assets/app_config.json`（`cmdOpenWifi=54`、`cmdStartP2p=57`、
+`wifiOnPayload=1`、`p2pStartPayload=2`、`p2pStopPayload=0`），FTP 取 `MediaSyncManager.downloadMediaFiles`
+（`bk7258`/`123456`）与 `PhotoCaptureService.downloadPhotoFromFtp`（`/Picture`），加入方式取
+`ApWifiConnector`（`WifiNetworkSpecifier` + `requestNetwork` + `bindProcessToNetwork`，并
+`removeCapability(NET_CAPABILITY_INTERNET)`）。本仓实现见 `GlassesWifiProbe`，入口是设置页「Wi-Fi 取图诊断」。
+
+| 步骤 | 做法 | 实测结果 |
+|---|---|---|
+| 1 | `0x10\|0xF4/0xF3/0xF2/0x14` 读设备信息 | 每次都拿到 `ftp=192.168.188.1`、`ssid=Glasses-A88_556009`、`password=12345678`、`p2p=C4:12:22:55:60:08` |
+| 2 | `0x36` payload 1（开 Wi‑Fi）+ `0x39` payload 2（P2P） | 眼镜 ACK（回包 `55aa…3902010000`），**持续扫描 15 s 未见该 SSID** |
+| 3 | `0x39` payload 0（transfer AP，官方 `startTransferApMode` 同款） | 同上：5 s×3 次扫描未见该 SSID |
+| 4 | Wi‑Fi Direct 发现（`WifiP2pManager.discoverPeers`） | 20 s 内 **0 个对端**：眼镜不是 P2P 设备 |
+| 5 | `WifiNetworkSpecifier`（按隐藏 SSID 直连） | 平台 25 s 后 `onUnavailable`，设置页弹「出了点问题。该应用已取消选择设备的请求。」 |
+| 6 | `0x39` payload 0 + `0x36` payload 0（关） | 眼镜**仍然**上报同一个 `ftp/ssid/password` |
+
+三条独立证据：
+
+1. 框架侧从未看到这个 SSID——`dumpsys wifi` 里 `NETWORK_NOT_FOUND_EVENT ssid="Glasses-A88_556009"`，
+   且 `ScanResultMatchInfo: … from scan result: false`（这是早先 `cmd wifi connect-network` 尝试留下的记录）。
+2. 第 6 步说明 **`ftp`/`apSsid`/`apPassword` 是「存储的配置」，不是「AP 正在跑」**。
+   第一轮看到的「430 ms 内 session up」正是这个假信号：眼镜只是把配置吐出来了。
+3. Wi‑Fi Direct 侧 0 对端，与 BK7258（Beken Wi‑Fi+BT SoC）自建软 AP 的判断一致——它不是 Android P2P 设备。
+
+顺带确认的两件事（都写进代码了）：`ConnectivityManager.requestNetwork` 即使带 specifier 也需要清单里声明
+`CHANGE_NETWORK_STATE`，否则直接 `SecurityException`；官方 App 自己也有「系统没弹连接框 → 请到 Wi‑Fi 列表手动选」
+的兜底文案（`openPhoneWifiSettings`），说明自动连接在真机上也并不总是成立。
+
+**下一步只剩三种可能**，按性价比排序：
+
+1. 拿 **V2.5.8 那副**再跑一次同样的诊断（本机当前是 V2.4.6；换机会不会 AP 就可见，5 分钟能验）。
+2. 用官方 App 配合抓 `dumpsys wifi` / BLE HCI 日志，看它成功同步时到底多发/少发哪条命令
+   （`0x3E` 蓝牙共享网络、`mediaSync` 相关指令都还没试过）。
+3. 放弃 Wi‑Fi 路线，继续压 BLE FA12（当前 34 KB / 7.5 s 已是补洞策略下的实测值）。
+
 ---
 
 *本文只记录「官方 App 实际怎么做」；本仓怎么改的完整过程与真机判据见 `docs/smoke/2026-09-15-ble-fix-verify/README.md`。*
