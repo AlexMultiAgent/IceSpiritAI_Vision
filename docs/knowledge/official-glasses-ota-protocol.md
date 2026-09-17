@@ -144,6 +144,23 @@ POST https://s1.deepvision-tek.com:8089/version/check-update   {currentVersionCo
 
 ## 6. 2026-09-17 升级结果与升级后复测（V2.4.6 → V2.5.8）
 
+## 7. 2026-09-17 发布事故：线上发过一版「没有 OCR 模型」的包
+
+- 现象：`latest` 上出现 v0.5.1（vc81）但只有 **38 332 240 B**，`assets/models` 只有 TTS 的 23 个文件
+  （无 `det/rec/*.onnx`），也没有 Paddle/OpenCV native 库 → 即默认 **`shell` profile** 的产物
+  （`app/build.gradle.kts` 头部写明 shell 不打包任何 OCR 模型），装到用户机上 OCR 无法运行。
+- 根因：`.claude/skills/icevision-release/SKILL.md` 的流水线表与 Critical-ordering 两步写的都是裸
+  `assembleRelease`（默认 `modelProfile=shell`）；签名、cert-pin、versionCode、大小之外的既有闸门
+  对这个包**全部通过**，所以它能一路发出去。
+- 修复：
+  1. 文档：release skill 两处命令改为 `assembleRelease -PmodelProfile=ice_ocr_rules` 并写明验收判据
+     （APK 必含 `assets/models/{det,rec}/inference.onnx`）；CLAUDE.md 的 modelProfile 段同步（commit `92df893`）。
+  2. 闸门：新增 `buildSrc/.../ReleaseArtifactGuard.kt`（4 项单测），在 `generateVisionLatestJson` 写 JSON 之前
+     校验 APK 必含 det/rec 的 ONNX+YML，缺失即 fail 并打印修复命令；故意发小包时用
+     `-PallowShellRelease=true` 显式放行（只告警）。实测 shell 包（38 332 238 B）被拦下（commit `1565ea5`）。
+  3. 发布：vc81 → **vc82 / v0.5.2** 重新打包发布（74 577 274 B，含 4 个 det/rec ONNX），
+     使 11:02–11:10 窗口内装到坏包的设备可自动更新恢复。
+
 1. **升级成功**：升级由 App 下发 URL、眼镜自行拉包刷写；重开后 App 读到
    `firmware version: V2.5.8`（设置页显示「固件版本:V2.5.8」）。
 2. **升级后传图复测（nova 6 + Glasses-A88 V2.5.8，43 119 B 照片）**：
