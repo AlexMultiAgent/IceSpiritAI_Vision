@@ -149,7 +149,6 @@ class GlassesFirmwareUpdater(
             val sharing = awaitNetworkSharing(statusTap)
             Log.i(TAG, "PAN before OTA: $sharing")
 
-
             val payload = GlassesFirmwareProtocol.buildUpgradePayload(info.downloadUrl)
             val frames = runCatching {
                 GlassesFirmwareProtocol.buildUpgradeFrames(
@@ -178,8 +177,22 @@ class GlassesFirmwareUpdater(
             }
             Log.i(TAG, "OTA url handed to glasses (${frames.size} frame(s), ${payload.size} B): ${info.downloadUrl}")
 
-            awaitGlassesUpgrade(device, info, previous, statusTap)
+            awaitGlassesUpgrade(
+                device = device,
+                info = info,
+                previous = previous,
+                statusTap = statusTap,
+                frames = frames,
+                panReadyAtHandover = sharing == true,
+            )
     }
+
+    /** `0x3E` on: ask the glasses to route their traffic through the phone. */
+    private suspend fun requestNetworkSharing(): Boolean = runCatching {
+        controller.writeFff0(
+            GlassesPhotoProtocol.buildBluetoothNetworkSharingFrame(seq++, on = true),
+        )
+    }.getOrDefault(false)
 
     /**
      * Send `0x3E` (share the phone's network) and wait for the glasses to
@@ -192,11 +205,7 @@ class GlassesFirmwareUpdater(
         statusTap: ReceiveTap<ByteArray>,
         timeoutMs: Long = PAN_READY_TIMEOUT_MS,
     ): Boolean? {
-        val sent = runCatching {
-            controller.writeFff0(
-                GlassesPhotoProtocol.buildBluetoothNetworkSharingFrame(seq++, on = true),
-            )
-        }.getOrDefault(false)
+        val sent = requestNetworkSharing()
         if (!sent) {
             Log.w(TAG, "0x3E (share network) rejected by the stack")
             return null
@@ -223,6 +232,8 @@ class GlassesFirmwareUpdater(
         info: FirmwareUpdateInfo,
         previous: String?,
         statusTap: ReceiveTap<ByteArray>,
+        frames: List<ByteArray>,
+        panReadyAtHandover: Boolean,
     ) {
         val startedAt = System.currentTimeMillis()
         var lastSeen = previous
@@ -234,6 +245,8 @@ class GlassesFirmwareUpdater(
         // `BluetoothPan` is a hidden class — so this is the only honest signal.
         var sharingReported: Boolean? = null
         var lastHint = TetheringHint.NONE
+        var lastSharingRequestAt = 0L
+        var urlResent = false
         _state.value = UpgradeState.Upgrading(info, 0L, previous, lastHint)
         while (System.currentTimeMillis() - startedAt < UPGRADE_WATCH_TIMEOUT_MS) {
                 delay(POLL_INTERVAL_MS)
@@ -255,6 +268,33 @@ class GlassesFirmwareUpdater(
                     }
                 }
                 val elapsed = System.currentTimeMillis() - startedAt
+
+                // Re-arm the PAN request. The user very likely just flipped the
+                // phone's 「蓝牙共享网络」 toggle *after* seeing the warning —
+                // without this the glasses would never be asked again and the
+                // only way out was to kill the App and start over (user report
+                // 2026-09-17).
+                if (sharingReported != true && elapsed - lastSharingRequestAt >= PAN_RETRY_INTERVAL_MS) {
+                    lastSharingRequestAt = elapsed
+                    if (requestNetworkSharing()) {
+                        Log.i(TAG, "re-asked the glasses to use the phone's network (elapsed=${elapsed}ms)")
+                    }
+                }
+
+                // The route appeared *after* we had already handed the URL over
+                // while the glasses had none (and their firmware answers
+                // "PAN connection failed" rather than retrying on its own), so
+                // hand the URL over once more.
+                if (sharingReported == true && !panReadyAtHandover && !urlResent) {
+                    urlResent = true
+                    val resent = runCatching { controller.writeFirmwareOtaFrames(frames) }
+                        .getOrDefault(false)
+                    Log.i(
+                        TAG,
+                        "PAN became available after the hand-over — re-sent the OTA url (ok=$resent)",
+                    )
+                }
+
                 val hint = firmwareTetheringHint(sharingReported, elapsed)
                 if (hint != lastHint) {
                     Log.w(TAG, "tethering hint: $lastHint -> $hint (elapsed=${elapsed}ms, sharing=$sharingReported)")
@@ -293,6 +333,13 @@ class GlassesFirmwareUpdater(
          * so a couple of seconds is the normal case and this is generous.
          */
         const val PAN_READY_TIMEOUT_MS = 20_000L
+
+        /**
+         * How often to re-ask for PAN while the glasses still report no
+         * sharing. The user turns the phone's toggle on *after* seeing the
+         * warning, and the glasses only connect when asked.
+         */
+        const val PAN_RETRY_INTERVAL_MS = 20_000L
 
         /**
          * How long to wait for the version to change. 2.6 MB over BT-PAN

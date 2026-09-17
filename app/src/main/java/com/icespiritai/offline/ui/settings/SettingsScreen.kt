@@ -749,14 +749,29 @@ private fun GlassesFirmwareUpgradeRow(
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
-            text = stringResource(R.string.settings_glasses_firmware_check),
+            text = when (val s = state) {
+                // While the glasses download/flash the row keeps showing what is
+                // happening, so the dialog can be closed without losing sight of
+                // the upgrade (user report 2026-09-17: the dialog could not be
+                // closed at all, and after opening 蓝牙共享网络 mid-upgrade the
+                // only way forward was to kill and restart the App).
+                is GlassesFirmwareUpdater.UpgradeState.Upgrading -> stringResource(
+                    R.string.settings_glasses_firmware_upgrading,
+                    (s.elapsedMs / 1000).toInt(),
+                )
+                is GlassesFirmwareUpdater.UpgradeState.Sending,
+                is GlassesFirmwareUpdater.UpgradeState.Checking ->
+                    stringResource(R.string.settings_glasses_firmware_checking)
+                else -> stringResource(R.string.settings_glasses_firmware_check)
+            },
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.weight(1f),
         )
         TextButton(
-            enabled = enabled && !busy,
+            enabled = if (busy) true else enabled,
             onClick = {
                 dialogOpen = true
+                if (busy) return@TextButton
                 scope.launch {
                     val device = currentDevice()
                     if (device == null) {
@@ -767,18 +782,25 @@ private fun GlassesFirmwareUpgradeRow(
                 }
             },
         ) {
-            Text(stringResource(R.string.settings_glasses_firmware_read))
+            Text(
+                stringResource(
+                    if (busy) {
+                        R.string.settings_glasses_firmware_action_view
+                    } else {
+                        R.string.settings_glasses_firmware_read
+                    },
+                ),
+            )
         }
     }
 
     if (!dialogOpen) return
     val upgradeInfo = (state as? GlassesFirmwareUpdater.UpgradeState.Available)?.info
     AlertDialog(
-        onDismissRequest = {
-            // Never drop the dialog while frames are going out or the glasses
-            // are mid-flash — the user would lose the only progress display.
-            if (!busy) dialogOpen = false
-        },
+        // Closing is always allowed: the watch runs on the process-scoped
+        // updater, so the row keeps showing the elapsed time and the button
+        // reopens this dialog (`查看`).
+        onDismissRequest = { dialogOpen = false },
         title = { Text(stringResource(R.string.settings_glasses_firmware_dialog_title)) },
         text = {
             val current = state
@@ -865,8 +887,7 @@ private fun GlassesFirmwareUpgradeRow(
         },
         dismissButton = {
             TextButton(
-                onClick = { if (!busy) dialogOpen = false },
-                enabled = !busy,
+                onClick = { dialogOpen = false },
             ) {
                 Text(stringResource(R.string.settings_glasses_firmware_action_close))
             }

@@ -80,6 +80,7 @@
     <string name="settings_glasses_firmware_success">升级完成:%1$s → %2$s</string>
     <string name="settings_glasses_firmware_upgrade_failed">升级失败:%1$s</string>
     <string name="settings_glasses_firmware_action_close">关闭</string>
+    <string name="settings_glasses_firmware_action_view">查看</string>
     <string name="settings_glasses_firmware_unknown_size">未知</string>
     <string name="settings_glasses_wifi_idle">Wi-Fi 取图诊断:未测试</string>
     <string name="settings_glasses_wifi_running">正在请求眼镜开启 Wi-Fi 传输模式…</string>
