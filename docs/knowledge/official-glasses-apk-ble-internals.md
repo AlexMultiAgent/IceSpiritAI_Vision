@@ -174,4 +174,60 @@ BLE_CONN_PRIORITY priority=HIGH ok=true reason=ai_photo_prewarm_overlay_open int
 
 ---
 
+## 7. 设备信息读取 + 「这份硬件该走哪条传图路线」（2026-09-17 补充）
+
+触发原因：本仓只有 BLE FA12 一条传图路（拿到 43 KB 照片要 7–15 s），想知道厂商给「有存储的眼镜」
+准备的 Wi-Fi/FTP 媒体同步是否更快，以及官方那条 **SPP/RFCOMM** 路是不是我们该投入的方向。
+判据不在文档里，而在官方 App 的 `BluetoothController.handleReceivedData`：
+
+### 7.1 六个字段的真实格式（方法级对照，非猜测）
+
+`0x10 getDeviceInfoCmd` + 一个子指令（`BleCommandConfig$Companion.default()`），请求体都是
+`55 AA | seq | 10 | 01 | 02 00 | <sub> 00`——与本仓 `buildDeviceInfoRequestFrame` 一致。
+回包体是 `[sub][len][value…]`，`handleReceivedData` 按 sub 分支取值：
+
+| 字段 | sub | 值格式 | 本机真实回包（2026-09-17, V2.4.6） | 解码 |
+|---|---|---|---|---|
+| 固件版本 | `0x20` | UTF-8 | `20 06 56322e342e36` | `V2.4.6` |
+| 存储 | `0xF4` | **两个 u64 LE**（先 used 后 total，各 8 字节） | `f4 10 df01000000000000 0400000000000000` | used=**479**，total=**4** |
+| 未同步文件数 | `0x17` | `[4 字节][u32 LE 计数]`（`0x11` 通知里是同名字段的 1 字节形式） | `17 06 000411000000` | **17** |
+| FTP 地址 | `0xF3` | 4 字节 **逆序** 点分十进制 | `f3 04 00000000` | 全 0 → AP 未启动 |
+| P2P MAC | `0xF2` | 6 字节原样，`%02X` 拼冒号 | `f2 06 c41222556008` | `C4:12:22:55:60:08` |
+| AP 账号 | `0x14` | `[marker][len][utf8]…`，marker `1`=SSID、`2`=密码 | `14 04 01000200` | 两条都空 → 未配 AP |
+
+### 7.2 判定函数（官方原文语义）
+
+| 位置 | 判据 | 后果 |
+|---|---|---|
+| `DeviceInfo.isMemoryless` | `usedStorageMb <= 0` | 送 `SPP/RFCOMM` 分支 |
+| `DeviceInfoCacheKt.hasUsableStorage` | `storageInfoKnown && totalStorageMb > 0` | 允许 FTP/AP 媒体同步 |
+| `PhotoCaptureService.isMemorylessDevice()` | 读 `DeviceInfo.isMemoryless` | `waitForSppPhotoViaClassic` → 经典蓝牙 `GFSP`/`GFSA` |
+| 有存储的设备 | 上面的 `hasUsableStorage` | `WifiP2pController`（`0x39 p2pStart`）+ `FtpRepository.downloadPhotoFromFtp` |
+
+### 7.3 本机实测结论
+
+真机（nova 6 + Glasses-A88，`adb` 触发设置页「读取固件版本」，日志 tag `GlassesCapture`）：
+
+```
+deviceInfo: firmware=V2.4.6 storage=479/4MB files=17 ftp=null
+            p2p=C4:12:22:55:60:08 apSsid=null apAccountBytes=4
+            memoryless=false usableStorage=true wifiTransfer=true
+```
+
+即：**官方 App 会把本机当「有存储设备」，普通拍照走 FTP/AP（Wi-Fi）而不是 SPP**。
+换个说法——SPP 是「无存储硬件」的兜底路，照官方实现 SPP 并不能解释/改善本机的传输速度；
+真正对得上官方主力的候选是 Wi-Fi Direct（P2P MAC 已经是现成会合点）或眼镜热点 + FTP 拉图。
+本仓已把这六项读出来并落日志（`readDeviceInfo`，设置页「读取」按钮顺带执行），随时可再测。
+
+### 7.4 仍未确认
+
+1. **479 / 4 的单位**：官方 `DeviceInfo` 两个字段都叫 `…StorageMb`，但 479 > 4 说明固件给的两个数
+   单位不一致（疑似 used 用 MB、total 用 GB），本仓按官方字段名原样保留，不再自行换算。
+2. **AP 账号 marker 的含义**（`1`=SSID、`2`=密码）是从 `handleReceivedData` 的 marker 比较分支 +
+   真实回包 `01000200` 共同推定，尚未见到一条真正配好 AP 的样本。
+3. **AP/P2P 路线能否真的更快**：需要一次真机实验（`0x39 p2pStart` → 手机侧连上 → FTP 拉一张 40 KB 照片计时），
+   本仓目前没有这条实现。
+
+---
+
 *本文只记录「官方 App 实际怎么做」；本仓怎么改的完整过程与真机判据见 `docs/smoke/2026-09-15-ble-fix-verify/README.md`。*
