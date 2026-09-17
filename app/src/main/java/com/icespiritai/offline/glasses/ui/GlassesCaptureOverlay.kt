@@ -1,6 +1,7 @@
 package com.icespiritai.offline.glasses.ui
 
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -120,7 +121,18 @@ fun GlassesCaptureOverlay(
         try {
             repository.ensureConnected(target.device)
             // Auto-start the capture once Ready.
-            repository.capture()?.let(onCaptured)
+            val uri = repository.capture()
+            if (uri != null) {
+                onCaptured(uri)
+            } else {
+                // No image and (usually) no state change: without this the
+                // dialog sat on 「眼镜已就绪」 forever with no button
+                // (user report 2026-09-17 16:29). Turn it into a retryable
+                // failure the UI can render; a real failure reason already
+                // published by the repository is preserved.
+                Log.w(TAG, "capture() produced no image (state=${repository.state.value})")
+                repository.reportCaptureNotStarted("拍照未启动,请重试")
+            }
         } catch (e: Throwable) {
             // Repository has already transitioned state to Failed; let the
             // UI render that.
@@ -200,7 +212,18 @@ fun GlassesCaptureOverlay(
                     }
 
                     is GlassesPhotoCaptureRepository.GlassesCaptureState.Ready -> {
+                        // The capture starts automatically right after Ready, so
+                        // this arm is normally on screen for a few hundred ms.
+                        // It must still never be a dead end: show that work is
+                        // in flight and always offer a way out.
                         Text(text = stringResource(R.string.glasses_ready))
+                        Spacer(Modifier.height(12.dp))
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(text = stringResource(R.string.glasses_starting_capture))
                     }
 
                     is GlassesPhotoCaptureRepository.GlassesCaptureState.Capturing -> {
@@ -268,6 +291,20 @@ fun GlassesCaptureOverlay(
                         }
                     }
                 }
+                // Escape hatch for every non-terminal stage. The caller wires
+                // `onDismiss` to repository.cancel(), so leaving mid-transfer
+                // still sends FA11 op4 to the glasses. Before this, the
+                // connecting / ready / capturing arms had no button at all:
+                // if the session stalled there the user could only kill the
+                // App (report 2026-09-17 16:29, stuck on 「眼镜已就绪」).
+                if (state !is GlassesPhotoCaptureRepository.GlassesCaptureState.Success &&
+                    state !is GlassesPhotoCaptureRepository.GlassesCaptureState.Failed
+                ) {
+                    Spacer(Modifier.height(12.dp))
+                    TextButton(onClick = onDismiss) {
+                        Text(stringResource(R.string.glasses_action_close))
+                    }
+                }
             }
         }
     }
@@ -283,3 +320,14 @@ private fun Row(content: @Composable () -> Unit) {
         content()
     }
 }
+
+/**
+ * Log tag for the overlay's own diagnostics.
+ *
+ * The 2026-09-17 stuck-dialog report had *no* app-side log line between
+ * 「notification subscribed」 and the user's screenshot: the session reached
+ * Ready and the capture never started, and nothing recorded why. The
+ * `capture() entry` line now lives in the repository; these cover the
+ * overlay's own half of the handshake.
+ */
+private const val TAG = "GlassesCaptureOverlay"

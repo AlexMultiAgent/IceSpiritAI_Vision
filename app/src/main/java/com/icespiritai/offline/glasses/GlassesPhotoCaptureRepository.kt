@@ -649,7 +649,14 @@ class GlassesPhotoCaptureRepository(
      * [GlassesCaptureState.Failed] with a human-readable reason).
      */
     suspend fun capture(): Uri? {
-        if (_state.value is GlassesCaptureState.Capturing) return null
+        Log.i(
+            TAG,
+            "capture() entry: state=${_state.value::class.simpleName} mtu=${bluetoothController.mtu.value}",
+        )
+        if (_state.value is GlassesCaptureState.Capturing) {
+            Log.w(TAG, "capture() ignored — a capture is already in flight")
+            return null
+        }
         val state = _state.value
         val ready = state as? GlassesCaptureState.Ready
         if (ready != null && !isGlassesLinkUsable(
@@ -747,7 +754,28 @@ class GlassesPhotoCaptureRepository(
                 else -> null
             }
         } catch (e: CancellationException) {
+            Log.w(TAG, "capture() cancelled before it produced an image (state=${_state.value})")
             null
+        }
+    }
+
+    /**
+     * Publish a retryable failure for a caller that asked for a capture but
+     * the repository never started one.
+     *
+     * `capture()` can legitimately return `null` while leaving the state in
+     * [GlassesCaptureState.Ready] — a concurrent capture was already in
+     * flight, or the caller's coroutine was cancelled. The overlay used to
+     * render that as 「眼镜已就绪」 with no button and no timeout, so the user
+     * was simply stuck (report 2026-09-17 16:29). Callers now turn it into a
+     * state the UI can act on; an existing terminal state is left alone so a
+     * real failure reason is never overwritten by this generic one.
+     */
+    fun reportCaptureNotStarted(reason: String) {
+        when (_state.value) {
+            is GlassesCaptureState.Ready, is GlassesCaptureState.Idle ->
+                fail(reason, retryable = true)
+            else -> Log.w(TAG, "capture never started ($reason) but state=${_state.value::class.simpleName} — keeping it")
         }
     }
 
