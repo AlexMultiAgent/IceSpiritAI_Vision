@@ -84,6 +84,25 @@ class BluetoothController(
         private val FA10_SERVICE_UUID: UUID = uuid16(0xFA10)
         private val FA11_CHAR_UUID: UUID = uuid16(0xFA11)   // write — App → Glass (op2/op3/op4)
         private val FA12_CHAR_UUID: UUID = uuid16(0xFA12)   // notify — Glass → App (JPEG chunks)
+
+        /**
+         * The two extra notify channels the OEM app subscribes to
+         * (`assets/app_config.json` → `gattChannelProfiles`: FFF0/FFF1/FFF2,
+         * F618/B002/B001, FA00/EA02/EA01). We only ever subscribed to FFF2,
+         * so anything the firmware pushes on B001 or EA01 — the
+         * glasses' hardware shutter button being the prime suspect — was
+         * invisible to us (user report 2026-09-17).
+         */
+        private val F618_SERVICE_UUID: UUID = uuid16(0xF618)
+        private val B001_CHAR_UUID: UUID = uuid16(0xB001)
+        private val FA00_SERVICE_UUID: UUID = uuid16(0xFA00)
+        private val EA01_CHAR_UUID: UUID = uuid16(0xEA01)
+
+        /** `(service, notify characteristic, log label)` for [enableSecondaryNotifies]. */
+        private val SECONDARY_NOTIFY_CHANNELS: List<Triple<UUID, UUID, String>> = listOf(
+            Triple(F618_SERVICE_UUID, B001_CHAR_UUID, "F618/B001"),
+            Triple(FA00_SERVICE_UUID, EA01_CHAR_UUID, "FA00/EA01"),
+        )
         private val CCCD_UUID: UUID = uuid16(0x2902)        // standard CCCD
 
         /** Build a Bluetooth UUID from a 16-bit short form. */
@@ -209,6 +228,24 @@ class BluetoothController(
      */
     val fa12Notifications: SharedFlow<ByteArray> = _fa12Notify.asSharedFlow()
 
+    /**
+     * Notifications from the *other* firmware channels ([B001_CHAR_UUID],
+     * [EA01_CHAR_UUID]). Frames here are logged as `notify from <uuid>` and
+     * emitted so a future feature (glasses-button capture) can react; today
+     * they exist so the channel is not blind.
+     */
+    private val _miscNotify = MutableSharedFlow<MiscNotify>(extraBufferCapacity = 64)
+    val miscNotifications: SharedFlow<MiscNotify> = _miscNotify.asSharedFlow()
+
+    /** One frame from a notify characteristic we do not otherwise interpret. */
+    data class MiscNotify(val characteristic: UUID, val payload: ByteArray) {
+        override fun equals(other: Any?): Boolean =
+            other is MiscNotify && characteristic == other.characteristic &&
+                payload.contentEquals(other.payload)
+
+        override fun hashCode(): Int = 31 * characteristic.hashCode() + payload.contentHashCode()
+    }
+
     // ────────────────────────────────────────────────────────────────────
     // Internal GATT state
     // ────────────────────────────────────────────────────────────────────
@@ -259,6 +296,22 @@ class BluetoothController(
     private var fa11Char: BluetoothGattCharacteristic? = null
     private var fff2Desc: BluetoothGattDescriptor? = null
     private var fa12Desc: BluetoothGattDescriptor? = null
+
+    /**
+     * Whether FA11 advertises `PROPERTY_WRITE_NO_RESPONSE`, i.e. whether the
+     * firmware is willing to take FA11 opcodes as ATT write commands.
+     *
+     * Why this matters (2026-09-16): a repair request costs one
+     * write-with-response round trip (~30 ms measured on nova 6) and the
+     * glasses answer each request with 1-3 blocks, which caps gap repair at
+     * ~20-30 blocks/s. As a write command the same request costs no round
+     * trip at all. The OEM app makes the same distinction —
+     * `BluetoothController.writePhotoCtrl` reads the characteristic's
+     * properties and picks `WRITE_TYPE_DEFAULT` when `PROPERTY_WRITE` is set,
+     * `WRITE_TYPE_NO_RESPONSE` when only `PROPERTY_WRITE_NO_RESPONSE` is
+     * (see docs/knowledge/official-glasses-apk-ble-internals.md).
+     */
+    private var fa11WriteWithoutResponse: Boolean = false
 
     /** Address currently connecting / connected; cleared on disconnect / release. */
     private var currentDevice: GlassesDevice? = null
@@ -454,12 +507,54 @@ class BluetoothController(
         writeCharacteristic(FFF1_CHAR_UUID, payload)
 
     /**
+     * Send the firmware-OTA frames (`0x43`) to the glasses, one FFF1 write
+     * per frame with the OEM's inter-frame gap.
+     *
+     * The payload is the download-URL JSON (a couple of frames), not the
+     * firmware — see [GlassesFirmwareProtocol]. Returns false on the first
+     * rejected write so the caller can report "眼镜未接受升级指令" instead of
+     * telling the user to wait for a download that was never requested.
+     */
+    suspend fun writeFirmwareOtaFrames(
+        frames: List<ByteArray>,
+        gapMs: Long = GlassesFirmwareProtocol.OTA_FRAME_GAP_MS,
+    ): Boolean {
+        frames.forEachIndexed { index, frame ->
+            val ok = writeCharacteristic(FFF1_CHAR_UUID, frame)
+            if (!ok) {
+                Log.w(TAG, "OTA frame ${index + 1}/${frames.size} rejected by the stack")
+                return false
+            }
+            if (index != frames.lastIndex && gapMs > 0) delay(gapMs)
+        }
+        return true
+    }
+
+    /**
      * Write an FA11 control opcode (resend / CRC / cancel) to FA11.
      * Suspends until the OS confirms.
+     *
+     * [noResponse] asks for an ATT **write command** instead of a
+     * write-with-response round trip. It is only honoured when the
+     * characteristic advertises `PROPERTY_WRITE_NO_RESPONSE` (see
+     * [fa11WriteWithoutResponse]); otherwise the write falls back to
+     * [BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT] so a firmware that
+     * only implements write requests is never sent a command it will
+     * silently drop.
      */
-    suspend fun writeFa11(payload: ByteArray): Boolean {
-        Log.d(TAG, "FA11 write size=${payload.size} raw=" + payload.joinToString("") { "%02x".format(it.toInt() and 0xFF) })
-        val ok = writeCharacteristic(FA11_CHAR_UUID, payload)
+    suspend fun writeFa11(payload: ByteArray, noResponse: Boolean = false): Boolean {
+        val writeType = if (noResponse && fa11WriteWithoutResponse) {
+            BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+        } else {
+            BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        }
+        Log.d(
+            TAG,
+            "FA11 write size=${payload.size} type=" +
+                (if (writeType == BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE) "NO_RESPONSE" else "DEFAULT") +
+                " raw=" + payload.joinToString("") { "%02x".format(it.toInt() and 0xFF) },
+        )
+        val ok = writeCharacteristic(FA11_CHAR_UUID, payload, writeType)
         Log.d(TAG, "FA11 write ok=$ok")
         return ok
     }
@@ -479,6 +574,36 @@ class BluetoothController(
         fff2Desc = null
         fa12Desc = null
         fa12CccdRetryCount = 0
+        _connectionState.value = ConnectionState.Idle
+        cancelPendingDeferreds()
+    }
+
+    /**
+     * Drop the current GATT handle and go back to [ConnectionState.Idle]
+     * **without** giving up the controller, so the next [connect] really
+     * re-opens the link.
+     *
+     * Needed because a peripheral reboot (the glasses do exactly that at the
+     * end of a firmware upgrade) or a link drop can leave this controller
+     * believing it is still `Connected`/`Connecting` to the same address:
+     * [connect] then early-returns, and every later write goes into a dead
+     * handle until the process is restarted. Callers use this when they have
+     * independent evidence the link is gone (a failed read, a stalled
+     * capture) rather than as a routine step.
+     */
+    fun resetLink() {
+        Log.i(TAG, "resetLink: dropping GATT handle (was ${_connectionState.value})")
+        gatt?.close()
+        gatt = null
+        currentDevice = null
+        fff1Char = null
+        fa11Char = null
+        fff2Desc = null
+        fa12Desc = null
+        fa11WriteWithoutResponse = false
+        fa12CccdRetryCount = 0
+        _mtu.value = 23
+        _lastConnInterval.value = INTERVAL_NOT_OBSERVED
         _connectionState.value = ConnectionState.Idle
         cancelPendingDeferreds()
     }
@@ -508,6 +633,7 @@ class BluetoothController(
         fa11Char = null
         fff2Desc = null
         fa12Desc = null
+        fa11WriteWithoutResponse = false
         fa12CccdRetryCount = 0
         _lastConnInterval.value = INTERVAL_NOT_OBSERVED
         _mtu.value = 23
@@ -526,6 +652,42 @@ class BluetoothController(
         fa12Desc = gatt.getService(FA10_SERVICE_UUID)
             ?.getCharacteristic(FA12_CHAR_UUID)
             ?.getDescriptor(CCCD_UUID)
+        // Log the properties that decide how the photo channel may be
+        // written. `fa11WriteWithoutResponse` is load-bearing for repair
+        // throughput (see its KDoc) and "the firmware declared X" is
+        // otherwise invisible in a field log.
+        fa11WriteWithoutResponse = fa11Char
+            ?.let { it.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0 }
+            ?: false
+        Log.d(
+            TAG,
+            "FA11 properties=0x" + (fa11Char?.properties?.toString(16) ?: "missing") +
+                " writeNoResponse=$fa11WriteWithoutResponse" +
+                " FA12 properties=0x" + (fa12Desc?.characteristic?.properties?.toString(16) ?: "missing"),
+        )
+    }
+
+    /**
+     * Subscribe to the firmware's other notify channels (F618/B001,
+     * FA00/EA01), tolerating absence — the OEM app lists them in
+     * `app_config.json` but not every model exposes them.
+     *
+     * Called from [enableFa12Notify] so the subscription is part of the same
+     * connect pipeline. Their frames are logged and republished on
+     * [miscNotifications]; nothing else consumes them yet.
+     */
+    suspend fun enableSecondaryNotifies(): List<String> {
+        val subscribed = ArrayList<String>(2)
+        for ((serviceUuid, charUuid, label) in SECONDARY_NOTIFY_CHANNELS) {
+            val ok = runCatching {
+                val g = gatt ?: return@runCatching false
+                if (g.getService(serviceUuid)?.getCharacteristic(charUuid) == null) return@runCatching false
+                enableNotify(serviceUuid, charUuid) { }
+            }.getOrDefault(false)
+            Log.i(TAG, "secondary notify $label ($charUuid) subscribed=$ok")
+            if (ok) subscribed += label
+        }
+        return subscribed
     }
 
     private suspend fun enableNotify(
@@ -551,6 +713,7 @@ class BluetoothController(
     private suspend fun writeCharacteristic(
         charUuid: UUID,
         payload: ByteArray,
+        writeType: Int = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
     ): Boolean {
         // Serialize writes — `pendingCharWrite` is a single var, so
         // concurrent writeCharacteristic() calls would clobber each
@@ -573,8 +736,18 @@ class BluetoothController(
                 ?.mapNotNull { it.getCharacteristic(charUuid) }
                 ?.firstOrNull()
                 ?: error("characteristic $charUuid not found")
-            ch.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            ch.writeType = writeType
             ch.value = payload
+            if (writeType == BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE) {
+                // A write command has no ATT response, so no
+                // `onCharacteristicWrite` callback follows: awaiting the
+                // deferred here would burn the whole 2 s budget and report
+                // a failure for a write that did go out. The OS return
+                // value is the only synchronously available answer.
+                val queued = g.writeCharacteristic(ch)
+                if (!queued) Log.w(TAG, "write command rejected by the stack ($charUuid)")
+                return queued
+            }
             pendingCharWrite = CompletableDeferred()
             g.writeCharacteristic(ch)
             // Bound the wait so a stuck callback can't pin the
@@ -678,6 +851,16 @@ class BluetoothController(
                         data.size < 8 || data.size % 4 != 0 ->
                             Log.d(TAG, "FA12 notify size=${data.size} (unusual size)")
                     }
+                }
+                else -> {
+                    // F618/B001 and FA00/EA01. Everything here was invisible
+                    // before 2026-09-17 because we only subscribed to FFF2.
+                    Log.i(
+                        TAG,
+                        "notify from ${characteristic.uuid} size=${data.size} raw=" +
+                            data.joinToString("") { "%02x".format(it.toInt() and 0xFF) },
+                    )
+                    _miscNotify.tryEmit(MiscNotify(characteristic.uuid, data))
                 }
             }
         }
