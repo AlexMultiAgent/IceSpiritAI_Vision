@@ -234,6 +234,56 @@ class PaddleOcrEngine(
                     "ocr input: ${bitmap.width}x${bitmap.height} scale=${loaded.coordinateScale} " +
                         "jpeg=${bytes.size}B",
                 )
+                // Quality metrics, measured on 9 real glasses captures
+                // (2026-09-18): sharpness (variance of Laplacian) and mean
+                // luminance predict OCR success far better than anything else
+                // we log — the three captures at sharp≈106-113 / lum≈116-125
+                // recognised 0 lines, the six at sharp≈389-689 / lum≈164-192
+                // recognised 8-20 lines, same glasses, same package. Recorded
+                // per capture so a future auto-retake can gate on them.
+                val gray = android.graphics.Bitmap.createScaledBitmap(
+                    bitmap,
+                    (bitmap.width / 4).coerceAtLeast(1),
+                    (bitmap.height / 4).coerceAtLeast(1),
+                    true,
+                )
+                val pixels = IntArray(gray.width * gray.height)
+                gray.getPixels(pixels, 0, gray.width, 0, 0, gray.width, gray.height)
+                if (gray !== bitmap) gray.recycle()
+                // Luma of a packed ARGB pixel, integer Rec.601 weights.
+                fun luma(p: Int): Int =
+                    ((p shr 16 and 0xFF) * 30 + (p shr 8 and 0xFF) * 59 + (p and 0xFF) * 11) / 100
+                var luminanceSum = 0L
+                var laplacianSum = 0.0
+                var laplacianSqSum = 0.0
+                var samples = 0
+                for (y in 1 until gray.height - 1) {
+                    for (x in 1 until gray.width - 1) {
+                        val centre = luma(pixels[y * gray.width + x])
+                        val lap = (
+                            luma(pixels[y * gray.width + x - 1]) +
+                                luma(pixels[y * gray.width + x + 1]) +
+                                luma(pixels[(y - 1) * gray.width + x]) +
+                                luma(pixels[(y + 1) * gray.width + x]) -
+                                4 * centre
+                            ).toDouble()
+                        luminanceSum += centre
+                        laplacianSum += lap
+                        laplacianSqSum += lap * lap
+                        samples++
+                    }
+                }
+                if (samples > 0) {
+                    val meanLap = laplacianSum / samples
+                    val variance = (laplacianSqSum / samples) - meanLap * meanLap
+                    Log.i(
+                        TAG,
+                        "ocr quality: sharpness=%.1f luminance=%.1f".format(
+                            variance,
+                            luminanceSum.toDouble() / samples,
+                        ),
+                    )
+                }
 
                 val result: OcrResult
                 try {
