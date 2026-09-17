@@ -136,6 +136,25 @@ class GlassesPhotoCaptureRepository(
         /** Re-arm the button tap at least this often (also re-checks the link). */
         const val SHUTTER_TAP_REARM_MS = 60_000L
 
+        /**
+         * Settle time after a one-byte switch (`0x36` / `0x39`) before the
+         * glasses can be asked what state they are in. The OEM app fires
+         * these fire-and-forget too (`sendCommand(..., expectAck = false)`).
+         */
+        const val WIFI_SETTLE_MS = 900L
+
+        /** Gap between device-info polls while waiting for an AP session. */
+        const val WIFI_POLL_MS = 1_200L
+
+        /**
+         * The `0x39` payloads worth trying, in order: Wi-Fi Direct (2) then
+         * the OEM's `startTransferApMode` (0).
+         */
+        val WIFI_MODES = listOf(
+            GlassesPhotoProtocol.P2P_START_PAYLOAD to "p2p",
+            GlassesPhotoProtocol.P2P_STOP_PAYLOAD to "transferAp",
+        )
+
         /** How long to wait before retrying a failed connect while watching. */
         const val RECONNECT_RETRY_MS = 5_000L
 
@@ -378,8 +397,12 @@ class GlassesPhotoCaptureRepository(
                 val remaining = deadline - clock()
                 if (remaining <= 0) break
                 val frame = status.receiveWithin(remaining) ?: break
+                val notify = GlassesPhotoProtocol.isDeviceStatusNotify(frame)
                 fields.forEach { field ->
                     if (answers.containsKey(field.label)) return@forEach
+                    // A notify's TLV numbers are a different vocabulary: 0x17
+                    // there is the shutter event, not the file count.
+                    if (notify && !field.fromStatusNotify) return@forEach
                     GlassesPhotoProtocol.deviceInfoValue(frame, field.subCmd)
                         ?.let { answers[field.label] = it }
                 }
@@ -392,6 +415,10 @@ class GlassesPhotoCaptureRepository(
         fields.forEach { field ->
             Log.i(TAG, "deviceInfo ${field.label} = ${info.rawHex[field.label] ?: "—"}")
         }
+        // The AP credentials are what the phone needs to join the session, so
+        // the experiment log has to carry them (they are the glasses' own
+        // one-shot session credentials, not the user's Wi-Fi password).
+        Log.i(TAG, "deviceInfo apAccount = ssid=${info.apSsid} password=${info.apPassword}")
         Log.i(
             TAG,
             "deviceInfo: firmware=${info.firmwareVersion} " +
@@ -402,6 +429,178 @@ class GlassesPhotoCaptureRepository(
                 "wifiTransfer=${info.offersWifiTransfer}",
         )
         return info
+    }
+
+    /**
+     * Turn the glasses' Wi-Fi transfer session off again (`0x39` payload 0,
+     * then `0x36` payload 0 — the OEM's `stopP2pMode` + `openWifi(false)`).
+     */
+    suspend fun stopWifiTransferSession(device: GlassesDevice) {
+        ensureConnected(device)
+        if (_state.value !is GlassesCaptureState.Ready) return
+        var seq: Byte = 0x71
+        writeSwitch(seq++, GlassesPhotoProtocol.CMD_START_P2P, GlassesPhotoProtocol.P2P_STOP_PAYLOAD)
+        delay(WIFI_SETTLE_MS)
+        writeSwitch(seq, GlassesPhotoProtocol.CMD_OPEN_WIFI, GlassesPhotoProtocol.WIFI_OFF_PAYLOAD)
+        Log.i(TAG, "wifiTransfer: 0x39 off + 0x36 Wi-Fi off")
+    }
+
+    /**
+     * What the Wi-Fi transfer probe last did, for the settings row.
+     *
+     * Lives in the repository rather than in the composable because the probe
+     * outlives the UI: the first real run was killed halfway through by a
+     * system configuration change (Activity recreated, Compose scope
+     * cancelled) at the exact moment the glasses answered — the result was
+     * lost and the row went back to 「未测试」. Same reason the firmware
+     * updater is process-scoped.
+     */
+    data class WifiTransferProbe(
+        val running: Boolean = false,
+        val phase: WifiProbePhase = WifiProbePhase.SESSION,
+        val finished: Boolean = false,
+        val info: GlassesDeviceInfo? = null,
+        /** True when the link could not be used at all (no answer to read). */
+        val failed: Boolean = false,
+        /** Filled in by [probeWifiTransfer] once the session is up. */
+        val direct: GlassesWifiProbe.Report? = null,
+    ) {
+        /**
+         * Did the glasses hand out an AP configuration (SSID + password +
+         * FTP address)? This is *config*, not state: the same values come
+         * back after `0x36`/`0x39` off, so only a scan can say whether an AP
+         * is actually running.
+         */
+        val hasApConfig: Boolean get() = !info?.apSsid.isNullOrBlank()
+    }
+
+    /** Which half of [probeWifiTransfer] is running. */
+    enum class WifiProbePhase { SESSION, DIRECT }
+
+    private val _wifiTransferProbe = MutableStateFlow(WifiTransferProbe())
+    val wifiTransferProbe: StateFlow<WifiTransferProbe> = _wifiTransferProbe.asStateFlow()
+
+    /**
+     * Run [startWifiTransferSession] for the paired glasses on the
+     * repository's own (process-lifetime) scope, resolving the device here so
+     * the Bluetooth reads never touch the main thread.
+     */
+    fun probeWifiTransfer() {
+        if (_wifiTransferProbe.value.running) return
+        _wifiTransferProbe.value = WifiTransferProbe(running = true)
+        scope.launch(Dispatchers.IO) {
+            val device = resolveProbeTarget()
+            val info = device?.let {
+                runCatching { readDeviceInfo(it) }
+                    .onFailure { error -> if (error is CancellationException) throw error }
+                    .getOrNull()
+            }
+            // With the session up, go the rest of the way: join the glasses'
+            // AP and pull a photo over FTP, timing each half. That is the
+            // number the whole question turns on — our BLE path needs ~7.5 s
+            // for a 34 KB frame, so a cold AP join has to beat (or be
+            // amortised across) that to be worth building.
+            val direct = if (device != null && info != null && !info.apSsid.isNullOrBlank()) {
+                _wifiTransferProbe.value = WifiTransferProbe(
+                    running = true,
+                    phase = WifiProbePhase.DIRECT,
+                    info = info,
+                )
+                runCatching {
+                    probeWifiModes(device, info)
+                }.onFailure { error -> if (error is CancellationException) throw error }.getOrNull()
+            } else {
+                null
+            }
+            if (direct?.fetchedBytes == null) {
+                // Nothing worked: leave the glasses as we found them.
+                device?.let {
+                    runCatching { stopWifiTransferSession(it) }
+                        .onFailure { error -> if (error is CancellationException) throw error }
+                }
+            }
+            _wifiTransferProbe.value = WifiTransferProbe(
+                finished = true,
+                info = info,
+                failed = info == null,
+                direct = direct,
+            )
+        }
+    }
+
+    /**
+     * Try both payloads the OEM uses for `0x39` — Wi-Fi Direct (2) and the
+     * "transfer AP" mode (0) — and after each one wait for the AP to actually
+     * show up in a scan before trying to join it.
+     *
+     * The scan is the answer, not the device-info read: the glasses keep
+     * reporting the same FTP address / SSID / password after `0x36`+`0x39`
+     * *off* as well, so that field is a stored configuration, not proof that
+     * an AP is running (measured 2026-09-17 — the first "session up in 430 ms"
+     * reading was exactly this trap).
+     */
+    private suspend fun probeWifiModes(
+        device: GlassesDevice,
+        info: GlassesDeviceInfo,
+    ): GlassesWifiProbe.Report? {
+        val probe = GlassesWifiProbe(context)
+        var seq: Byte = 0x61
+        if (!writeSwitch(seq++, GlassesPhotoProtocol.CMD_OPEN_WIFI, GlassesPhotoProtocol.WIFI_ON_PAYLOAD)) {
+            return null
+        }
+        Log.i(TAG, "wifiProbe: 0x36 Wi-Fi on")
+        delay(WIFI_SETTLE_MS)
+
+        var last: GlassesWifiProbe.Report? = null
+        for ((payload, name) in WIFI_MODES) {
+            if (!writeSwitch(seq++, GlassesPhotoProtocol.CMD_START_P2P, payload)) return last
+            Log.i(TAG, "wifiProbe: 0x39 $name (payload=$payload)")
+            val report = probe.run(
+                ssid = info.apSsid.orEmpty(),
+                password = info.apPassword.orEmpty(),
+                ftpHost = info.ftpIp.orEmpty(),
+            )
+            Log.w(
+                TAG,
+                "wifiProbe[$name]: visible=${report.ssidVisibleMs != null} " +
+                    "connect=${report.connectMs} bytes=${report.fetchedBytes} " +
+                    "failed=${report.failedPhase} ${report.error}",
+            )
+            last = report
+            if (report.fetchedBytes != null) return report
+        }
+        return last
+    }
+
+    /** Take the glasses back out of the Wi-Fi session (see [stopWifiTransferSession]). */
+    fun endWifiTransfer() {
+        scope.launch(Dispatchers.IO) {
+            resolveProbeTarget()?.let {
+                runCatching { stopWifiTransferSession(it) }
+                    .onFailure { error -> if (error is CancellationException) throw error }
+            }
+            _wifiTransferProbe.value = WifiTransferProbe()
+        }
+    }
+
+    /** The paired glasses, resolved the way the capture path does. */
+    private fun resolveProbeTarget(): GlassesDevice? = runCatching {
+        resolveGlassesTarget(
+            lastPairedAddress = GlassesDeviceStore(context).loadLastPaired(),
+            snapshot = GlassesDevice.bondedSnapshot(context),
+            nowMs = System.currentTimeMillis(),
+        )
+    }.getOrElse { GlassesTarget.NotPaired }.let { (it as? GlassesTarget.Ready)?.device }
+
+    /** Write one switch frame, logging (but surviving) a rejected write. */
+    private suspend fun writeSwitch(seq: Byte, cmd: Byte, value: Byte): Boolean {
+        val sent = bluetoothController.writeFff0(
+            GlassesPhotoProtocol.buildSwitchRequestFrame(seq, cmd, value),
+        )
+        if (!sent) {
+            Log.w(TAG, "wifiTransfer: 0x%02X payload %d rejected by the stack".format(cmd, value))
+        }
+        return sent
     }
 
     /** One attempt: ensure the link, ask `0x10|0x20`, wait [timeoutMs]. */

@@ -71,12 +71,37 @@ data class GlassesDeviceInfo(
         get() = p2pMac != null || ftpIp != null || !apSsid.isNullOrBlank()
 
     /**
+     * Did the glasses actually enter a transfer session — an address or
+     * credentials handed out, not just the P2P MAC they always report?
+     *
+     * This is the difference between "the hardware supports Wi-Fi transfer"
+     * and "the Wi-Fi session is up and something could be pulled from it
+     * right now", which is what a `0x36` + `0x39` request is supposed to
+     * produce.
+     */
+    val apSessionUp: Boolean get() = ftpIp != null || !apSsid.isNullOrBlank()
+
+    /**
      * One `0x10` device-info field: [label] is the key used in [rawHex] and
      * in the repository's `Map<String, ByteArray>`, [subCmd] the sub-command
      * the glasses expect in the request.
      */
-    enum class Field(val label: String, val subCmd: Byte) {
-        FIRMWARE("firmware", GlassesPhotoProtocol.SUB_FIRMWARE_INFO),
+    enum class Field(
+        val label: String,
+        val subCmd: Byte,
+        /**
+         * May this field also be read out of a `0x11` status notify?
+         *
+         * Only the firmware version is: the OEM's notify parser publishes
+         * battery (0x01), video (0x0B), audio (0x0C), photo result (0x17) and
+         * PAN (0x15) — nothing else. It matters for [FILES] in particular,
+         * because `0x17` in a notify is the *shutter event*, and treating it
+         * as the file count would read "0 files pending" from the very
+         * notification that says a photo was just taken.
+         */
+        val fromStatusNotify: Boolean = false,
+    ) {
+        FIRMWARE("firmware", GlassesPhotoProtocol.SUB_FIRMWARE_INFO, fromStatusNotify = true),
         MEMORY("memory", GlassesPhotoProtocol.SUB_MEMORY),
         FILES("files", GlassesPhotoProtocol.SUB_FILE_COUNT),
         FTP("ftp", GlassesPhotoProtocol.SUB_FTP_IP),

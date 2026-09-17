@@ -83,6 +83,39 @@ object GlassesPhotoProtocol {
     /** Device-status command code (Glass → App) whose TLV list may carry the firmware version. */
     const val CMD_DEVICE_STATUS: Byte = 0x11
 
+    /**
+     * Wi-Fi on/off (App → Glass, one payload byte: [WIFI_ON_PAYLOAD] /
+     * [WIFI_OFF_PAYLOAD]).
+     *
+     * OEM `BleCommandConfig.cmdOpenWifi = 54`, `openWifi(true)` builds exactly
+     * this frame (`BluetoothController.openWifi`). Used by the Wi-Fi media
+     * transfer experiment — see [P2P_START_PAYLOAD].
+     */
+    const val CMD_OPEN_WIFI: Byte = 0x36
+
+    /** Payload of `0x36`: turn the glasses' Wi-Fi on. */
+    const val WIFI_ON_PAYLOAD: Byte = 0x01
+
+    /** Payload of `0x36`: turn it off again. */
+    const val WIFI_OFF_PAYLOAD: Byte = 0x00
+
+    /**
+     * P2P / AP mode switch (App → Glass, one payload byte).
+     *
+     * OEM `BleCommandConfig.cmdStartP2p = 57`. The payload picks the mode:
+     * [P2P_START_PAYLOAD] starts Wi-Fi Direct (`startP2pMode`), while the OEM's
+     * `startTransferApMode` and `stopP2pMode` both send `0x00` — so this
+     * command's payload domain is 2 = P2P, 0 = "AP/off", and there is no
+     * third value to discover.
+     */
+    const val CMD_START_P2P: Byte = 0x39
+
+    /** Payload of `0x39`: start Wi-Fi Direct mode. */
+    const val P2P_START_PAYLOAD: Byte = 0x02
+
+    /** Payload of `0x39`: transfer-AP mode / stop P2P (OEM uses `0x00` for both). */
+    const val P2P_STOP_PAYLOAD: Byte = 0x00
+
     /** `0x11` TLV: battery level. */
     const val SUB_BATTERY: Byte = 0x01
 
@@ -328,6 +361,22 @@ object GlassesPhotoProtocol {
     )
 
     /**
+     * A plain Request frame with an arbitrary payload:
+     * `55 AA | seq | cmd | 01 | <len u16 LE> | payload`.
+     *
+     * The OTA write ([buildOtaFrame]-style URLs) and the device-info reads
+     * each have their own shape; this is the raw builder they are special
+     * cases of, needed for the one-byte switches ([CMD_OPEN_WIFI],
+     * [CMD_START_P2P]).
+     */
+    fun buildRequestFrame(seq: Byte, cmd: Byte, payload: ByteArray): ByteArray =
+        buildFrame(seq, cmd, TYPE_REQUEST, payload)
+
+    /** Request frame whose payload is a single byte (Wi-Fi / P2P switches). */
+    fun buildSwitchRequestFrame(seq: Byte, cmd: Byte, value: Byte): ByteArray =
+        buildRequestFrame(seq, cmd, byteArrayOf(value))
+
+    /**
      * Value of [subType] from a `0x10` Response (TLV at offset 0) or from the
      * TLV list of a `0x11` status notify, whichever the firmware chose to
      * answer with. `null` when the frame carries no such field.
@@ -346,6 +395,18 @@ object GlassesPhotoProtocol {
             else -> null
         }
     }
+
+    /**
+     * Is [frame] an unsolicited `0x11` device-status notify?
+     *
+     * Matters because the two channels reuse TLV numbers: `0x17` is the
+     * *file count* in a `0x10` answer but the *photo-result event* in a
+     * `0x11` notify (OEM `subFileCount` = `mediaPhotoResult` = 23), so a
+     * caller reading the count must not take a shutter notification as
+     * "0 files pending".
+     */
+    fun isDeviceStatusNotify(frame: ByteArray): Boolean =
+        parseFrame(frame)?.cmd == CMD_DEVICE_STATUS
 
     /**
      * Extract the firmware version from a raw FFF0 frame — either the `0x10`

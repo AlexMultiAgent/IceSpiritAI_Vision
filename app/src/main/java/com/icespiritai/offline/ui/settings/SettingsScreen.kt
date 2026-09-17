@@ -47,6 +47,7 @@ import com.icespiritai.offline.AppGraph
 import com.icespiritai.offline.BuildConfig
 import com.icespiritai.offline.R
 import com.icespiritai.offline.glasses.GlassesDevice
+import com.icespiritai.offline.glasses.GlassesPhotoCaptureRepository
 import com.icespiritai.offline.glasses.GlassesFirmwareUpdater
 import com.icespiritai.offline.glasses.GlassesSystemIntents
 import com.icespiritai.offline.glasses.GlassesTarget
@@ -288,6 +289,10 @@ fun SettingsScreen(
                         enabled = glassesEnabled,
                     )
                     GlassesFirmwareUpgradeRow(
+                        context = glassesCtx,
+                        enabled = glassesEnabled,
+                    )
+                    GlassesWifiTransferRow(
                         context = glassesCtx,
                         enabled = glassesEnabled,
                     )
@@ -567,22 +572,15 @@ private fun GlassesFirmwareRow(
         failed = false
         scope.launch {
             val result = runCatching {
-                val target = runCatching {
-                    resolveGlassesTarget(
-                        lastPairedAddress = AppGraph.glassesDeviceStore(context).loadLastPaired(),
-                        snapshot = GlassesDevice.bondedSnapshot(context),
-                        nowMs = System.currentTimeMillis(),
-                    )
-                }.getOrElse { GlassesTarget.NotPaired }
-                if (target !is GlassesTarget.Ready) return@runCatching null
+                val device = resolvePairedGlasses(context) ?: return@runCatching null
                 val repository = AppGraph.glassesPhotoCaptureRepository(context)
-                val version = repository.readFirmwareVersion(target.device)
+                val version = repository.readFirmwareVersion(device)
                 // Same button, one extra read: memory / file count / FTP IP /
                 // P2P MAC say whether this hardware could use the Wi-Fi
                 // media-sync path at all, which decides whether chasing the
                 // vendor's SPP route is even the right investment. Log-only
                 // (tag GlassesCapture) — it changes nothing the user sees.
-                runCatching { repository.readDeviceInfo(target.device) }
+                runCatching { repository.readDeviceInfo(device) }
                 version
             }.getOrNull()
             version = result
@@ -611,6 +609,109 @@ private fun GlassesFirmwareRow(
         )
         TextButton(onClick = { read() }, enabled = enabled && !busy) {
             Text(stringResource(R.string.settings_glasses_firmware_read))
+        }
+    }
+}
+
+/**
+ * Resolve the paired glasses the same way the capture path does, so every
+ * diagnostic row on this card talks to the same device.
+ */
+private fun resolvePairedGlasses(context: Context): GlassesDevice? {
+    val target = runCatching {
+        resolveGlassesTarget(
+            lastPairedAddress = AppGraph.glassesDeviceStore(context).loadLastPaired(),
+            snapshot = GlassesDevice.bondedSnapshot(context),
+            nowMs = System.currentTimeMillis(),
+        )
+    }.getOrElse { GlassesTarget.NotPaired }
+    return (target as? GlassesTarget.Ready)?.device
+}
+
+/**
+ * 「Wi-Fi 取图诊断」 row.
+ *
+ * The OEM app pulls an ordinary photo off a *storage* device over Wi-Fi
+ * (FTP on the AP/P2P session it starts with `0x36` + `0x39`) and only falls
+ * back to SPP/RFCOMM for memoryless hardware — see
+ * `docs/knowledge/official-glasses-apk-ble-internals.md` §7. Our glasses
+ * report storage, so the only question that decides whether chasing that
+ * path is worth anything is whether those two commands actually make them
+ * hand out an FTP address / AP account. This row asks, reports, and puts
+ * the glasses back when the answer is no.
+ *
+ * Diagnostic only: the BLE capture pipeline is untouched.
+ */
+@Composable
+private fun GlassesWifiTransferRow(
+    context: Context,
+    enabled: Boolean,
+) {
+    // State and work live in the repository, so an Activity recreation in the
+    // middle of the probe (which really happened: a system configuration
+    // change landed exactly when the glasses answered) cannot cancel it.
+    val repository = remember(context) {
+        AppGraph.glassesPhotoCaptureRepository(context)
+    }
+    val probe by repository.wifiTransferProbe.collectAsStateWithLifecycle()
+    val busy = probe.running
+    val hasConfig = probe.hasApConfig
+    val ftp = probe.info?.ftpIp
+    val ssid = probe.info?.apSsid
+    // Local copy: a delegated `by` property cannot be smart-cast.
+    val direct = probe.direct
+
+    Spacer(modifier = Modifier.height(4.dp))
+    Text(
+        text = stringResource(R.string.settings_glasses_wifi_desc),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = when {
+                busy && probe.phase == GlassesPhotoCaptureRepository.WifiProbePhase.DIRECT ->
+                    stringResource(R.string.settings_glasses_wifi_direct_running)
+                busy -> stringResource(R.string.settings_glasses_wifi_running)
+                direct?.fetchedBytes != null -> stringResource(
+                    R.string.settings_glasses_wifi_direct_ok,
+                    // KB, rounded up: a 34 KB photo should not read as 33.
+                    ((direct.fetchedBytes + 1023) / 1024).toInt(),
+                    (direct.fetchMs ?: 0L) + (direct.listingMs ?: 0L),
+                    direct.connectMs ?: 0L,
+                )
+                direct != null -> stringResource(
+                    R.string.settings_glasses_wifi_direct_fail,
+                    direct.failedPhase ?: "?",
+                    direct.error ?: "?",
+                )
+                hasConfig && ftp != null && ssid != null ->
+                    stringResource(R.string.settings_glasses_wifi_config, ftp!!, ssid!!)
+                hasConfig && ssid != null ->
+                    stringResource(R.string.settings_glasses_wifi_config, "—", ssid!!)
+                hasConfig ->
+                    stringResource(R.string.settings_glasses_wifi_config, "—", "—")
+                probe.failed -> stringResource(R.string.settings_glasses_wifi_failed)
+                probe.finished -> stringResource(R.string.settings_glasses_wifi_not_up)
+                else -> stringResource(R.string.settings_glasses_wifi_idle)
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = if (probe.failed) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            modifier = Modifier.weight(1f),
+        )
+        // Only worth offering when the probe left the glasses' Wi-Fi on, i.e.
+        // when the transfer actually worked; every failure path stops it.
+        if (direct?.fetchedBytes != null) {
+            TextButton(onClick = { repository.endWifiTransfer() }, enabled = enabled && !busy) {
+                Text(stringResource(R.string.settings_glasses_wifi_action_stop))
+            }
+        }
+        TextButton(onClick = { repository.probeWifiTransfer() }, enabled = enabled && !busy) {
+            Text(stringResource(R.string.settings_glasses_wifi_action_test))
         }
     }
 }

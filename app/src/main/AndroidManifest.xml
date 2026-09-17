@@ -48,6 +48,26 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!--
+        Wi-Fi transfer probe (diagnostic, see GlassesWifiProbe).
+
+        The OEM app reaches a photo on a *storage* glasses over FTP served by
+        the glasses' own soft AP (Beken BK7258). Joining it goes through
+        `WifiNetworkSpecifier`, which needs the fine-location permission (and,
+        from API 33, NEARBY_WIFI_DEVICES); scanning for the SSID needs the
+        Wi-Fi state permissions. Only the diagnostic uses these — the BLE
+        capture flow stays untouched.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <!-- `ConnectivityManager.requestNetwork` demands this even for a
+         WifiNetworkSpecifier request (OEM `ApWifiConnector.hasConnectPermission`). -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission
+        android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation" />
+
+    <!--
         Smart-glasses BLE photo-capture pipeline (Glass-D15 V2.4.5+).
         See docs/glasses/AI识图传图提速_App连接参数配合.md for the wire protocol.
 
