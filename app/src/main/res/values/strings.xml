@@ -74,6 +74,9 @@
     <string name="settings_glasses_firmware_action_upgrade">开始升级</string>
     <string name="settings_glasses_firmware_sending">正在下发升级指令(%1$d/%2$d)…</string>
     <string name="settings_glasses_firmware_upgrading">眼镜正在下载并刷写固件,请勿断电…已等待 %1$d 秒</string>
+    <string name="settings_glasses_firmware_tethering_off">⚠ 眼镜上报「蓝牙共享网络」不可用(TLV 0x15=0):它没法下载固件,会一直卡在下载。请到系统设置打开「蓝牙共享网络」后再重试</string>
+    <string name="settings_glasses_firmware_tethering_not_connected">⚠ 已等待 %1$d 秒,版本没有变化,也没收到眼镜的网络共享状态。请确认已打开「蓝牙共享网络」、眼镜电量充足,必要时重启眼镜后重试</string>
+    <string name="settings_glasses_firmware_action_tethering">去打开设置</string>
     <string name="settings_glasses_firmware_success">升级完成:%1$s → %2$s</string>
     <string name="settings_glasses_firmware_upgrade_failed">升级失败:%1$s</string>
     <string name="settings_glasses_firmware_action_close">关闭</string>

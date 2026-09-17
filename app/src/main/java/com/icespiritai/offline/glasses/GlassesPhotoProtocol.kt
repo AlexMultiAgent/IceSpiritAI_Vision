@@ -126,9 +126,15 @@ object GlassesPhotoProtocol {
     const val SUB_MEDIA_AUDIO_STATUS: Byte = 0x0C
 
     /**
-     * `0x11` TLV: whether BT network sharing (PAN) is up. `0` means "on" —
-     * the firmware's boolean convention (OEM `parseDeviceStatusNotifyPayload`
-     * inverts it).
+     * `0x11` TLV: whether BT network sharing (PAN) is up. **`1` means "on"** —
+     * this TLV does *not* follow the firmware's inverted-boolean convention
+     * that the photo-result TLV uses.
+     *
+     * Two independent sources: the OEM's `parseDeviceStatusNotifyPayload`
+     * compares the byte against `1` before storing it into
+     * `isBluetoothNetworkSharingActive`, and our own capture on 2026-09-17
+     * (phone tethering off, no `bt-pan` interface) got `15 01 00` — i.e. `0`
+     * while there was definitely no sharing.
      */
     const val SUB_BT_NETWORK_SHARING: Byte = 0x15
 
@@ -439,9 +445,11 @@ object GlassesPhotoProtocol {
     /**
      * One entry from a `0x11` device-status notify: `[type][len][value…]`.
      *
-     * [flag] decodes the firmware's 1-byte booleans: **`0` means true**
-     * (OEM `parseDeviceStatusNotifyPayload` does the same inversion for the
-     * PAN and photo-result TLVs), so `null` means "this TLV isn't a flag".
+     * [flag] decodes the *inverted* 1-byte booleans of the media TLVs, where
+     * **`0` means true** (OEM `parseDeviceStatusNotifyPayload` reads the
+     * photo-result TLV that way: `if-nez` on the byte). It is not a universal
+     * rule — [SUB_BT_NETWORK_SHARING] uses `1` for "on" and is decoded by
+     * [reportsNetworkSharingOn] instead. `null` means "this TLV isn't a flag".
      */
     data class DeviceStatusTlv(val type: Int, val value: ByteArray) {
         val flag: Boolean? get() = if (value.size == 1) value[0].toInt() == 0 else null
@@ -488,11 +496,20 @@ object GlassesPhotoProtocol {
             it.type == (SUB_MEDIA_PHOTO_RESULT.toInt() and 0xFF) && it.flag == true
         }
 
-    /** BT network-sharing (PAN) state as reported by the glasses, or `null`. */
+    /**
+     * BT network-sharing (PAN) state as reported by the glasses, or `null`
+     * when this frame carries no such TLV.
+     *
+     * `true` = the glasses have a working PAN link to the phone (the only
+     * route they have to the firmware CDN, which is why the upgrade dialog
+     * watches this).
+     */
     fun reportsNetworkSharingOn(frame: ByteArray): Boolean? =
         parseDeviceStatusTlvs(frame)
             .firstOrNull { it.type == (SUB_BT_NETWORK_SHARING.toInt() and 0xFF) }
-            ?.flag
+            ?.value
+            ?.takeIf { it.size == 1 }
+            ?.let { it[0].toInt() == 1 }
 
     /**
      * `[type][len][value…]` at [offset], or `null` if this isn't that TLV,

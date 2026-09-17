@@ -781,41 +781,74 @@ private fun GlassesFirmwareUpgradeRow(
         },
         title = { Text(stringResource(R.string.settings_glasses_firmware_dialog_title)) },
         text = {
-            Text(
-                text = when (val s = state) {
-                    is GlassesFirmwareUpdater.UpgradeState.Idle,
-                    is GlassesFirmwareUpdater.UpgradeState.Checking ->
-                        stringResource(R.string.settings_glasses_firmware_checking)
-                    is GlassesFirmwareUpdater.UpgradeState.UpToDate ->
+            val current = state
+            // While the glasses are downloading, the phone's side of the route
+            // is the part that can silently be missing — say so *here*, next to
+            // the elapsed-seconds counter, instead of letting the user watch a
+            // 20-minute timer that cannot possibly end in success.
+            val hint = (current as? GlassesFirmwareUpdater.UpgradeState.Upgrading)?.hint
+            if (hint != null && hint != GlassesFirmwareUpdater.TetheringHint.NONE) {
+                Column {
+                    Text(
                         stringResource(
-                            R.string.settings_glasses_firmware_uptodate,
-                            s.currentVersion ?: "?",
+                            R.string.settings_glasses_firmware_upgrading,
+                            ((current as GlassesFirmwareUpdater.UpgradeState.Upgrading).elapsedMs / 1000).toInt(),
+                        ),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = when (hint) {
+                            GlassesFirmwareUpdater.TetheringHint.TETHERING_OFF ->
+                                stringResource(R.string.settings_glasses_firmware_tethering_off)
+                            else -> stringResource(
+                                R.string.settings_glasses_firmware_tethering_not_connected,
+                                (current.elapsedMs / 1000).toInt(),
+                            )
+                        },
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    TextButton(onClick = { GlassesSystemIntents.openTetheringSettings(context) }) {
+                        Text(stringResource(R.string.settings_glasses_firmware_action_tethering))
+                    }
+                }
+            } else {
+                Text(
+                    text = when (val s = current) {
+                        is GlassesFirmwareUpdater.UpgradeState.Idle,
+                        is GlassesFirmwareUpdater.UpgradeState.Checking ->
+                            stringResource(R.string.settings_glasses_firmware_checking)
+                        is GlassesFirmwareUpdater.UpgradeState.UpToDate ->
+                            stringResource(
+                                R.string.settings_glasses_firmware_uptodate,
+                                s.currentVersion ?: "?",
+                            )
+                        is GlassesFirmwareUpdater.UpgradeState.Available -> stringResource(
+                            R.string.settings_glasses_firmware_dialog_body,
+                            s.info.currentVersion ?: "?",
+                            s.info.latestVersion,
+                            s.info.firmwareName ?: "?",
+                            formatFirmwareSize(s.info.sizeBytes),
                         )
-                    is GlassesFirmwareUpdater.UpgradeState.Available -> stringResource(
-                        R.string.settings_glasses_firmware_dialog_body,
-                        s.info.currentVersion ?: "?",
-                        s.info.latestVersion,
-                        s.info.firmwareName ?: "?",
-                        formatFirmwareSize(s.info.sizeBytes),
-                    )
-                    is GlassesFirmwareUpdater.UpgradeState.Sending -> stringResource(
-                        R.string.settings_glasses_firmware_sending,
-                        s.framesSent,
-                        s.framesTotal,
-                    )
-                    is GlassesFirmwareUpdater.UpgradeState.Upgrading -> stringResource(
-                        R.string.settings_glasses_firmware_upgrading,
-                        (s.elapsedMs / 1000).toInt(),
-                    )
-                    is GlassesFirmwareUpdater.UpgradeState.Success -> stringResource(
-                        R.string.settings_glasses_firmware_success,
-                        s.previousVersion ?: "?",
-                        s.newVersion,
-                    )
-                    is GlassesFirmwareUpdater.UpgradeState.Failed ->
-                        stringResource(R.string.settings_glasses_firmware_upgrade_failed, s.reason)
-                },
-            )
+                        is GlassesFirmwareUpdater.UpgradeState.Sending -> stringResource(
+                            R.string.settings_glasses_firmware_sending,
+                            s.framesSent,
+                            s.framesTotal,
+                        )
+                        is GlassesFirmwareUpdater.UpgradeState.Upgrading -> stringResource(
+                            R.string.settings_glasses_firmware_upgrading,
+                            (s.elapsedMs / 1000).toInt(),
+                        )
+                        is GlassesFirmwareUpdater.UpgradeState.Success -> stringResource(
+                            R.string.settings_glasses_firmware_success,
+                            s.previousVersion ?: "?",
+                            s.newVersion,
+                        )
+                        is GlassesFirmwareUpdater.UpgradeState.Failed ->
+                            stringResource(R.string.settings_glasses_firmware_upgrade_failed, s.reason)
+                    },
+                )
+            }
         },
         confirmButton = {
             if (upgradeInfo != null) {

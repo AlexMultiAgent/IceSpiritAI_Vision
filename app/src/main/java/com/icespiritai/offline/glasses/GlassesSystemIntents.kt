@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import android.util.Log
 
@@ -35,6 +36,24 @@ object GlassesSystemIntents {
      */
     fun openBluetoothSettings(context: Context): Boolean =
         start(context, Intent(Settings.ACTION_BLUETOOTH_SETTINGS), fallbackToGeneral = true)
+
+    /**
+     * 「蓝牙共享网络」 lives under the tethering page; that action exists from
+     * API 29 and older ROMs fall back to the general wireless settings.
+     *
+     * Needed because the firmware upgrade cannot proceed without it: the
+     * glasses fetch the `.rbl` through the phone's PAN link, so the upgrade
+     * dialog offers this button the moment it notices tethering is off.
+     */
+    fun openTetheringSettings(context: Context): Boolean {
+        // The tethering page has no public `Settings.ACTION_*` constant; this
+        // is the platform's own action string (AOSP `Settings`,
+        // `TetherSettings`). `start()` falls back to the general settings
+        // screen when a ROM does not declare it.
+        @Suppress("DEPRECATION")
+        val intent = Intent("android.settings.TETHERING_SETTINGS")
+        return start(context, intent, fallbackToGeneral = true)
+    }
 
     /**
      * This app's detail page, where the user can re-grant a permanently

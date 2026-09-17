@@ -78,15 +78,26 @@ class GlassesDeviceStatusTlvTest {
         assertEquals(listOf(0x01, 0x17, 0x15, 0x20), tlvs.map { it.type })
         assertEquals("V2.5.8", tlvs[3].value.toString(Charsets.UTF_8))
         // PAN state and photo result both ride in the same frame.
-        assertEquals(true, GlassesPhotoProtocol.reportsNetworkSharingOn(statusFrame(2, payload)))
+        // `0` = no sharing (this TLV is *not* inverted; see the test below).
+        assertEquals(false, GlassesPhotoProtocol.reportsNetworkSharingOn(statusFrame(2, payload)))
         assertTrue(GlassesPhotoProtocol.reportsShutterPhoto(statusFrame(2, payload)))
     }
 
     @Test
     fun networkSharingFlagIsNullWhenAbsent() {
         assertNull(GlassesPhotoProtocol.reportsNetworkSharingOn(statusFrame(1, tlv(0x01, byteArrayOf(0x51)))))
-        // Present but off (value 1 = false in the firmware's convention).
-        assertEquals(false, GlassesPhotoProtocol.reportsNetworkSharingOn(statusFrame(1, tlv(0x15, byteArrayOf(0x01)))))
+        // Unlike the photo-result TLV, this one is *not* inverted: the OEM
+        // stores `isBluetoothNetworkSharingActive = (value == 1)`, and the
+        // real capture taken while the phone's tethering was off was
+        // `… 11 03 0300 15 01 00`.
+        assertEquals(true, GlassesPhotoProtocol.reportsNetworkSharingOn(statusFrame(1, tlv(0x15, byteArrayOf(0x01)))))
+        assertEquals(false, GlassesPhotoProtocol.reportsNetworkSharingOn(statusFrame(1, tlv(0x15, byteArrayOf(0x00)))))
+        // A multi-byte value is not this flag.
+        assertNull(
+            GlassesPhotoProtocol.reportsNetworkSharingOn(
+                statusFrame(1, tlv(0x15, byteArrayOf(0x01, 0x00))),
+            ),
+        )
     }
 
     @Test

@@ -32,6 +32,9 @@ class GlassesFirmwareUpdater(
     private val scope: CoroutineScope,
 ) {
 
+    /** Live precondition problem shown next to the upgrade progress. */
+    enum class TetheringHint { NONE, TETHERING_OFF, NO_PROGRESS }
+
     sealed class UpgradeState {
         data object Idle : UpgradeState()
         data object Checking : UpgradeState()
@@ -46,6 +49,8 @@ class GlassesFirmwareUpdater(
             val info: FirmwareUpdateInfo,
             val elapsedMs: Long,
             val lastSeenVersion: String?,
+            /** Non-NONE means the download cannot be progressing. */
+            val hint: TetheringHint = TetheringHint.NONE,
         ) : UpgradeState()
         data class Success(val previousVersion: String?, val newVersion: String) : UpgradeState()
         data class Failed(val reason: String) : UpgradeState()
@@ -110,6 +115,7 @@ class GlassesFirmwareUpdater(
                 return@launch
             }
 
+
             val payload = GlassesFirmwareProtocol.buildUpgradePayload(info.downloadUrl)
             val frames = runCatching {
                 GlassesFirmwareProtocol.buildUpgradeFrames(
@@ -150,23 +156,53 @@ class GlassesFirmwareUpdater(
     ) {
         val startedAt = System.currentTimeMillis()
         var lastSeen = previous
-        _state.value = UpgradeState.Upgrading(info, 0L, previous)
-        while (System.currentTimeMillis() - startedAt < UPGRADE_WATCH_TIMEOUT_MS) {
-            delay(POLL_INTERVAL_MS)
-            val seen = runCatching { photoRepository.readFirmwareVersion(device) }.getOrNull()
-            if (seen != null) {
-                lastSeen = seen
-                if (!sameVersion(seen, previous)) {
-                    Log.i(TAG, "firmware upgraded: $previous -> $seen")
-                    _state.value = UpgradeState.Success(previous, seen)
-                    return
+        // The glasses are the only ones who know whether their PAN link to the
+        // phone works: they report it as a `0x15` TLV in their `0x11` status
+        // notify, and the firmware pushes one right after the OTA hand-over
+        // (real frame 2026-09-17: `… 11 03 0300 15 01 00` while the phone's
+        // 蓝牙共享网络 was off). There is no public API for a third-party app
+        // to read the phone's own tethering switch — `BluetoothPan` is a
+        // hidden class — so this is also the only honest signal available.
+        val statusTap = scope.tapSharedFlow(controller.fff0Notifications)
+        statusTap.drainBuffered()
+        var sharingReported: Boolean? = null
+        var lastHint = TetheringHint.NONE
+        _state.value = UpgradeState.Upgrading(info, 0L, previous, lastHint)
+        try {
+            while (System.currentTimeMillis() - startedAt < UPGRADE_WATCH_TIMEOUT_MS) {
+                delay(POLL_INTERVAL_MS)
+                val seen = runCatching { photoRepository.readFirmwareVersion(device) }.getOrNull()
+                if (seen != null) {
+                    lastSeen = seen
+                    if (!sameVersion(seen, previous)) {
+                        Log.i(TAG, "firmware upgraded: $previous -> $seen")
+                        _state.value = UpgradeState.Success(previous, seen)
+                        return
+                    }
                 }
+                statusTap.drainBuffered().forEach { frame ->
+                    GlassesPhotoProtocol.reportsNetworkSharingOn(frame)?.let { sharing ->
+                        if (sharing != sharingReported) {
+                            Log.i(TAG, "glasses report BT network sharing = $sharing")
+                        }
+                        sharingReported = sharing
+                    }
+                }
+                val elapsed = System.currentTimeMillis() - startedAt
+                val hint = firmwareTetheringHint(sharingReported, elapsed)
+                if (hint != lastHint) {
+                    Log.w(TAG, "tethering hint: $lastHint -> $hint (elapsed=${elapsed}ms, sharing=$sharingReported)")
+                    lastHint = hint
+                }
+                _state.value = UpgradeState.Upgrading(
+                    info = info,
+                    elapsedMs = elapsed,
+                    lastSeenVersion = lastSeen,
+                    hint = hint,
+                )
             }
-            _state.value = UpgradeState.Upgrading(
-                info = info,
-                elapsedMs = System.currentTimeMillis() - startedAt,
-                lastSeenVersion = lastSeen,
-            )
+        } finally {
+            statusTap.stop()
         }
         _state.value = UpgradeState.Failed(
             "升级超时:眼镜版本仍是 ${lastSeen ?: "未知"}。" +
@@ -196,3 +232,34 @@ class GlassesFirmwareUpdater(
         const val UPGRADE_WATCH_TIMEOUT_MS = 20 * 60 * 1000L
     }
 }
+
+/**
+ * Turn what the App knows into the upgrade dialog's precondition hint.
+ *
+ * Two levels, both evidence-based:
+ *  - the glasses *said* there is no sharing (`0x15` TLV = 0) and a minute has
+ *    passed without the version moving → they cannot download;
+ *  - nothing was ever reported and three minutes passed → "something is
+ *    wrong", phrased so it covers the other causes (battery, link) too.
+ *
+ * Deliberately asymmetric: silence and a mis-read polarity can only ever
+ * produce the vaguer warning, never a false definite one.
+ *
+ * File-level so the rule is unit-testable without Android or a fake updater.
+ */
+internal fun firmwareTetheringHint(
+    sharingReported: Boolean?,
+    elapsedMs: Long,
+): GlassesFirmwareUpdater.TetheringHint = when {
+    sharingReported == false && elapsedMs >= TETHERING_OFF_GRACE_MS ->
+        GlassesFirmwareUpdater.TetheringHint.TETHERING_OFF
+    sharingReported == null && elapsedMs >= NO_PROGRESS_MS ->
+        GlassesFirmwareUpdater.TetheringHint.NO_PROGRESS
+    else -> GlassesFirmwareUpdater.TetheringHint.NONE
+}
+
+/** Grace period before the glasses' "no sharing" report becomes a warning. */
+private const val TETHERING_OFF_GRACE_MS = 60_000L
+
+/** When nothing is known about sharing, warn after this long without progress. */
+private const val NO_PROGRESS_MS = 180_000L
