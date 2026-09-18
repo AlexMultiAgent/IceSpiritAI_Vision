@@ -66,6 +66,15 @@ object SegmentedScript {
         return listOf(metaSegment(text))
     }
 
+    /**
+     * 一句**操作提示**（不是分析结论，也不是错误）：例如画质门控给的
+     * 「照片不够清晰，请靠近一些、让文字占满画面」。
+     *
+     * 不拼免责声明：戴眼镜的人此刻需要的是"再拍一张"，而不是先听一句
+     * "AI 识别仅供参考"——结论播报才有那句话。
+     */
+    fun buildNotice(text: String): List<HitSegment> = listOf(metaSegment(text))
+
     private fun metaSegment(text: String) = HitSegment(
         text = text, severity = null, isMeta = true,
     )

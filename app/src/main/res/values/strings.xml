@@ -60,6 +60,8 @@
     <string name="settings_glasses_not_paired">未配对智能眼镜</string>
     <string name="settings_glasses_enable">启用智能眼镜拍照</string>
     <string name="settings_glasses_enable_desc">关闭后首页不显示眼镜拍照入口。默认关闭,需要眼镜时再打开。</string>
+    <string name="settings_glasses_auto_retake">拍糊自动重拍</string>
+    <string name="settings_glasses_auto_retake_desc">眼镜照片若判定过糊或过暗,自动重拍(最多 3 张,取最清晰的一张),并用语音提示靠近一些。关闭后只拍一张,不做画质判定和语音提示。默认开启。</string>
     <string name="settings_glasses_action_pair">去蓝牙设置配对</string>
     <string name="settings_glasses_firmware_unknown">固件版本:未读取</string>
     <string name="settings_glasses_firmware_reading">固件版本:读取中…</string>

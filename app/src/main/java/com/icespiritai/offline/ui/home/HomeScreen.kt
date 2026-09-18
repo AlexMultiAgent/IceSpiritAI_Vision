@@ -394,6 +394,17 @@ fun HomeScreen(
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         viewModel.clearRegionNotice()
     }
+
+    // 眼镜拍照的「画质提示」：重拍进度 / 最终"请靠近一点"的建议。
+    // 两条路一起走 —— Toast 给正在看手机的人，语音给戴着眼镜的人
+    // （后者经 ViewModel 转交 NavHost 的 TtsController）。
+    val glassesQualityNotice by glassesRepository.qualityNotice.collectAsState()
+    LaunchedEffect(glassesQualityNotice) {
+        val message = glassesQualityNotice ?: return@LaunchedEffect
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        viewModel.requestVoiceNotice(message)
+        glassesRepository.clearQualityNotice()
+    }
     val showLineBoxes = (state is AnalysisState.OcrDone) || completeReport != null
     val imageSize: IntSize? = imageSizeForState(ocrResult, completeReport)
     // v0.1.41: export is gated on (Complete + hasHits). The CaptureBar

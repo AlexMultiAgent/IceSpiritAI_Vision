@@ -51,4 +51,16 @@ interface ThemeSettingsSource {
      */
     val enableGlassesCapture: Flow<Boolean>
     suspend fun setGlassesCaptureEnabled(enabled: Boolean)
+
+    /**
+     * 眼镜拍照后若判定图像过糊 / 过暗，是否**自动重拍**（最多 3 张，取最清晰的一张），
+     * 并语音提示"请靠近一点、让文字占满画面"。
+     *
+     * **默认 `true`**（用户 2026-09-18 要求默认开）：眼镜 AI 流只有 640×480，
+     * 拍糊/拍暗是常态，而一次拍糊的往返（出图 1.3 s + 传输 + OCR）纯浪费——
+     * 用户最终只听到「未发现违规用语」。判据见 `GlassesPhotoQuality`
+     * （2026-09-18 实测：糊的那批清晰度 20–113、可用的 1686–6588）。
+     */
+    val autoRetakeLowQualityGlassesShot: Flow<Boolean>
+    suspend fun setAutoRetakeLowQualityGlassesShot(enabled: Boolean)
 }

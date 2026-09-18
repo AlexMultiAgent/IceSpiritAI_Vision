@@ -40,6 +40,7 @@ class SettingsRepository(private val context: Context) : ThemeSettingsSource {
     private val disclaimerKey = longPreferencesKey("disclaimer_accepted_at")
     private val visibleFeaturesKey = stringSetPreferencesKey("visible_features")
     private val enableGlassesCaptureKey = booleanPreferencesKey("enable_glasses_capture")
+    private val autoRetakeGlassesKey = booleanPreferencesKey("auto_retake_low_quality_glasses")
 
     override val themeMode: Flow<ThemeMode> =
         context.dataStore.data
@@ -125,6 +126,23 @@ class SettingsRepository(private val context: Context) : ThemeSettingsSource {
     override suspend fun setGlassesCaptureEnabled(enabled: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[enableGlassesCaptureKey] = enabled
+        }
+    }
+
+    /**
+     * 默认 **`true`**：缺 key（全新安装）时按开启处理 —— 这是用户 2026-09-18
+     * 明确要求的默认值，与 [enableGlassesCapture] 的 off-by-default 相反。
+     */
+    override val autoRetakeLowQualityGlassesShot: Flow<Boolean> =
+        context.dataStore.data
+            .catch { e ->
+                if (e is IOException) emit(emptyPreferences()) else throw e
+            }
+            .map { it[autoRetakeGlassesKey] ?: true }
+
+    override suspend fun setAutoRetakeLowQualityGlassesShot(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[autoRetakeGlassesKey] = enabled
         }
     }
 

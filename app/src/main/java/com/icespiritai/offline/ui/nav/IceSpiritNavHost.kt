@@ -174,6 +174,17 @@ fun IceSpiritNavHost(
                 }
             }
         }
+        // 画质门控的操作提示（「请靠近一些、让文字占满画面」等）走独立通道：
+        // 它既不是报告也不是错误，戴眼镜的人却必须听到——否则"再拍一张"
+        // 这件事只能靠手机屏幕传达，而他正看着现场。
+        LaunchedEffect(sharedVm, ttsController) {
+            sharedVm.voiceNotice.collect { notice ->
+                if (notice != null) {
+                    ttsController?.speakNotice(notice)
+                    sharedVm.clearVoiceNotice()
+                }
+            }
+        }
         val nav = rememberNavController()
         NavHost(navController = nav, startDestination = Routes.HOME) {
             composable(Routes.HOME) {

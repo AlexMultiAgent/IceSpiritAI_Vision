@@ -188,6 +188,23 @@ class TtsController(
     }
 
     /**
+     * 播报一句**操作提示**（画质门控的"请靠近一点重拍"走这条）。
+     *
+     * 与 [speakError] 同样的门槛：语音播报关闭/引擎初始化失败时静默返回
+     * （用户在设置里关掉朗读时不该被眼镜说话打扰）。不写 latestReport ——
+     * 提示不是结论，顶栏的"朗读"按钮仍指向上一份报告。
+     */
+    fun speakNotice(text: String) {
+        val current = _state.value
+        if (current is TtsState.Disabled || current is TtsState.InitFailed) {
+            Log.w(TAG, "speakNotice skipped: tts state=$current")
+            return
+        }
+        Log.i(TAG, "speakNotice: $text")
+        dispatchSegments(SegmentedScript.buildNotice(text))
+    }
+
+    /**
      * Dispatch each segment to the active engine as a separate utterance.
      * Pre-calls [engine.stop] so any in-flight queue is flushed
      * (replaces the old QUEUE_FLUSH semantics — [AndroidTtsEngine] now

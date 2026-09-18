@@ -197,6 +197,8 @@ fun SettingsScreen(
             // then taps "去蓝牙设置配对" to complete the OS-level flow.
             Card(modifier = Modifier.fillMaxWidth()) {
                 val glassesEnabled by viewModel.enableGlassesCapture.collectAsStateWithLifecycle()
+                // 「拍糊自动重拍」开关（默认开）——同卡片里的第二个开关。
+                val autoRetake by viewModel.autoRetakeLowQualityGlassesShot.collectAsStateWithLifecycle()
                 val glassesCtx = LocalContext.current
                 // v0.4.3: status comes from the SAME resolver the capture
                 // path uses, so this card can no longer contradict what
@@ -232,6 +234,26 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = stringResource(R.string.settings_glasses_enable_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    // 「拍糊自动重拍」：默认开。眼镜只有 640×480，拍糊/拍暗是
+                    // 常态，一次浪费的往返（出图 1.3 s + 传输 + OCR）比多拍一张
+                    // 贵得多 —— 但用户可以按自己的电量/时长偏好关掉。
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = stringResource(R.string.settings_glasses_auto_retake),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Switch(
+                            checked = autoRetake,
+                            onCheckedChange = { viewModel.setAutoRetakeLowQualityGlassesShot(it) },
+                        )
+                    }
+                    Text(
+                        text = stringResource(R.string.settings_glasses_auto_retake_desc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

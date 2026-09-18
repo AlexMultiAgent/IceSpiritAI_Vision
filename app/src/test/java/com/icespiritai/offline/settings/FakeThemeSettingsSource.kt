@@ -44,4 +44,12 @@ internal class FakeThemeSettingsSource(
     override suspend fun setGlassesCaptureEnabled(enabled: Boolean) {
         enableGlassesCaptureBacking.value = enabled
     }
+
+    /** 「拍糊自动重拍」默认开（与生产默认值一致）。 */
+    internal val autoRetakeBacking = MutableStateFlow(true)
+
+    override val autoRetakeLowQualityGlassesShot: Flow<Boolean> = autoRetakeBacking
+    override suspend fun setAutoRetakeLowQualityGlassesShot(enabled: Boolean) {
+        autoRetakeBacking.value = enabled
+    }
 }

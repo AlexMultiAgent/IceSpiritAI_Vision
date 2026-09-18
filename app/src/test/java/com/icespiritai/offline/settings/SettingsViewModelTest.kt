@@ -53,6 +53,18 @@ class SettingsViewModelTest {
         assertEquals(ThemeMode.LIGHT, themeBacking.value)
     }
 
+    @Test
+    fun `auto retake glasses shot defaults on`() = runTest {
+        assertEquals(true, vm.autoRetakeLowQualityGlassesShot.value)
+    }
+
+    @Test
+    fun `setAutoRetakeLowQualityGlassesShot writes via source`() = runTest(dispatcher) {
+        vm.setAutoRetakeLowQualityGlassesShot(false)
+
+        assertEquals(false, fakeSource.autoRetakeBacking.value)
+    }
+
     @Test fun `setFeatureVisible enable writes via source`() = runTest(dispatcher) {
         // Narrow the fake's set below `RuleTab.entries` so the enable path
         // actually adds FoodLabeling, rather than collapsing to

@@ -5,7 +5,9 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
+import com.icespiritai.offline.settings.SettingsRepository
 import com.icespiritai.offline.glasses.BluetoothController
+import kotlinx.coroutines.launch
 import com.icespiritai.offline.glasses.GlassesDeviceStore
 import com.icespiritai.offline.glasses.GlassesFirmwareService
 import com.icespiritai.offline.glasses.GlassesFirmwareUpdater
@@ -51,6 +53,16 @@ object AppGraph {
     @Volatile private var glassesCaptureRepositoryInstance: GlassesPhotoCaptureRepository? = null
     @Volatile private var glassesFirmwareUpdaterInstance: GlassesFirmwareUpdater? = null
 
+    /**
+     * 进程内镜像的「拍糊自动重拍」开关（默认开）。
+     *
+     * 拍照热路径需要一个**同步**答案（`GlassesPhotoCaptureRepository.capture()`
+     * 的重拍循环不该 await 一次 DataStore 读），所以在 AppGraph 初始化时起一个
+     * 常驻收集，把最新值放进这个 volatile。默认 `true` 与设置项的默认值一致。
+     */
+    @Volatile private var autoRetakeLowQualityGlassesShot: Boolean = true
+    @Volatile private var autoRetakeCollectorStarted: Boolean = false
+
     @Synchronized
     fun glassesDeviceStore(context: Context): GlassesDeviceStore {
         return glassesDeviceStoreInstance ?: GlassesDeviceStore(context.applicationContext)
@@ -81,7 +93,26 @@ object AppGraph {
             context = context.applicationContext,
             bluetoothController = bluetoothController(context.applicationContext),
             scope = glassesScope(),
-        ).also { glassesCaptureRepositoryInstance = it }
+            // 「拍糊自动重拍」（默认开，可在设置里关）。读的是进程内缓存的
+            // 最近一次 DataStore 值：拍照入口是热路径，不该每次都去读盘。
+            autoRetakeLowQuality = { autoRetakeLowQualityGlassesShot },
+        ).also {
+            startAutoRetakeCollector(context.applicationContext)
+            glassesCaptureRepositoryInstance = it
+        }
+    }
+
+    /** 只起一次：把设置里的开关同步进 [autoRetakeLowQualityGlassesShot]。 */
+    @Synchronized
+    private fun startAutoRetakeCollector(context: Context) {
+        if (autoRetakeCollectorStarted) return
+        autoRetakeCollectorStarted = true
+        val settings = SettingsRepository(context.applicationContext)
+        glassesScope().launch {
+            settings.autoRetakeLowQualityGlassesShot.collect { enabled ->
+                autoRetakeLowQualityGlassesShot = enabled
+            }
+        }
     }
 
     /**

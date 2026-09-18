@@ -126,6 +126,26 @@ class SettingsViewModel(
         }
     }
 
+    /** 「拍糊自动重拍」开关（默认开），见 [ThemeSettingsSource.autoRetakeLowQualityGlassesShot]。 */
+    val autoRetakeLowQualityGlassesShot: StateFlow<Boolean> =
+        source.autoRetakeLowQualityGlassesShot.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = true,
+        )
+
+    fun setAutoRetakeLowQualityGlassesShot(enabled: Boolean) {
+        viewModelScope.launch {
+            runCatching { source.setAutoRetakeLowQualityGlassesShot(enabled) }
+                .onFailure { cause ->
+                    if (cause !is IOException) {
+                        Log.w(TAG, "setAutoRetakeLowQualityGlassesShot failed", cause)
+                    }
+                    _snackbar.tryEmit(SettingsSnackbar.PersistFailed(cause))
+                }
+        }
+    }
+
     /**
      * Update flow read-through; ViewModel does not own the StateFlow
      * (singleton lives in [UpdateRepository]). Anything observing

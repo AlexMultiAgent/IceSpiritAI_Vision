@@ -44,4 +44,10 @@ internal class ThrowingFakeThemeSettingsSource(
         // throws on `setVisibleFeatures`. Glasses capture is orthogonal
         // to the failure-injection purpose.
     }
+
+    override val autoRetakeLowQualityGlassesShot: Flow<Boolean> = MutableStateFlow(true)
+    override suspend fun setAutoRetakeLowQualityGlassesShot(enabled: Boolean) {
+        // Same rationale as [setGlassesCaptureEnabled]: only
+        // `setVisibleFeatures` injects a failure in this fake.
+    }
 }

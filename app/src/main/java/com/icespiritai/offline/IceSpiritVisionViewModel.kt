@@ -211,6 +211,24 @@ class IceSpiritVisionViewModel(
     }
 
     /**
+     * 一次性**语音**提示（消费即置空）：画质门控的"请靠近一点重拍"等。
+     *
+     * 语音引擎由 Activity/`TtsController` 持有，ViewModel 只负责把文本送到
+     * 那一边（[com.icespiritai.offline.ui.nav.IceSpiritNavHost] 收集后调用
+     * `TtsController.speakNotice`）。HomeScreen 同时用它弹 Toast。
+     */
+    private val _voiceNotice = MutableStateFlow<String?>(null)
+    val voiceNotice: StateFlow<String?> = _voiceNotice.asStateFlow()
+
+    fun requestVoiceNotice(text: String) {
+        _voiceNotice.value = text
+    }
+
+    fun clearVoiceNotice() {
+        _voiceNotice.value = null
+    }
+
+    /**
      * 对当前报告图片上 ([fractionX], [fractionY]) 附近那块做「裁剪 + 放大 + 重识别」，
      * 并把新认到的文字**并入**现有结果（重复行不重复计数）。
      *

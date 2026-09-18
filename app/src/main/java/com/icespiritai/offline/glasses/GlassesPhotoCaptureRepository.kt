@@ -69,6 +69,11 @@ class GlassesPhotoCaptureRepository(
     private val context: Context,
     private val bluetoothController: BluetoothController,
     private val scope: CoroutineScope,
+    /**
+     * 「拍糊自动重拍」开关（设置项，默认开）。做成 provider 而不是构造时取
+     * 值：用户在设置里一改，下一次拍照就生效，不需要重建仓库。
+     */
+    private val autoRetakeLowQuality: () -> Boolean = { true },
 ) {
 
     // ────────────────────────────────────────────────────────────────────
@@ -114,6 +119,18 @@ class GlassesPhotoCaptureRepository(
     private val _state = MutableStateFlow<GlassesCaptureState>(GlassesCaptureState.Idle)
     val state: StateFlow<GlassesCaptureState> = _state.asStateFlow()
 
+    /**
+     * 一次性画质提示（消费即置空）：重拍进度、或最终「请靠近一点」的建议。
+     * 首页既拿它弹 Toast，也把它交给 TTS —— 戴眼镜的人看不到手机，
+     * 必须用声音告诉他"再拍一张"。
+     */
+    private val _qualityNotice = MutableStateFlow<String?>(null)
+    val qualityNotice: StateFlow<String?> = _qualityNotice.asStateFlow()
+
+    fun clearQualityNotice() {
+        _qualityNotice.value = null
+    }
+
     private companion object {
         const val TAG = "GlassesCapture"
 
@@ -157,6 +174,15 @@ class GlassesPhotoCaptureRepository(
 
         /** How long to wait before retrying a failed connect while watching. */
         const val RECONNECT_RETRY_MS = 5_000L
+
+        /**
+         * 一次拍照最多拍几张（首拍 + 最多 2 次重拍）。
+         *
+         * 3 张是上限而不是目标：绝大多数首拍就通过（实测可用的那批清晰度
+         * 1686–6588，阈值 1000），只有真的糊了才继续；每多拍一张的代价约
+         * 1.5–2 s（出图 1.3 s + 传输 0.1–0.7 s）。
+         */
+        const val MAX_CAPTURE_SHOTS = 3
 
         /** OEM backoff before the single 0x33 retry after a busy rejection. */
         const val BUSY_RETRY_DELAY_MS = 400L
@@ -746,9 +772,68 @@ class GlassesPhotoCaptureRepository(
         // subscription bug, not the radio (see runCapturePipeline).
         bluetoothController.requestPriority(android.bluetooth.BluetoothGatt.CONNECTION_PRIORITY_HIGH)
 
-        val captureDevice = liveReady.device
-        val startedMs = System.currentTimeMillis()
+        return try {
+            val captureDevice = liveReady.device
+            val startedMs = System.currentTimeMillis()
 
+            // ── 画质门控 + 自动重拍（设置项，默认开）────────────────────
+            // 640×480 的眼镜照片拍糊/拍暗是常态，而一次拍糊的往返（出图 ≈1.3 s +
+            // 传输 + OCR）是纯浪费：用户最终只听到「未发现违规用语」。见
+            // [GlassesPhotoQuality] 里 2026-09-18 的实测分布（糊的那批清晰度
+            // 20–113、可用的 1686–6588）。
+            val gateEnabled = autoRetakeLowQuality()
+            val capturedShots = mutableListOf<CapturedShot>()
+            var bestShot: CapturedShot? = null
+            var bestReading: GlassesPhotoQuality.Reading? = null
+            var attempt = 0
+            while (true) {
+                attempt++
+                val shot = runOneShotCapture(captureDevice, startedMs) ?: return null
+                capturedShots += shot
+                val reading = if (gateEnabled) measureShot(shot.uri) else null
+                val sharper = reading != null &&
+                    (bestReading == null || reading.sharpness > bestReading.sharpness)
+                if (bestShot == null || sharper) {
+                    bestShot = shot
+                    bestReading = reading
+                }
+                if (!gateEnabled) break
+                if (reading == null || reading.usable) break
+                if (attempt >= MAX_CAPTURE_SHOTS || !autoRetakeLowQuality()) break
+                Log.w(
+                    TAG,
+                    "shot #$attempt unusable ($reading) — retaking (${attempt + 1}/$MAX_CAPTURE_SHOTS)",
+                )
+                _qualityNotice.value = "照片偏糊或偏暗,正在重拍(${attempt + 1}/$MAX_CAPTURE_SHOTS)…"
+            }
+            // 保留最清晰的那张；被淘汰的废片清掉，别在 cache 里堆。注意这里删的是
+            // CapturedShot.file（真实缓存文件），不是 FileProvider URI 的 path。
+            val winner = requireNotNull(bestShot) { "capture loop finished without a shot" }
+            capturedShots.asSequence()
+                .filter { it.uri != winner.uri }
+                .forEach { discarded -> runCatching { discarded.file.delete() } }
+            if (gateEnabled && bestReading != null && !bestReading.usable) {
+                _qualityNotice.value = "照片不够清晰:请靠近一些、让文字占满画面,并在亮处重拍"
+            }
+            winner.uri
+        } finally {
+            // Restore BALANCED once, after the *whole* retake loop. Restoring
+            // inside runOneShotCapture would silently drop shot #2/#3 back to
+            // BALANCED, making a needed retake slower than the first shot.
+            bluetoothController.requestPriority(
+                android.bluetooth.BluetoothGatt.CONNECTION_PRIORITY_BALANCED,
+            )
+        }
+    }
+
+    /**
+     * 跑一次完整流水线并等它结束，返回成品 URI（失败返回 `null`，状态由流水线
+     * 自己置成 [GlassesCaptureState.Failed]）。
+     */
+    private suspend fun runOneShotCapture(
+        captureDevice: GlassesCaptureDevice,
+        startedMs: Long,
+    ): CapturedShot? {
         activeCaptureJob = scope.launch(Dispatchers.IO) {
             try {
                 runCapturePipeline(captureDevice, startedMs)
@@ -767,24 +852,14 @@ class GlassesPhotoCaptureRepository(
             } catch (e: Throwable) {
                 cleanupTempFile()
                 fail(e.message ?: "未知错误", retryable = true)
-            } finally {
-                // Restore BALANCED when the session ends — the official app's
-                // `restoreBlePriorityAfterAiPhoto` does exactly this
-                // (requestGattConnectionPriority(0, …), guarded so it runs
-                // once), and spec §3.2 / §2.4 require it on the failure path
-                // as well. Holding HIGH past the transfer invites some ROMs
-                // to rate-limit the next session's parameter update; the
-                // next capture raises HIGH again at entry, so nothing is lost.
-                bluetoothController.requestPriority(
-                    android.bluetooth.BluetoothGatt.CONNECTION_PRIORITY_BALANCED,
-                )
             }
         }
-
         return try {
             activeCaptureJob?.join()
             when (val s = _state.value) {
-                is GlassesCaptureState.Success -> s.fileUri
+                is GlassesCaptureState.Success -> currentTempFile?.let {
+                    CapturedShot(uri = s.fileUri, file = it)
+                }
                 else -> null
             }
         } catch (e: CancellationException) {
@@ -792,6 +867,18 @@ class GlassesPhotoCaptureRepository(
             null
         }
     }
+
+    /** 读回刚写下的 JPEG 算画质；任何异常都当作"无法判断"（见 [GlassesPhotoQuality]）。 */
+    private suspend fun measureShot(uri: Uri): GlassesPhotoQuality.Reading? = withContext(Dispatchers.IO) {
+        runCatching {
+            val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: return@runCatching null
+            GlassesPhotoQuality.measureJpeg(bytes)
+        }.getOrNull()
+    }
+
+    /** One finished capture: the URI handed downstream plus the real cache file. */
+    private data class CapturedShot(val uri: Uri, val file: File)
 
     /**
      * Publish a retryable failure for a caller that asked for a capture but
