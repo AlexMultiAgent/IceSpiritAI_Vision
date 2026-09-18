@@ -106,6 +106,21 @@ class TtsController(
      */
     private var latestSetting: TtsSetting = TtsSetting()
 
+    /**
+     * True while a one-off **notice** ("请靠近一些、让文字占满画面") is
+     * playing. Notices are higher priority than reports: a report that
+     * arrives during a notice is queued instead of calling engine.stop()
+     * and cutting the advice off mid-sentence.
+     */
+    private var noticeInFlight = false
+
+    /**
+     * Report/error segments waiting for the current notice to finish.
+     * Only the newest batch is kept — if several analyses somehow finish
+     * during a long notice, the user only needs the latest verdict.
+     */
+    private var pendingSegments: List<HitSegment>? = null
+
     init {
         scope.launch {
             settings.setting.collect { s ->
@@ -171,6 +186,11 @@ class TtsController(
             options.copy(topN = 3)
         } else options
         val segments = ScriptBuilder.buildSegments(report, effectiveOptions)
+        if (noticeInFlight) {
+            Log.i(TAG, "speakSegments queued: notice still speaking")
+            pendingSegments = segments
+            return
+        }
         dispatchSegments(segments)
     }
 
@@ -184,6 +204,11 @@ class TtsController(
         val current = _state.value
         if (current is TtsState.Disabled || current is TtsState.InitFailed) return
         val segments = SegmentedScript.buildError(error)
+        if (noticeInFlight) {
+            Log.i(TAG, "speakError queued: notice still speaking")
+            pendingSegments = segments
+            return
+        }
         dispatchSegments(segments)
     }
 
@@ -201,7 +226,10 @@ class TtsController(
             return
         }
         Log.i(TAG, "speakNotice: $text")
-        dispatchSegments(SegmentedScript.buildNotice(text))
+        // A notice supersedes anything queued behind an older notice:
+        // stale reports should not be spoken after the retry advice.
+        pendingSegments = null
+        dispatchSegments(SegmentedScript.buildNotice(text), isNotice = true)
     }
 
     /**
@@ -216,9 +244,10 @@ class TtsController(
      * hook simply never fires on sherpa today; v0.3.1+ will add a proper
      * Synthesizer.onStart bridge).
      */
-    private fun dispatchSegments(segments: List<HitSegment>) {
+    private fun dispatchSegments(segments: List<HitSegment>, isNotice: Boolean = false) {
         val engine = currentEngine()
         engine.stop()
+        noticeInFlight = isNotice
         _currentHitIndex.value = null
         val lastIdx = segments.lastIndex
         segments.forEachIndexed { idx, seg ->
@@ -238,7 +267,9 @@ class TtsController(
                 text = seg.text,
                 utteranceId = if (seg.isMeta) "meta-$idx" else "report-$idx",
                 interrupt = false,
-                onDone = { if (idx == lastIdx) _state.value = TtsState.Idle },
+                onDone = {
+                    if (idx == lastIdx) finishSpeechBatch(isNotice)
+                },
             )
         }
         engine.onUtteranceStart = { uid ->
@@ -249,12 +280,33 @@ class TtsController(
         _state.value = TtsState.Speaking
     }
 
+    /**
+     * Last utterance of a batch finished. If this was a notice, start the
+     * queued report instead of declaring the whole TTS session idle; the
+     * notice's last word must never be swallowed by the result.
+     */
+    private fun finishSpeechBatch(isNotice: Boolean) {
+        if (isNotice) {
+            noticeInFlight = false
+            val queued = pendingSegments
+            pendingSegments = null
+            if (queued != null && latestSetting.enabled) {
+                Log.i(TAG, "notice finished — dispatching queued segments")
+                dispatchSegments(queued)
+                return
+            }
+        }
+        _state.value = if (latestSetting.enabled) TtsState.Idle else TtsState.Disabled
+    }
+
     fun setLatestReport(report: ViolationReport?) {
         latestReport = report
     }
 
     fun stop() {
         currentEngine().stop()
+        noticeInFlight = false
+        pendingSegments = null
         _state.value = TtsState.Idle
         // v0.3.0: drop the scroll cursor so the UI doesn't leave
         // HighlightOverlay pinned to a hit that's no longer playing.
@@ -418,6 +470,8 @@ class TtsController(
     }
 
     fun release() {
+        noticeInFlight = false
+        pendingSegments = null
         systemEngine.release()
         sherpaEngine?.release()
     }

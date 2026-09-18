@@ -517,6 +517,33 @@ class TtsControllerTest {
         )
     }
 
+    @Test fun `report queues behind notice instead of interrupting it`() = runTest {
+        fakeSettings.emit(TtsSetting(enabled = true))
+        controller.speakNotice("照片偏糊，请靠近一些")
+        assertEquals(TtsState.Speaking, controller.state.first())
+        assertEquals(1, fakeEngine.speakCallCount)
+
+        controller.speak(reportWith("100% 中国第一"))
+        assertEquals(
+            "report must not start while the notice is still speaking",
+            1,
+            fakeEngine.speakCallCount,
+        )
+
+        fakeEngine.completeLastUtterance()
+        advanceUntilIdle()
+        assertEquals(
+            "queued report should start after the notice completes",
+            4,
+            fakeEngine.speakCallCount,
+        )
+        assertEquals(TtsState.Speaking, controller.state.first())
+
+        fakeEngine.completeLastUtterance()
+        advanceUntilIdle()
+        assertEquals(TtsState.Idle, controller.state.first())
+    }
+
     @Test fun `speakSegments respects topN truncation`() = runTest {
         fakeSettings.emit(TtsSetting(enabled = true))
         val many = (1..12).map {
