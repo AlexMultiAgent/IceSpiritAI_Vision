@@ -16,6 +16,8 @@ import com.icespiritai.offline.domain.AnalysisState.Idle
 import com.icespiritai.offline.domain.ErrorCode
 import com.icespiritai.offline.ocr.OcrEngine
 import com.icespiritai.offline.ocr.OcrEngineFactoryLocator
+import com.icespiritai.offline.ocr.RegionOcr
+import com.icespiritai.offline.ocr.RegionOcrRunner
 import com.icespiritai.offline.rules.AdSignageRuleLoader
 import com.icespiritai.offline.rules.AdSignageRuleMatcher
 import com.icespiritai.offline.rules.FoodLabelRuleLoader
@@ -190,6 +192,84 @@ class IceSpiritVisionViewModel(
     fun isTabEnabled(tab: RuleTab): Boolean = tab in visibleFeatures.value
 
     private val repository = ImageAnalyzerRepository(ocrEngine)
+
+    /**
+     * 放大识别用户点选的区域（B 方案，见 [RegionOcr]）。
+     * 惰性：只有用户真的框选时才构造（它会用到 FileProvider 与引擎）。
+     */
+    private val regionOcrRunner by lazy { RegionOcrRunner(application, ocrEngine) }
+
+    /**
+     * 一次性提示（已消费即置空），UI 用 Toast/Snackbar 展示。
+     * 例如「已放大识别：新增 3 行 / 1 处命中」或「这块没认到文字」。
+     */
+    private val _regionNotice = MutableStateFlow<String?>(null)
+    val regionNotice: StateFlow<String?> = _regionNotice.asStateFlow()
+
+    fun clearRegionNotice() {
+        _regionNotice.value = null
+    }
+
+    /**
+     * 对当前报告图片上 ([fractionX], [fractionY]) 附近那块做「裁剪 + 放大 + 重识别」，
+     * 并把新认到的文字**并入**现有结果（重复行不重复计数）。
+     *
+     * 坐标是 0..1 的相对位置，与图片分辨率无关；调用方（`ImagePreview` 的长按）
+     * 负责把触摸点换算成相对坐标。
+     *
+     * 只在已有报告（[AnalysisState.Complete]）时工作——没有底图/没有整图结果时
+     * 用户应该先拍照或选图。
+     */
+    fun recognizeRegionAt(fractionX: Float, fractionY: Float) {
+        val report = (_state.value as? AnalysisState.Complete)?.report ?: run {
+            _regionNotice.value = "先完成一次识别,再放大识别局部"
+            return
+        }
+        val matcher = matcherFor(_currentTab.value) ?: return
+        val job = currentJob
+        currentJob = viewModelScope.launch {
+            job?.cancelAndJoin()
+            _regionNotice.value = "正在放大识别该区域…"
+            val region = runCatching {
+                regionOcrRunner.recognize(report.imageUri, fractionX, fractionY)
+            }.getOrNull()
+            if (region == null) {
+                _regionNotice.value = "放大识别失败,请重试"
+                return@launch
+            }
+            val mergedLines = RegionOcr.mergeLines(report.lineBoxes, region.lines)
+            val added = mergedLines.size - report.lineBoxes.size
+            if (added <= 0) {
+                _regionNotice.value = if (region.lines.isEmpty()) {
+                    "这块没认到文字,试试对准文字本身"
+                } else {
+                    "这块的文字已经识别过了"
+                }
+                return@launch
+            }
+            val mergedText = mergedLines.joinToString("\n") { it.text }
+            val mergedHits = runCatching { matcher.scan(mergedText) }.getOrDefault(report.hits)
+            val newHits = mergedHits.size - report.hits.size
+            _state.value = AnalysisState.Complete(
+                report.copy(
+                    ocrText = mergedText,
+                    hits = mergedHits,
+                    lineBoxes = mergedLines,
+                    avgConfidence = (report.avgConfidence + region.avgConfidence) / 2f,
+                ),
+            )
+            Log.i(
+                TAG,
+                "region OCR merged: +$added lines (scale=${region.scale}), " +
+                    "hits ${report.hits.size} → ${mergedHits.size}",
+            )
+            _regionNotice.value = buildString {
+                append("已放大识别")
+                append(region.scale).append("×:新增 ").append(added).append(" 行")
+                if (newHits > 0) append(",新增 ").append(newHits).append(" 处命中")
+            }
+        }
+    }
 
     private val _currentTab = MutableStateFlow(RuleTab.AdSignage)
     val currentTab: StateFlow<RuleTab> = _currentTab.asStateFlow()

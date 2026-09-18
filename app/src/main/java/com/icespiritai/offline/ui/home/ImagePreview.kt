@@ -28,6 +28,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.geometry.Offset
 import coil.compose.AsyncImage
 import com.icespiritai.offline.R
 import com.icespiritai.offline.domain.RuleHit
@@ -111,6 +112,33 @@ internal fun computeFitTransform(
     )
 }
 
+/**
+ * [computeFitTransform] 的逆运算：预览框里的触点 → 图片内的相对坐标（0..1）。
+ *
+ * 图片按 `min(boxW/refW, boxH/refH)` 等比缩放并居中（见 [computeFitTransform]），
+ * 所以 `imageX = (viewX - offsetX) / scaleX`。触点落在图片外的信箱/黑边区时
+ * 返回 `null` —— 否则用户在留白处一按，就会被当成"选了图片边缘那一块"。
+ *
+ * 相对坐标与分辨率无关，因此 ViewModel 可以直接拿它在原图上裁剪。
+ */
+@VisibleForTesting
+internal fun viewOffsetToImageFraction(
+    offset: Offset,
+    transform: FitTransform,
+    imageSize: IntSize?,
+): Pair<Float, Float>? {
+    if (imageSize == null || imageSize.width <= 0 || imageSize.height <= 0) return null
+    val scaleX = transform.scaleX.takeIf { it.isFinite() && it > 0f } ?: return null
+    val scaleY = transform.scaleY.takeIf { it.isFinite() && it > 0f } ?: return null
+    val imageX = (offset.x - transform.offsetX) / scaleX
+    val imageY = (offset.y - transform.offsetY) / scaleY
+    if (imageX < 0f || imageY < 0f) return null
+    val fractionX = imageX / imageSize.width
+    val fractionY = imageY / imageSize.height
+    if (fractionX > 1f || fractionY > 1f) return null
+    return fractionX to fractionY
+}
+
 @Composable
 fun ImagePreview(
     imageUri: Uri?,
@@ -139,6 +167,15 @@ fun ImagePreview(
      * wires this callback only when the ViewModel has at least one OCR line.
      */
     onDoubleTap: (() -> Unit)? = null,
+    /**
+     * 长按图片上的某点 → 回调该点在**图片内的相对坐标**（0..1）。
+     *
+     * 用于「放大识别这块 region」：相对坐标与分辨率无关，ViewModel 拿到它
+     * 就能在原始图（含 OCR 用的 2048 上限解码版）上裁出对应区域。
+     * 传 `null`（默认）时不装手势；与 [onDoubleTap] 共存于同一个
+     * `detectTapGestures`，因此长按不会和双击打架。
+     */
+    onLongPressAt: ((Float, Float) -> Unit)? = null,
 ) {
     val a11y = stringResource(R.string.image_preview_desc)
     val idleMascotA11y = stringResource(R.string.mascot_idle_desc)
@@ -148,11 +185,37 @@ fun ImagePreview(
         .fillMaxSize()
         .testTag("image_preview")
         .let { m ->
-            if (onDoubleTap != null && lineBoxes.isNotEmpty()) {
-                // The Double-tap callback is hoisted — capturing [onDoubleTap]
-                // keeps the lambda identity stable across recompositions.
+            if ((onDoubleTap != null && lineBoxes.isNotEmpty()) || onLongPressAt != null) {
+                // The callbacks are hoisted — capturing them keeps the lambda
+                // identity stable across recompositions.
                 m.pointerInput(Unit) {
-                    detectTapGestures(onDoubleTap = { onDoubleTap() })
+                    detectTapGestures(
+                        onDoubleTap = if (onDoubleTap != null && lineBoxes.isNotEmpty()) {
+                            { onDoubleTap() }
+                        } else {
+                            null
+                        },
+                        onLongPress = if (onLongPressAt != null) {
+                            { offset ->
+                                val transform = computeFitTransform(imagePainter, boxSize, imageSize)
+                                val reference = imageSize
+                                    ?: imagePainter?.let {
+                                        IntSize(
+                                            it.intrinsicSize.width.toInt(),
+                                            it.intrinsicSize.height.toInt(),
+                                        )
+                                    }
+                                val fraction = viewOffsetToImageFraction(
+                                    offset = offset,
+                                    transform = transform,
+                                    imageSize = reference,
+                                )
+                                if (fraction != null) onLongPressAt(fraction.first, fraction.second)
+                            }
+                        } else {
+                            null
+                        },
+                    )
                 }
             } else {
                 m

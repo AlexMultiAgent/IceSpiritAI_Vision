@@ -384,6 +384,16 @@ fun HomeScreen(
         if (safe != idx) return@LaunchedEffect
         listState.animateScrollToItem(safe)
     }
+
+    // 「放大识别这块 region」（长按图片）的结果提示。
+    // 成功会让报告多出若干行/命中（面板自己刷新），这里只负责说清楚
+    // "刚才那一按发生了什么"：新增了多少、没认到、还是这个区域早就认过了。
+    val regionNotice by viewModel.regionNotice.collectAsState()
+    LaunchedEffect(regionNotice) {
+        val message = regionNotice ?: return@LaunchedEffect
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        viewModel.clearRegionNotice()
+    }
     val showLineBoxes = (state is AnalysisState.OcrDone) || completeReport != null
     val imageSize: IntSize? = imageSizeForState(ocrResult, completeReport)
     // v0.1.41: export is gated on (Complete + hasHits). The CaptureBar
@@ -427,6 +437,9 @@ fun HomeScreen(
             hits = hits,
             imageSize = imageSize,
             onDoubleTap = onOpenViewer,
+            onLongPressAt = { fractionX, fractionY ->
+                viewModel.recognizeRegionAt(fractionX, fractionY)
+            },
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
