@@ -188,6 +188,13 @@ class GlassesPhotoCaptureRepository(
         const val BUSY_RETRY_DELAY_MS = 400L
 
         /**
+         * Let the glasses finish tearing down the previous shot before asking
+         * for a retake. Observed on 2026-09-18: an immediate second 0x33 made
+         * V2.6.2 echo the previous `0x51 SUCCESS` and never emit a new START.
+         */
+        const val RETRY_SETTLE_MS = 800L
+
+        /**
          * How many times a busy rejection is retried (400 ms, 800 ms, 1600 ms).
          * The OEM does one; the shutter-button flow needs more, because the
          * glasses are busy with the shot the wearer just took.
@@ -788,6 +795,7 @@ class GlassesPhotoCaptureRepository(
             var attempt = 0
             while (true) {
                 attempt++
+                if (attempt > 1) delay(RETRY_SETTLE_MS)
                 val shot = runOneShotCapture(captureDevice, startedMs) ?: return null
                 capturedShots += shot
                 val reading = if (gateEnabled) measureShot(shot.uri) else null
@@ -804,7 +812,8 @@ class GlassesPhotoCaptureRepository(
                     TAG,
                     "shot #$attempt unusable ($reading) — retaking (${attempt + 1}/$MAX_CAPTURE_SHOTS)",
                 )
-                _qualityNotice.value = "照片偏糊或偏暗,正在重拍(${attempt + 1}/$MAX_CAPTURE_SHOTS)…"
+                _qualityNotice.value =
+                    "照片偏糊或偏暗，正在重拍第 ${attempt + 1} 张，共 $MAX_CAPTURE_SHOTS 张…"
             }
             // 保留最清晰的那张；被淘汰的废片清掉，别在 cache 里堆。注意这里删的是
             // CapturedShot.file（真实缓存文件），不是 FileProvider URI 的 path。
@@ -1149,11 +1158,12 @@ class GlassesPhotoCaptureRepository(
         // Wait until a START with a non-null `fileSize` arrives before
         // opening the receive stream. Failed short-circuits the wait.
         //
-        // Frames that are neither START nor FAILED (the `0x33` Response,
-        // anything unparseable) are parked rather than discarded: the
-        // stage-3 collector still has to see a `SUCCESS` that lands in
-        // this window, and the whole point of the tap is that nothing
-        // gets dropped between stages.
+        // Live frames that are neither START nor FAILED are consumed and
+        // dropped here. They used to be parked for stage 3; when the first
+        // frame was an old 0x51 SUCCESS, receiveWithin() kept returning that
+        // same parked frame forever, spinning on the queue and never reaching
+        // the new START. Stage 3 still sees any SUCCESS that arrives after
+        // START because the same tap keeps receiving live frames.
         _state.value = GlassesCaptureState.Capturing(
             CaptureProgress(
                 stage = CaptureProgress.Stage.WaitingForStart,
@@ -1168,6 +1178,18 @@ class GlassesPhotoCaptureRepository(
         // `55aa003302010001`, err=1). The OEM retries once after 400 ms;
         // without this the first button press after a shot always failed.
         var busyRetries = 0
+        suspend fun retryCapture(reason: String): Boolean {
+            if (busyRetries >= MAX_BUSY_RETRIES) return false
+            val delayMs = BUSY_RETRY_DELAY_MS shl busyRetries
+            busyRetries++
+            Log.w(TAG, "$reason — retry #$busyRetries after ${delayMs}ms")
+            delay(delayMs)
+            val resent = bluetoothController.writeFff0(
+                GlassesPhotoProtocol.buildCaptureRequestFrame(seq = 0x00),
+            )
+            Log.d(TAG, "0x33 retry writeFff0 returned: $resent")
+            return resent
+        }
         val startDeadline = System.currentTimeMillis() + captureTimeoutMs
         while (totalSize == null) {
             val remaining = startDeadline - System.currentTimeMillis()
@@ -1181,24 +1203,11 @@ class GlassesPhotoCaptureRepository(
             val hex = frame.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
             val ackError = GlassesPhotoProtocol.captureAckError(frame)
             if (ackError != null && ackError != 0) {
-                if (busyRetries < MAX_BUSY_RETRIES) {
-                    // Growing backoff: the glasses are busy with the very photo
-                    // the wearer just took, and that window is longer than the
-                    // OEM's single 400 ms retry (V2.5.8 answered err=1 twice in
-                    // a row on the device).
-                    val delayMs = BUSY_RETRY_DELAY_MS shl busyRetries
-                    busyRetries++
-                    Log.w(TAG, "0x33 rejected (err=$ackError) — retry #$busyRetries after ${delayMs}ms")
-                    delay(delayMs)
-                    val resent = bluetoothController.writeFff0(
-                        GlassesPhotoProtocol.buildCaptureRequestFrame(seq = 0x00),
-                    )
-                    Log.d(TAG, "0x33 retry writeFff0 returned: $resent")
-                    if (!resent) {
-                        cleanupTempFile()
-                        fail("0x33 重试发送失败", retryable = true)
-                        return false
-                    }
+                // Growing backoff: the glasses are busy with the very photo
+                // the wearer just took, and that window is longer than the
+                // OEM's single 400 ms retry (V2.5.8 answered err=1 twice in
+                // a row on the device).
+                if (retryCapture("0x33 rejected (err=$ackError)")) {
                     continue
                 }
                 Log.w(TAG, "0x33 rejected $busyRetries time(s) (err=$ackError) — giving up")
@@ -1238,9 +1247,21 @@ class GlassesPhotoCaptureRepository(
                     fail("眼镜拒绝拍照 (code=${notify.code})", retryable = true)
                     return false
                 }
+                is GlassesPhotoProtocol.StatusNotify.Success -> {
+                    // V2.6.2 echoes the previous shot's terminal SUCCESS when
+                    // a retake 0x33 arrives too soon. Re-sending 0x33 after a
+                    // short backoff is the operation that actually gets a new
+                    // START; parking this frame only deadlocked the wait.
+                    if (retryCapture("0x51 SUCCESS arrived before START (previous shot settling)")) {
+                        continue
+                    }
+                    Log.w(TAG, "0x51 SUCCESS before START and retries exhausted — giving up")
+                    cleanupTempFile()
+                    fail("眼镜未开始重拍，请稍后重试", retryable = true)
+                    return false
+                }
                 else -> {
-                    Log.d(TAG, "frame while waiting for START, parked: raw=$hex")
-                    status.park(frame)
+                    Log.d(TAG, "frame while waiting for START, ignored: raw=$hex")
                 }
             }
             if (totalSize == null && System.currentTimeMillis() >= startDeadline) {
