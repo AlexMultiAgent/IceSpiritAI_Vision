@@ -22,6 +22,18 @@ package com.icespiritai.offline.glasses
  */
 object GlassesPhotoProtocol {
 
+    /**
+     * TEMP-EXPERIMENT (2026-09-18): send `0x50` (`aiPhotoRequestCmd`, the
+     * OEM's `requestAiPhotoCapture`) instead of `0x33`.
+     *
+     * V2.4.5 answered 0x50 with a reject (`55 aa .. 50 02 01 00 01`), but the
+     * glasses are on V2.6.2 now and the two commands may not be equivalent:
+     * 0x33 streams a downscaled JPEG over FA12 (we always get 640x480), while
+     * the OEM pairs 0x50 with a *stored* photo + `0x51 PhotoReady` (the
+     * 1280x720 the button produces). Flipped only for this measurement.
+     */
+    private const val EXPERIMENT_USE_AI_PHOTO_REQUEST_CMD = false
+
     // ────────────────────────────────────────────────────────────────────
     // Frame-level constants (FFF0 management channel)
     // ────────────────────────────────────────────────────────────────────
@@ -311,7 +323,7 @@ object GlassesPhotoProtocol {
         frame[0] = FFF0_MAGIC_BYTE_0
         frame[1] = FFF0_MAGIC_BYTE_1
         frame[2] = seq
-        frame[3] = CMD_AI_CAPTURE
+        frame[3] = if (EXPERIMENT_USE_AI_PHOTO_REQUEST_CMD) 0x50 else CMD_AI_CAPTURE
         frame[4] = TYPE_REQUEST
         frame[5] = 0x01                  // payload length u16 LE: low byte
         frame[6] = 0x00                  // payload length u16 LE: high byte

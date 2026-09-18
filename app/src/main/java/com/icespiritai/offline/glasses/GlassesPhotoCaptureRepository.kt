@@ -661,7 +661,10 @@ class GlassesPhotoCaptureRepository(
     suspend fun capture(): Uri? {
         Log.i(
             TAG,
-            "capture() entry: state=${_state.value::class.simpleName} mtu=${bluetoothController.mtu.value}",
+            "capture() entry: state=${_state.value::class.simpleName} mtu=${bluetoothController.mtu.value} " +
+                "link=${bluetoothController.connectionState.value::class.simpleName} " +
+                "stateAddr=${(_state.value as? GlassesCaptureState.Ready)?.device?.address} " +
+                "linkAddr=${(bluetoothController.connectionState.value as? BluetoothController.ConnectionState.Connected)?.device?.address}",
         )
         if (_state.value is GlassesCaptureState.Capturing) {
             Log.w(TAG, "capture() ignored — a capture is already in flight")
@@ -675,11 +678,32 @@ class GlassesPhotoCaptureRepository(
                 ready.device.address,
             )
         ) {
+            // Before blaming the link, check whether the *link* is healthy but
+            // pointed at a different glasses than the stale Ready remembers.
+            // The user has two pairs (…:60:09 and …:60:0B): on 2026-09-18 the
+            // state named …0B while the live link was …09, and every capture
+            // was refused with 「蓝牙连接已断开」 even though MTU was 517 and
+            // the connection was up. Trust the link — it is the thing we are
+            // actually going to write to — and re-point the state at it.
+            val liveLink = bluetoothController.connectionState.value
+            if (liveLink is BluetoothController.ConnectionState.Connected &&
+                bluetoothController.mtu.value >= BluetoothController.REQUIRED_MIN_MTU
+            ) {
+                Log.i(
+                    TAG,
+                    "capture(): stale Ready named ${ready.device.address} but the link is " +
+                        "${liveLink.device.address} — re-pointing the state at the live link",
+                )
+                _state.value = GlassesCaptureState.Ready(
+                    GlassesCaptureDevice.from(liveLink.device),
+                )
+            } else {
             // Same stale-Ready trap as ensureConnected(): saying "未连接眼镜"
             // and letting the Retry button re-run the pipeline (which
             // reconnects) beats sending 0x33 into a dead handle.
             _state.value = GlassesCaptureState.Idle
             return fail("蓝牙连接已断开", retryable = true).let { null }
+            }
         }
         // (smoke 20 2026-09-15) The "未连接眼镜" path used to set
             // retryable=false, which hid the 重试 button — the user
