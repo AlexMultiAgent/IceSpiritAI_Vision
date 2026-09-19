@@ -41,9 +41,9 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun `visibleFeatures defaults to all tabs when key missing`() = runTest {
+    fun `visibleFeatures defaults to ad signage when key missing`() = runTest {
         val repo = SettingsRepository(ApplicationProvider.getApplicationContext())
-        assertEquals(RuleTab.entries.toSet(), repo.visibleFeatures.first())
+        assertEquals(setOf(RuleTab.AdSignage), repo.visibleFeatures.first())
     }
 
     @Test
@@ -58,12 +58,12 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun `visibleFeatures falls back to all tabs when persisted enum name is stale`() = runTest {
+    fun `visibleFeatures falls back to ad signage when persisted enum name is stale`() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         context.dataStore.edit { prefs ->
             prefs[stringSetPreferencesKey("visible_features")] = setOf("OldTabName")
         }
         val repo = SettingsRepository(context)
-        assertEquals(RuleTab.entries.toSet(), repo.visibleFeatures.first())
+        assertEquals(setOf(RuleTab.AdSignage), repo.visibleFeatures.first())
     }
 }

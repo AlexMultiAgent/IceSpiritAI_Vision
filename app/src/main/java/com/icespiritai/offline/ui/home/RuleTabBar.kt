@@ -68,7 +68,15 @@ object RuleTabBarTestTags {
 
 enum class RuleTab(val titleRes: Int, val tabIcon: ImageVector) {
     AdSignage(R.string.tab_ad_law, Icons.Outlined.Verified),
-    FoodLabeling(R.string.tab_food_label, Icons.Outlined.LocalDining),
+    FoodLabeling(R.string.tab_food_label, Icons.Outlined.LocalDining);
+
+    companion object {
+        /**
+         * Fresh-install visibility: ad signage stays on by default; food
+         * labeling is opt-in from Settings → 功能可见性.
+         */
+        val DEFAULT_VISIBLE_FEATURES: Set<RuleTab> = setOf(AdSignage)
+    }
 }
 
 /**
@@ -95,11 +103,11 @@ enum class RuleTab(val titleRes: Int, val tabIcon: ImageVector) {
  *   right of the ad-signage tab.
  * - **Required, no default.** The system default everywhere else
  *   (`SettingsRepository.visibleFeatures`, the VM's `initialValue`) is
- *   `RuleTab.entries.toSet()` (both tabs visible). A `setOf(AdSignage)`
- *   default here would silently disable the v0.1.69 dual-tab feature for
- *   any caller that forgets to thread the param — `HomeTopBar` is updated
- *   to pass it through; Task 5 (HomeScreen) will eventually wire
- *   `vm.visibleFeatures.collectAsState().value` from the source of truth.
+ *   [RuleTab.DEFAULT_VISIBLE_FEATURES] — ad signage only, with food
+ *   labeling opt-in. A missing param here is still a caller bug because it
+ *   would also disable the dual-tab feature for users who explicitly
+ *   enabled food labeling; `HomeTopBar` threads it through from the source
+ *   of truth ([com.icespiritai.offline.IceSpiritVisionViewModel.visibleFeatures]).
  * - Empty set → an empty [Row] is rendered (no crash). Callers are responsible
  *   for the "at least one visible" guard (see [com.icespiritai.offline.settings.SettingsViewModel.setFeatureVisible]).
  *

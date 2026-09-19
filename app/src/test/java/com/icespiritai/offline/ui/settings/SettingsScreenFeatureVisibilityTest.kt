@@ -62,7 +62,7 @@ class SettingsScreenFeatureVisibilityTest {
         // SettingsScreenTtsSectionTest).
         composeRule.onNodeWithText("功能可见性", useUnmergedTree = true)
             .performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("勾选显示的功能,至少保留一个", useUnmergedTree = true)
+        composeRule.onNodeWithText("勾选显示的功能,至少保留一个(食品标签默认关闭)", useUnmergedTree = true)
             .performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("广告招牌", useUnmergedTree = true)
             .performScrollTo().assertIsDisplayed()

@@ -68,11 +68,10 @@ class SettingsViewModel(
 
     /**
      * Currently visible [RuleTab] set, projected from [ThemeSettingsSource.visibleFeatures]
-     * via `stateIn(Eagerly)`. Initial value is [RuleTab.entries] (all tabs
-     * visible) so a brand-new install's first composition matches the
-     * production "show everything" baseline even before DataStore's first
-     * read lands — the source's own fallback (`SettingsRepository` falls
-     * back to all-tabs when the key is missing) will agree once it emits.
+     * via `stateIn(Eagerly)`. Initial value is
+     * [RuleTab.DEFAULT_VISIBLE_FEATURES] — ad signage only — so a brand-new
+     * install's first composition matches the production default before
+     * DataStore's first read lands. The source's own fallback agrees.
      *
      * Consumers: [com.icespiritai.offline.IceSpiritVisionViewModel] filters
      * `matcherFor(tab)` / `setTab(tab)` against this set so a disabled
@@ -82,7 +81,7 @@ class SettingsViewModel(
     val visibleFeatures: StateFlow<Set<RuleTab>> = source.visibleFeatures.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
-        initialValue = RuleTab.entries.toSet(),
+        initialValue = RuleTab.DEFAULT_VISIBLE_FEATURES,
     )
 
     /**

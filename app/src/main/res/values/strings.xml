@@ -267,7 +267,7 @@
          Two row labels are intentional dedicated strings (not the tab bar's
          tab_ad_law / tab_food_label) — settings context may diverge later. -->
     <string name="settings_feature_visibility_title">功能可见性</string>
-    <string name="settings_feature_visibility_desc">勾选显示的功能,至少保留一个</string>
+    <string name="settings_feature_visibility_desc">勾选显示的功能,至少保留一个(食品标签默认关闭)</string>
     <string name="settings_feature_last_cannot_hide">至少保留一个功能可见</string>
     <string name="settings_feature_persist_failed">设置保存失败</string>
     <string name="settings_feature_ad_signage_label">广告招牌</string>

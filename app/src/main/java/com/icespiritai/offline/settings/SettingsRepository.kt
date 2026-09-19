@@ -73,13 +73,13 @@ class SettingsRepository(private val context: Context) : ThemeSettingsSource {
 
     /**
      * Persisted set of currently-visible [RuleTab] values. Falls back to
-     * [RuleTab.entries] (all tabs visible) when:
+     * [RuleTab.DEFAULT_VISIBLE_FEATURES] (ad signage only) when:
      *  - the key is missing on a fresh install
      *  - every persisted name fails to map to a current [RuleTab] enum
      *    (e.g. a stale name from a previous version where the enum was
      *    renamed; deserialization yields an empty set, which we treat as
-     *    a "show everything" recovery instead of leaving the user with a
-     *    blank tab bar).
+     *    the product default instead of leaving the user with a blank tab
+     *    bar).
      *
      * Bug 6 IOException-only catch is preserved — non-IO failures still
      * propagate so a real programming bug doesn't get swallowed.
@@ -90,13 +90,14 @@ class SettingsRepository(private val context: Context) : ThemeSettingsSource {
                 if (e is IOException) emit(emptyPreferences()) else throw e
             }
             .map { prefs ->
+                val defaults = RuleTab.DEFAULT_VISIBLE_FEATURES
                 val raw = prefs[visibleFeaturesKey]
-                    ?: return@map RuleTab.entries.toSet()
+                    ?: return@map defaults
                 raw.mapNotNullTo(mutableSetOf()) { name ->
                     RuleTab.entries.firstOrNull { it.name == name }
                 }.ifEmpty {
-                    Log.w(TAG, "visible_features 反序列化空集, fallback 默认全开")
-                    RuleTab.entries.toSet()
+                    Log.w(TAG, "visible_features 反序列化空集, fallback 默认功能可见性")
+                    defaults
                 }
             }
 
