@@ -41,6 +41,11 @@
 | `GlassesScan.kt` | `BluetoothLeScanner` 封装,按 `GlassesDevice.NAME_PREFIXES` 双前缀(`Glass-D15` / `Glasses-A`)过滤 |
 | `BluetoothController.kt` | 单 GATT 连接编排(MTU 协商 / 服务发现 / CCCD 写入 / 通知转发)|
 | `GlassesPhotoCaptureRepository.kt` | 拍照状态机:Connecting → MTU → Services → Notifies → Ready → Capturing → Success |
+| `GlassesFirmwareService.kt` (v0.5.0+) | 固件 OTA 升级:游客登录查更新 + 0x3E 让眼镜开蓝牙共享网络 + 0x43 下发升级 URL + 重启刷写 |
+| `GlassesWifiProbe.kt` (v0.5.0+) | Wi-Fi 取图路径探测:0x36/0x39 命令 + AP 重试(最多两轮)+ SSID 扫描 + 隐藏热点尝试 + 手动兜底(每 6s 重发) |
+| `GlassesFa12Collector.kt` (v0.4.4+) | JPEG 块补洞:批量 op2(一轮 20 个)+ 480 字节步进 + 250ms 等待 + 连续 10s 无进展判死(吞吐 ~16-20 块/秒) |
+| `RegionOcr.kt` + `RegionOcrRunner.kt` (v0.5.4+) | 长按图片放大识别局部区域:裁剪 + 3× 放大 + 重识别 + 合并;`mapNormRangeToOriginal` 保证子串 span 与显示文字严格对齐 |
+| `GlassesPhotoQuality.kt` (v0.5.4+) | 清晰度(拉普拉斯方差)+ 亮度门控;糊或暗触发自动重拍最多 3 张,保留最清晰的一张 |
 | `ui/GlassesCaptureOverlay.kt` | Compose overlay(连接进度 / 拍照进度 / 失败重试) |
 
 **配对模型**:配对在**系统蓝牙设置**里完成(用户一次性操作),App 不调用 `createBond()`,只通过 OS 已存的 pairing keys 自动 secure connect。`GlassesScan` 按 `GlassesDevice.NAME_PREFIXES`(`["Glass-D15", "Glasses-A"]`)双前缀过滤 —— spec 文档硬件名是 `Glass-D15`,实际出货固件广播名是 `Glasses-A88`,两者都接收。新 OEM/固件加一行即可;自动从 `GlassesDeviceStore` 拿上次地址重连。
@@ -55,7 +60,12 @@
 
 ## 产品方向:广告招牌 + 食品标签 双域(v0.1.69 起双 tab 默认全开)
 
-**v0.1.69 起**:`RuleTabBar.visibleTabs` 由硬编码 `listOf(RuleTab.AdSignage)` 改为参数化 `Set<RuleTab>`,由 [`IceSpiritVisionViewModel.visibleFeatures`](app/src/main/java/com/icespiritai/offline/IceSpiritVisionViewModel.kt) 注入(默认 `{AdSignage, FoodLabeling}` **全开**,持久化在 DataStore `visible_features` key,见 [`SettingsRepository.kt`](app/src/main/java/com/icespiritai/offline/settings/SettingsRepository.kt))。用户可在设置层「功能可见性」Card 里单独禁用食品标签;`FoodLabeling` enum 项 / `FoodLabelRule*` / `matcherFor` 路由 / `CategoryDisplay.FoodLabelCategory` 完整保留。
+**v0.1.69 起 → v0.5.5 改默认**:`RuleTabBar.visibleTabs` 由硬编码 `listOf(RuleTab.AdSignage)` 改为参数化 `Set<RuleTab>`,由 [`IceSpiritVisionViewModel.visibleFeatures`](app/src/main/java/com/icespiritai/offline/IceSpiritVisionViewModel.kt) 注入,持久化在 DataStore `visible_features` key,见 [`SettingsRepository.kt`](app/src/main/java/com/icespiritai/offline/settings/SettingsRepository.kt)。
+
+- **v0.1.69 → v0.5.4**:默认 `{AdSignage, FoodLabeling}` **双 tab 全开**
+- **v0.5.5 起**(commit `151da7a`):默认 `{AdSignage}` **仅广告招牌** —— 老用户升级后食品标签 tab 会消失,需要在「设置 → 功能可见性」Card 里手动开启
+
+用户可在设置层「功能可见性」Card 里手动加回 / 关掉任一 tab;`FoodLabeling` enum 项 / `FoodLabelRule*` / `matcherFor` 路由 / `CategoryDisplay.FoodLabelCategory` 完整保留,UI 可见性只是数据驱动。
 
 **历史背景(v0.1.10 – v0.1.68)**:UI 层只暴露「广告招牌」tab,「食品标识」入口对用户隐藏,先把单域打磨到「可复制到下一个视觉判别域」的标尺。当时的分层状态(**代码路径至今保留,只是可见性不再硬编码**):
 
@@ -366,13 +376,21 @@ Settings 新增「长报告摘要」Switch(默认 OFF):`TtsSetting.longReportSum
 
 - **Triple-SHA 对齐(release 后必跑)**:`tag SHA ↔ commit SHA ↔ APK SHA-256 ↔ vision-latest.json apkSha256` 四者必须一致:
   ```bash
-  TAG_COMMIT=$(git rev-parse v0.1.X^{})          # 剥 annotated-tag 对象 SHA
+  TAG_COMMIT=$(git rev-parse v0.X.X^{})          # 剥 annotated-tag 对象 SHA(版本号形式不限,annotated tag 必须 `^{}` 剥到 commit)
   APK_SHA=$(sha256sum app/build/generated/release-staging/icespiritai-vision.apk | awk '{print $1}')
   JSON_SHA=$(curl -s http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/vision-latest.json \
     | python3 -c "import sys,json; print(json.load(sys.stdin)['apkSha256'])")
   test "$TAG_COMMIT" = "$(git rev-parse HEAD)" && test "$APK_SHA" = "$JSON_SHA" && echo "ALIGNED" || echo "DRIFT"
   ```
-  注:`git rev-parse v0.1.X` 返回 annotated tag **对象** SHA(≠commit SHA),必须 `^{}` 剥到 commit;JSON 字段是 `apkSha256` 不是 `sha256`。
+  注:`git rev-parse v0.X.X` 返回 annotated tag **对象** SHA(≠commit SHA),必须 `^{}` 剥到 commit;JSON 字段是 `apkSha256` 不是 `sha256`。
+
+- **代码仓 `latest` ref force-update(必跑,但容易漏)**:Triple-SHA 对齐通过后,代码仓 `giteaadmin/IceSpiritAI_Vision` + `AlexMultiAgent/IceSpiritAI_Vision` 的 `latest` ref 必须 force-update 到当前 release commit(`v0.X.X` 指向的 SHA)。**这个 ref 是代码仓的 git convention,跟 publishing 仓 `giteaadmin/vision-app` 的 `latest` Gitea release tag 是两个独立概念** —— 前者供 `git log` archaeology / 第三方 reviewer 找"最新发版 commit",后者供客户端 in-app update 下载。两个必须都更新:
+  ```bash
+  git tag -f latest <release-commit-sha>      # 本地 force-update
+  git push <remote> :latest                  # 删除远端 ref
+  git push <remote> latest                    # 推送新 ref
+  ```
+  不做这步的话,下次 `git ls-remote --tags <remote> latest` 看到的还是上一版 commit,会误导外部 reviewer 与未来回溯。
 
 - **Gitea 1.22.x `releases/download/<tag>/<filename>` 对 `.apk` 文件名 404**(发布仓库 `giteaadmin/vision-app` 实测**健康**,in-app update 完全工作):
   - **症状**:apk URL `releases/download/latest/icespiritai-vision.apk` 持续 404,但同 tag 下 `vision-latest.json` 200 — 触发取决于 release tag 与 filename,attachment `GET /attachments/<uuid>` 正常
