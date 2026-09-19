@@ -93,6 +93,9 @@
     <string name="settings_glasses_wifi_failed">诊断失败:请确认眼镜已配对、开机并靠近手机</string>
     <string name="settings_glasses_wifi_action_test">测试</string>
     <string name="settings_glasses_wifi_action_stop">结束</string>
+    <string name="settings_glasses_wifi_action_manual">去 Wi-Fi 设置</string>
+    <string name="settings_glasses_wifi_manual_hint">自动连接未完成。请到系统 Wi-Fi 中手动连接眼镜热点%1$s，再回来重新诊断。</string>
+    <string name="settings_glasses_wifi_manual_hint_with_ssid">自动连接未完成。请到系统 Wi-Fi 中手动连接「%1$s」，再回来重新诊断。</string>
     <string name="settings_glasses_wifi_direct_running">正在建立 Wi-Fi Direct 并拉取一张照片…</string>
     <string name="settings_glasses_wifi_direct_ok">Wi-Fi 取图成功:%1$d KB / %2$d ms(其中组网 %3$d ms)</string>
     <string name="settings_glasses_wifi_direct_fail">Wi-Fi 取图失败(%1$s):%2$s</string>

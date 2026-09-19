@@ -164,6 +164,21 @@ class GlassesPhotoCaptureRepository(
         const val WIFI_POLL_MS = 1_200L
 
         /**
+         * Official-style AP bring-up retries. The APK has explicit
+         * `sync_retry_ap` / `sync_retrying_start_ap` states; our first probe
+         * sent `0x39` once per payload and gave up too early.
+         */
+        const val AP_INFO_RETRY_ATTEMPTS = 2
+        const val AP_INFO_RETRY_DELAY_MS = 1_200L
+        const val AP_INFO_READ_TIMEOUT_MS = 4_000L
+
+        /** How long each retry waits for the glasses' SSID to appear in scans. */
+        const val AP_SSID_SCAN_TIMEOUT_MS = 5_000L
+        const val AP_CONNECT_TIMEOUT_MS = 12_000L
+        /** Re-arm the manual-fallback AP while the user is in Wi-Fi settings. */
+        const val MANUAL_AP_KEEPALIVE_MS = 6_000L
+
+        /**
          * The `0x39` payloads worth trying, in order: Wi-Fi Direct (2) then
          * the OEM's `startTransferApMode` (0).
          */
@@ -507,6 +522,13 @@ class GlassesPhotoCaptureRepository(
         val failed: Boolean = false,
         /** Filled in by [probeWifiTransfer] once the session is up. */
         val direct: GlassesWifiProbe.Report? = null,
+        /**
+         * True when the auto path failed after the glasses exposed an AP or
+         * at least reached the SSID/connect phase, so the user can finish the
+         * join manually from system Wi-Fi settings.
+         */
+        val manualFallback: Boolean = false,
+        val manualSsid: String? = null,
     ) {
         /**
          * Did the glasses hand out an AP configuration (SSID + password +
@@ -523,6 +545,9 @@ class GlassesPhotoCaptureRepository(
     private val _wifiTransferProbe = MutableStateFlow(WifiTransferProbe())
     val wifiTransferProbe: StateFlow<WifiTransferProbe> = _wifiTransferProbe.asStateFlow()
 
+    /** Keeps a manually-joined transfer AP advertising until the user stops it. */
+    private var manualApKeepAliveJob: Job? = null
+
     /**
      * Run [startWifiTransferSession] for the paired glasses on the
      * repository's own (process-lifetime) scope, resolving the device here so
@@ -530,6 +555,7 @@ class GlassesPhotoCaptureRepository(
      */
     fun probeWifiTransfer() {
         if (_wifiTransferProbe.value.running) return
+        stopManualApKeepAlive()
         _wifiTransferProbe.value = WifiTransferProbe(running = true)
         scope.launch(Dispatchers.IO) {
             val device = resolveProbeTarget()
@@ -559,18 +585,29 @@ class GlassesPhotoCaptureRepository(
             } else {
                 null
             }
-            if (direct?.fetchedBytes == null) {
+            val manualSsid = direct?.ssid?.takeIf { it.isNotBlank() }
+                ?: info?.apSsid?.takeIf { it.isNotBlank() }
+            val manualFallback = direct != null &&
+                direct.fetchedBytes == null &&
+                (direct.failedPhase == "connect" ||
+                    (direct.failedPhase == "ssid" && !manualSsid.isNullOrBlank()))
+            if (direct?.fetchedBytes == null && !manualFallback) {
                 // Nothing worked: leave the glasses as we found them.
                 device?.let {
                     runCatching { stopWifiTransferSession(it) }
                         .onFailure { error -> if (error is CancellationException) throw error }
                 }
+            } else if (manualFallback) {
+                Log.i(TAG, "wifiProbe: manual fallback available — leaving glasses AP session up")
+                if (device != null) startManualApKeepAlive(device)
             }
             _wifiTransferProbe.value = WifiTransferProbe(
                 finished = true,
                 info = info,
                 failed = info == null,
                 direct = direct,
+                manualFallback = manualFallback,
+                manualSsid = manualSsid,
             )
         }
     }
@@ -599,28 +636,65 @@ class GlassesPhotoCaptureRepository(
         delay(WIFI_SETTLE_MS)
 
         var last: GlassesWifiProbe.Report? = null
+        var latestInfo = info
         for ((payload, name) in WIFI_MODES) {
-            if (!writeSwitch(seq++, GlassesPhotoProtocol.CMD_START_P2P, payload)) return last
-            Log.i(TAG, "wifiProbe: 0x39 $name (payload=$payload)")
-            val report = probe.run(
-                ssid = info.apSsid.orEmpty(),
-                password = info.apPassword.orEmpty(),
-                ftpHost = info.ftpIp.orEmpty(),
-            )
-            Log.w(
-                TAG,
-                "wifiProbe[$name]: visible=${report.ssidVisibleMs != null} " +
-                    "connect=${report.connectMs} bytes=${report.fetchedBytes} " +
-                    "failed=${report.failedPhase} ${report.error}",
-            )
-            last = report
-            if (report.fetchedBytes != null) return report
+            for (attempt in 1..AP_INFO_RETRY_ATTEMPTS) {
+                if (!writeSwitch(seq++, GlassesPhotoProtocol.CMD_START_P2P, payload)) return last
+                Log.i(TAG, "wifiProbe: 0x39 $name (payload=$payload, attempt=$attempt/$AP_INFO_RETRY_ATTEMPTS)")
+                delay(WIFI_SETTLE_MS)
+
+                // The first device-info read happens before 0x36/0x39 and is
+                // often blank. The official app keeps waiting for
+                // `sync_getting_ap_info`; re-read after every AP-start attempt.
+                latestInfo = refreshApInfo(device, latestInfo) ?: latestInfo
+                val report = probe.run(
+                    ssid = latestInfo.apSsid.orEmpty(),
+                    password = latestInfo.apPassword.orEmpty(),
+                    ftpHost = latestInfo.ftpIp.orEmpty(),
+                    ssidTimeoutMs = AP_SSID_SCAN_TIMEOUT_MS,
+                    connectTimeoutMs = AP_CONNECT_TIMEOUT_MS,
+                )
+                Log.w(
+                    TAG,
+                    "wifiProbe[$name #$attempt]: ssid=${latestInfo.apSsid ?: "—"} " +
+                        "ftp=${latestInfo.ftpIp ?: "—"} visible=${report.ssidVisibleMs != null} " +
+                        "connect=${report.connectMs} bytes=${report.fetchedBytes} " +
+                        "failed=${report.failedPhase} ${report.error}",
+                )
+                last = report
+                if (report.fetchedBytes != null) return report
+                if (latestInfo.apSsid.isNullOrBlank()) {
+                    Log.w(TAG, "wifiProbe[$name #$attempt]: glasses still have not issued an AP SSID")
+                } else if (report.failedPhase == "ssid") {
+                    Log.w(TAG, "wifiProbe[$name #$attempt]: SSID issued but not visible in scan yet")
+                } else {
+                    break
+                }
+                if (attempt < AP_INFO_RETRY_ATTEMPTS) delay(AP_INFO_RETRY_DELAY_MS)
+            }
         }
         return last
     }
 
+    /**
+     * Ask the glasses for their device info again after `0x36`/`0x39`.
+     * Keep the previous answer as a fallback so a transient BLE read miss
+     * does not erase an AP SSID that was already issued.
+     */
+    private suspend fun refreshApInfo(
+        device: GlassesDevice,
+        fallback: GlassesDeviceInfo,
+    ): GlassesDeviceInfo? = runCatching {
+        readDeviceInfo(device, timeoutMs = AP_INFO_READ_TIMEOUT_MS)
+    }.onFailure { error ->
+        if (error is CancellationException) throw error
+    }.getOrNull()?.takeIf {
+        !it.apSsid.isNullOrBlank() || !it.ftpIp.isNullOrBlank()
+    } ?: fallback
+
     /** Take the glasses back out of the Wi-Fi session (see [stopWifiTransferSession]). */
     fun endWifiTransfer() {
+        stopManualApKeepAlive()
         scope.launch(Dispatchers.IO) {
             resolveProbeTarget()?.let {
                 runCatching { stopWifiTransferSession(it) }
@@ -628,6 +702,30 @@ class GlassesPhotoCaptureRepository(
             }
             _wifiTransferProbe.value = WifiTransferProbe()
         }
+    }
+
+    private fun startManualApKeepAlive(device: GlassesDevice) {
+        stopManualApKeepAlive()
+        manualApKeepAliveJob = scope.launch(Dispatchers.IO) {
+            var seq: Byte = 0x71
+            while (currentCoroutineContext().isActive) {
+                delay(MANUAL_AP_KEEPALIVE_MS)
+                runCatching {
+                    val wifi = writeSwitch(seq++, GlassesPhotoProtocol.CMD_OPEN_WIFI, GlassesPhotoProtocol.WIFI_ON_PAYLOAD)
+                    delay(200)
+                    val ap = writeSwitch(seq++, GlassesPhotoProtocol.CMD_START_P2P, GlassesPhotoProtocol.P2P_STOP_PAYLOAD)
+                    Log.i(TAG, "wifiProbe: manual fallback keep-alive wifi=$wifi transferAp=$ap")
+                }.onFailure { error ->
+                    if (error is CancellationException) throw error
+                    Log.w(TAG, "wifiProbe: manual keep-alive failed: ${error.message}")
+                }
+            }
+        }
+    }
+
+    private fun stopManualApKeepAlive() {
+        manualApKeepAliveJob?.cancel()
+        manualApKeepAliveJob = null
     }
 
     /** The paired glasses, resolved the way the capture path does. */
@@ -1036,6 +1134,7 @@ class GlassesPhotoCaptureRepository(
 
     /** Tear down the repository. Cancels any in-flight capture and disconnects. */
     fun release() {
+        stopManualApKeepAlive()
         cancel()
         bluetoothController.release()
         _state.value = GlassesCaptureState.Idle

@@ -738,14 +738,30 @@ private fun GlassesWifiTransferRow(
         )
         // Only worth offering when the probe left the glasses' Wi-Fi on, i.e.
         // when the transfer actually worked; every failure path stops it.
-        if (direct?.fetchedBytes != null) {
+        if (direct?.fetchedBytes != null || probe.manualFallback) {
             TextButton(onClick = { repository.endWifiTransfer() }, enabled = enabled && !busy) {
                 Text(stringResource(R.string.settings_glasses_wifi_action_stop))
+            }
+        }
+        if (probe.manualFallback && !busy) {
+            TextButton(onClick = { GlassesSystemIntents.openWifiSettings(context) }) {
+                Text(stringResource(R.string.settings_glasses_wifi_action_manual))
             }
         }
         TextButton(onClick = { repository.probeWifiTransfer() }, enabled = enabled && !busy) {
             Text(stringResource(R.string.settings_glasses_wifi_action_test))
         }
+    }
+    if (probe.manualFallback && !busy) {
+        Text(
+            text = if (probe.manualSsid != null) {
+                stringResource(R.string.settings_glasses_wifi_manual_hint_with_ssid, probe.manualSsid!!)
+            } else {
+                stringResource(R.string.settings_glasses_wifi_manual_hint, "")
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

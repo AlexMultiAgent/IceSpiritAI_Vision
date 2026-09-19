@@ -38,6 +38,14 @@ object GlassesSystemIntents {
         start(context, Intent(Settings.ACTION_BLUETOOTH_SETTINGS), fallbackToGeneral = true)
 
     /**
+     * System Wi-Fi list. The official app uses this as the manual fallback
+     * when its `WifiNetworkSpecifier` auto-join does not appear or is
+     * cancelled (`openPhoneWifiSettings` in the APK).
+     */
+    fun openWifiSettings(context: Context): Boolean =
+        start(context, Intent(Settings.ACTION_WIFI_SETTINGS), fallbackToGeneral = true)
+
+    /**
      * 「蓝牙共享网络」 lives under the tethering page; that action exists from
      * API 29 and older ROMs fall back to the general wireless settings.
      *

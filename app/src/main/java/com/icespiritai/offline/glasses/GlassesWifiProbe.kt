@@ -38,11 +38,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  *
  * The join follows the OEM's `ApWifiConnector` exactly, because that is what
  * the vendor ships:
- *   1. probe whether the SSID shows up in scan results — a diagnostic only,
- *      and the gate: this firmware's AP does **not** appear in the phone's
- *      scans at all (`NETWORK_NOT_FOUND_EVENT`, `from scan result: false` in
- *      `dumpsys wifi`), so the probe stops there with a precise reason
- *      instead of waiting out a request that cannot succeed;
+ *   1. probe whether the SSID shows up in scan results — useful diagnostics,
+ *      but not a gate: the OEM path still asks the system to join the
+ *      specifier afterwards, because a soft AP can be hidden from scans;
  *   2. `WifiNetworkSpecifier` + `NetworkRequest` with
  *      `NET_CAPABILITY_INTERNET` removed, so the phone does not demand
  *      internet from a photo-transfer AP, then `requestNetwork`;
@@ -111,15 +109,13 @@ class GlassesWifiProbe(private val context: Context) {
                 "wifiProbe: SSID $ssid not in ${scan.attempts} scans (${ssidTimeoutMs}ms)"
             },
         )
+        // A soft AP can be hidden: do not treat "not in scan results" as
+        // terminal. The OEM's `ApWifiConnector` still submits the specifier,
+        // and the system can satisfy it from a directed scan / hidden SSID.
         if (!scan.visible) {
-            // A `WifiNetworkSpecifier` request for an invisible SSID only
-            // ends in the settings dialog's "something went wrong" error
-            // after its timeout, so do not spend 25 s proving it twice.
-            return@withContext Report(
-                ssid = ssid,
-                scanAttempts = scan.attempts,
-                failedPhase = "ssid",
-                error = "扫描 ${ssidTimeoutMs / 1000}s 未看到该 SSID",
+            Log.w(
+                TAG,
+                "wifiProbe: SSID $ssid not in ${scan.attempts} scans — trying hidden specifier join",
             )
         }
 
@@ -136,11 +132,7 @@ class GlassesWifiProbe(private val context: Context) {
                 ssidVisibleMs = scan.visibleAfterMs,
                 apSummary = scan.summary,
                 failedPhase = "connect",
-                error = if (scan.visible) {
-                    "系统未连接该 AP(需要用户在弹窗中确认)"
-                } else {
-                    "SSID 不可见,按隐藏 SSID 连接也失败(需用户在弹窗中确认?)"
-                },
+                error = "系统未连接该 AP(需要用户在弹窗中确认;已按隐藏 SSID 尝试)",
             )
         }
         val connectMs = System.currentTimeMillis() - connectStart
