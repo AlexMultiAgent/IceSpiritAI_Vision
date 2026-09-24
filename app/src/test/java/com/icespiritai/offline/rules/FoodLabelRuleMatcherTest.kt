@@ -505,7 +505,7 @@ class FoodLabelRuleMatcherTest {
         val r = FoodLabelRule(
             "food_gb13432_infant_breastmilk_substitute",
             "specific_food",
-            "GB 13432-2013 §3.c / 母乳代用品销售管理办法 / 食品安全法 §81",
+            "GB 13432-2013 §3.c / 食品安全法 §81",
             listOf("代替母乳", "替代母乳", "无需母乳", "胜过母乳", "比母乳", "母乳化", "人乳化", "近似母乳", "接近母乳"),
             Severity.Violation,
         )
