@@ -136,14 +136,79 @@ class FoodLabelRuleLoaderTest {
     }
 
     @Test
+    fun load_realAssets_foodLabelRulesDoNotCiteAbolishedRegulations() {
+        // v0.5.6 P0-RULE-2 (2026-09-25) — invariant pin: NO food_label rule
+        // may cite 已废止 法规. Mirrors the domain-wide 已废止 scan
+        // covered by `regulation-freshness-checker` agent, but lives as
+        // a unit-test pin so it runs in `testDebugUnitTest` (the agent
+        // only runs in release pre-flight).
+        //
+        // Why "母乳代用品销售管理办法" gets a dedicated contains check
+        // (not just "已废止" substring): that string is the rule's
+        // current violation site (line 431 of food_label_rules.json as of
+        // 2026-09-25). The other two check strings — "已废止" / "已废"
+        // — catch future drift where a new rule might cite the
+        // abolition metadata itself.
+        //
+        // Per CLAUDE.md §"知识库时效性整理(2026-08-27)": the
+        // `regulation` field must point at `知识库/<域>/<现行>.md`,
+        // never `知识库/已废止/<reg>.md`. The same invariant applies
+        // to `regulation` strings embedded in the rule JSON itself.
+        //
+        // T2 fixes exactly 1 violation:
+        //   • food_gb13432_infant_breastmilk_substitute — cites the
+        //     abolished 《母乳代用品销售管理办法》 (卫妇发〔1995〕第 5 号,
+        //     2017-12-13 已废止 by 国家卫生计生委令第 17 号).
+        //     Replacement: 《食品安全法》第八十一条 + 食药监食监一
+        //     〔2013〕214 号《关于进一步规范母乳代用品宣传和销售行为的
+        //     通知》(in `lawText` only — `regulation` field drops to
+        //     `GB 13432-2013 §3.c + 食品安全法 第八十一条`).
+        //
+        // We read the source JSON directly (same reason as
+        // `load_realAssets_t1ScopedRulesDoNotCiteAdLaw`): the shell
+        // profile stages an empty 24-byte skeleton, so the loader path
+        // is invisible to Robolectric. This guards the source-of-truth
+        // file shipped in `ice_ocr_rules` profile.
+        val src = java.io.File(
+            "src/main/assets/rules/food_label_rules.json"
+        ).readText(Charsets.UTF_8)
+        val json = kotlinx.serialization.json.Json {
+            ignoreUnknownKeys = true
+            isLenient = true
+        }
+        val rules = json.decodeFromString(FoodLabelRuleSet.serializer(), src).rules
+        val abolishedHits = rules.filter { rule ->
+            rule.regulation.contains("母乳代用品销售管理办法") ||
+                rule.regulation.contains("已废止") ||
+                rule.regulation.contains("已废")
+        }
+        assertEquals(
+            "food_label rules 不得引已废止法规" +
+                "(CLAUDE.md §知识库时效性整理),违规: " +
+                abolishedHits.joinToString {
+                    "${it.id}(regulation='${it.regulation.take(80)}…')"
+                },
+            0,
+            abolishedHits.size,
+        )
+    }
+
+    @Test
     fun load_realAssets_knownFoodLabelAdLawCrossCites() {
         // v0.5.6 P0-RULE-1 follow-up (2026-09-25) — domain-wide regression
         // pin + T2 punch-list. Asserts that NO food_label rule cites either
         // 《广告法》 or 《食品安全法实施条例》 in its regulation field.
         //
-        // Status: RED today (4 cross-cite violations remain).
-        // After T2 cleans all 4, this test turns GREEN and stays as the
-        // domain-wide regression pin (do NOT delete after T2).
+        // Status: RED today (4 → 3 cross-cite violations remain after T2).
+        // T2 实际只清理 1 条 (`food_gb13432_infant_breastmilk_substitute`)
+        // — 该规则同时有《广告法》§20 跨域引用 + 已废止《母乳代用品销售
+        // 管理办法》引用,两个问题在一个 commit 里一起修。剩 3 条
+        // (`food_health_claim_unapproved` / `food_art7_health_function` /
+        // `food_art28_function_claim_unauthorized` 引《食品安全法实施条例》)
+        // 不在本发版号 P0 scope 内,留给 future cleanup task。本测试在所有
+        // 4 条清理后才会转 GREEN,作为 domain-wide cross-cite 回归 pin。
+        // do NOT delete even after it turns GREEN — this is the regression
+        // pin for `feedback-foodlabel-kb-scope`.
         //
         // Per memory `feedback-foodlabel-kb-scope` (2026-09-10), both
         // statutes are cross-domain for the food_label scope: 《广告法》
@@ -153,16 +218,16 @@ class FoodLabelRuleLoaderTest {
         // / sector-specific-standards core.
         //
         // T2 PUNCH-LIST (cross-cite IDs to clean to make this test GREEN):
-        //   1. food_gb13432_infant_breastmilk_substitute — cites 广告法 §20
-        //      (also cites abolished 母乳代用品销售管理办法 — T2 step 2.3
-        //      in `docs/superpowers/plans/2026-09-25-v0.5.6-p0-fixes.md`
-        //      removes the entire 食品安全法 / 广告法 / 母乳代用品 cluster,
-        //      leaving only `GB 13432-2013 §3.c + 食品安全法 第八十一条`.)
-        //   2. food_health_claim_unapproved — cites 食品安全法实施条例 §68
-        //      (处罚依据 in `regulation` 字段,属 enforcement procedural).
-        //   3. food_art7_health_function — cites 食品安全法实施条例 §68
-        //      (同 2,处罚依据 形态).
-        //   4. food_art28_function_claim_unauthorized — cites
+        //   1. [T2-CLEANED 2026-09-25] food_gb13432_infant_breastmilk_substitute
+        //      — cited 广告法 §20 + abolished 母乳代用品销售管理办法. T2
+        //      removes the entire cluster, leaving only
+        //      `GB 13432-2013 §3.c + 食品安全法 第八十一条`.
+        //   2. [FUTURE] food_health_claim_unapproved — cites
+        //      食品安全法实施条例 §68 (处罚依据 in `regulation` 字段,
+        //      属 enforcement procedural).
+        //   3. [FUTURE] food_art7_health_function — cites
+        //      食品安全法实施条例 §68 (同 2,处罚依据 形态).
+        //   4. [FUTURE] food_art28_function_claim_unauthorized — cites
         //      食品安全法实施条例 §38 (处罚依据 形态).
         //
         // Why this is a separate test from
