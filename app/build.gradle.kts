@@ -74,6 +74,7 @@ android {
         applicationId = "com.icespiritai.vision"
         minSdk = 26
         targetSdk = 37
+        // v0.1.68 footgun: bump versionCode MUST happen BEFORE assembleRelease,否则 uploadVisionReleaseToGitea 把 JSON 写到一个旧 APK 上,客户端永远卡旧版。详见 .claude/skills/icevision-release/SKILL.md §"Critical ordering"。5b 机械 gate:uploadVisionReleaseToGitea 现在 dependsOn("assembleRelease")。
         versionCode = 85
         versionName = "0.5.5"
 
@@ -753,6 +754,7 @@ tasks.register("uploadVisionReleaseToGitea") {
     // NOT back to `uploadStagingDir` — because that dir is `outputs.dir`
     // of `archiveVisionRelease` and mutating it would silently invalidate
     // that task's up-to-date check.
+    dependsOn("assembleRelease")  // v0.1.68 footgun guard — bump versionCode 后强制 rebuild
     dependsOn("archiveVisionRelease")
     outputs.upToDateWhen { false }
 
