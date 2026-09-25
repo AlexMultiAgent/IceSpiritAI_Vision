@@ -756,6 +756,17 @@ tasks.register("uploadVisionReleaseToGitea") {
     // that task's up-to-date check.
     dependsOn("assembleRelease")  // v0.1.68 footgun guard — bump versionCode 后强制 rebuild
     dependsOn("archiveVisionRelease")
+    // P0-UPDATE-2 (v0.5.6): finalize with verifyGiteaAttachmentsAlive so the
+    // release pipeline auto-runs the post-upload attachment smoke. Plan
+    // deviation: the v0.5.6 plan specified `dependsOn(...)` here, but the
+    // new task itself declares `dependsOn("uploadVisionReleaseToGitea")`
+    // (it polls AFTER the upload) — dependsOn here would be a CIRCULAR
+    // dependency. finalizedBy gives the same "verify after upload" semantic
+    // without the cycle. `./gradlew verifyGiteaAttachmentsAlive` still
+    // chains correctly: upload runs as a dep of verify, then verify runs as
+    // its own direct target (finalizedBy fires only when upload is the
+    // direct or upstream-of-direct target, deduped by Gradle).
+    finalizedBy("verifyGiteaAttachmentsAlive")
     outputs.upToDateWhen { false }
 
     doLast {
@@ -957,6 +968,125 @@ tasks.register("uploadVisionReleaseToGitea") {
         logger.lifecycle(
             "uploadVisionReleaseToGitea: pushed 2 assets to tag $tag " +
                 "(release id=$releaseId, apkUuid=$apkUuid)"
+        )
+    }
+}
+
+// ----- verifyGiteaAttachmentsAlive -----
+//
+// 防御 v0.4.2 / v0.5.1 已发生过的 Gitea publish repo attachment-disappear
+// (memory project-gitea-vision-app-attachments-disappear):上传完成 ≠ attachment
+// 可访问,需要持续 ≥5min smoke。失败 throw GradleException 让 release task 退出非零。
+//
+// 实现:对每个 staged asset (APK + JSON)做轮询 GET,200 才算 alive。
+// ≥5min 后才退出,任一时刻 attachment 404 → throw。
+//
+// Skip in CI / --offline 环境:用 `verifyGiteaAttachmentsAlive.skip=true` 属性跳过。
+//
+// Plan deviations (v0.5.6):
+//  - curl `-w "\n%{http_code}"` (NOT `%{http_code}`) — must put the status
+//    code on its OWN line so the body's last `\n` doesn't accidentally
+//    merge with the status. Matches the existing uploadVisionReleaseToGitea
+//    curl wrapper (line ~800).
+//  - gradle.token.properties existence guard BEFORE readLines() — mirrors
+//    uploadVisionReleaseToGitea's pattern (line ~771), surfaces a clear
+//    "missing creds" message instead of an opaque FileNotFoundException.
+tasks.register("verifyGiteaAttachmentsAlive") {
+    group = "build"
+    description = "Poll uploaded Gitea attachments for ≥5min, fail on 404 (v0.4.2 footgun guard)."
+    dependsOn("uploadVisionReleaseToGitea")
+    val skipFlag = providers.gradleProperty("verifyGiteaAttachmentsAlive.skip")
+    onlyIf { !skipFlag.isPresent }
+
+    doLast {
+        val giteaTokenFile = rootProject.file("gradle.token.properties")
+        if (!giteaTokenFile.exists()) {
+            throw GradleException(
+                "verifyGiteaAttachmentsAlive: gradle.token.properties not found at " +
+                    "${giteaTokenFile.absolutePath}. " +
+                    "Copy gradle.token.properties.example -> gradle.token.properties and fill in your Gitea PAT."
+            )
+        }
+        val token = giteaTokenFile.readLines()
+            .mapNotNull { line ->
+                val stripped = line.substringBefore("#").trim()
+                if (stripped.startsWith("GITEA_TOKEN=")) stripped.removePrefix("GITEA_TOKEN=") else null
+            }
+            .singleOrNull()
+        require(!token.isNullOrBlank()) { "verifyGiteaAttachmentsAlive: GITEA_TOKEN missing" }
+
+        val apkStaged = File(uploadStagingDir, "icespiritai-vision.apk")
+        val jsonStaged = File(uploadStagingDir, "vision-latest.json")
+        require(apkStaged.exists() && jsonStaged.exists()) {
+            "verifyGiteaAttachmentsAlive: expected staged APK + JSON in ${uploadStagingDir.absolutePath}"
+        }
+
+        val authHeader = "Authorization: token $token"
+        val api = "$giteaBaseUrl/api/v1/repos/$giteaRepo/releases/tags/latest"
+
+        // 1. Find the release by tag, get its assets. `-w "\n%{http_code}"`
+        // appends the status code as a SEPARATE line at the end of stdout —
+        // essential because Gitea JSON responses may or may not end with `\n`,
+        // and we want `lastIndexOf('\n')` to split cleanly. Plan deviation —
+        // see header KDoc.
+        fun curl(url: String): Pair<Int, String> {
+            val cmd = listOf("curl.exe", "-sS", "-w", "\n%{http_code}",
+                "--http1.1", "--connect-timeout", "30", "--max-time", "60",
+                "-H", authHeader, url)
+            val pb = ProcessBuilder(cmd).redirectError(ProcessBuilder.Redirect.PIPE)
+            val proc = pb.start()
+            val body = proc.inputStream.readBytes().toString(Charsets.UTF_8)
+            proc.errorStream.readBytes()
+            proc.waitFor()
+            // Last line is the status code (curl -w)
+            val nl = body.lastIndexOf('\n')
+            val code = if (nl < 0) body else body.substring(nl + 1)
+            val actualBody = if (nl < 0) "" else body.substring(0, nl)
+            return (code.toIntOrNull() ?: 0) to actualBody
+        }
+
+        val (lookupCode, lookupBody) = curl(api)
+        require(lookupCode == 200) { "verifyGiteaAttachmentsAlive: tag lookup returned $lookupCode" }
+        val assetUrls = Regex(""""browser_download_url"\s*:\s*"([^"]+)"""")
+            .findAll(lookupBody).map { it.groupValues[1] }.toList()
+        require(assetUrls.isNotEmpty()) {
+            "verifyGiteaAttachmentsAlive: no assets found in release tag 'latest'"
+        }
+
+        // 2. Poll each asset for ≥5min (300s), backoff 30s.
+        // Total window = 5min; if any asset 404 within window → throw.
+        val totalWindowMs = 5L * 60_000L
+        val pollIntervalMs = 30_000L
+        val startMs = System.currentTimeMillis()
+        var consecutiveOk = 0
+        val minConsecutiveOk = 2  // require 2 successful polls before exit
+
+        while (System.currentTimeMillis() - startMs < totalWindowMs) {
+            Thread.sleep(pollIntervalMs)
+            val elapsedSec = (System.currentTimeMillis() - startMs) / 1000
+            val codes = assetUrls.map { url ->
+                val (c, _) = curl(url)
+                "$c:$url".also { logger.lifecycle("[verifyGiteaAttachmentsAlive] t+${elapsedSec}s $it") }
+            }
+            if (codes.all { it.startsWith("200:") }) {
+                consecutiveOk++
+                if (consecutiveOk >= minConsecutiveOk) {
+                    logger.lifecycle(
+                        "verifyGiteaAttachmentsAlive: all assets 200 for " +
+                            "≥${minConsecutiveOk * pollIntervalMs / 1000}s — PASS"
+                    )
+                    return@doLast
+                }
+            } else {
+                consecutiveOk = 0
+                val failing = codes.filter { !it.startsWith("200:") }
+                logger.warn("[verifyGiteaAttachmentsAlive] t+${elapsedSec}s failing: $failing")
+            }
+        }
+        throw GradleException(
+            "verifyGiteaAttachmentsAlive: attachment(s) disappeared within " +
+                "${totalWindowMs / 1000}s window. " +
+                "This matches the v0.4.2 footgun. Investigate Gitea release tag 'latest' before re-attempting."
         )
     }
 }
