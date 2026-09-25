@@ -1,12 +1,12 @@
 ---
 name: icevision-release
-description: Walks IceSpiritAI_Vision release pipeline (assembleRelease → generateVisionLatestJson → archiveVisionRelease → uploadVisionReleaseToGitea) with cert-pin pre-flight, Gitea route availability check, post-release smoke, dual code-repo sync, and recovery shortcuts for the documented footguns (Gitea 1.22.x APK 404, large-file POST timeout, v1 signing must be enabled). Use when user says /icevision-release or "发版" / "release" / "走发布流水线". User-only — invoke explicitly before release.
+description: Walks IceSpiritAI_Vision release pipeline (assembleRelease → generateVisionLatestJson → archiveVisionRelease → uploadVisionReleaseToGitea → verifyGiteaAttachmentsAlive) with cert-pin pre-flight, Gitea route availability check, post-release smoke, dual code-repo sync, and recovery shortcuts for the documented footguns (Gitea 1.22.x APK 404, large-file POST timeout, v1 signing must be enabled, v0.4.2 attachment-disappear ≥5min window). Use when user says /icevision-release or "发版" / "release" / "走发布流水线". User-only — invoke explicitly before release.
 disable-model-invocation: true
 ---
 
 # IceSpiritAI_Vision Release Pipeline
 
-Walks the 4-step Gitea release flow with pre-flight checks that catch the
+Walks the 5-step Gitea release flow with pre-flight checks that catch the
 documented footguns in `CLAUDE.md` and `docs/smoke/2026-08-14-phase1-smoke.md`.
 
 ## Pre-flight (always run first, in parallel)
@@ -49,7 +49,7 @@ keytool -list -v -keystore ~/.gradle/release.jks -alias icespiritai -storepass "
 # If SHA256 differs, update the verifier in app/src/main/java/.../updater/ BEFORE release.
 ```
 
-## The 4-step pipeline
+## The 5-step pipeline
 
 | Step | Gradle task | Purpose | Known footgun |
 |---|---|---|---|
@@ -57,6 +57,7 @@ keytool -list -v -keystore ~/.gradle/release.jks -alias icespiritai -storepass "
 | 2 | `generateVisionLatestJson` | Write `app/build/outputs/apk/release/vision-latest.json` with `apkUrl` / `versionCode` / `signerCertSha256` | URL is hardcoded to `releases/download/latest/icespiritai-vision.apk`; rewrite happens in step 4 |
 | 3 | `archiveVisionRelease` | Stage to `build/generated/release-staging/` (per memory: never write to `发布版历史存档/`) | — |
 | 4 | `uploadVisionReleaseToGitea` | POST APK + JSON to Gitea, with cert-pin verify, rewrite `apkUrl` to `/attachments/<uuid>` | Large-file POST sometimes returns HTTP 100 and stalls. Mitigation: POST APK first (capture uuid for url rewrite), then JSON with `--max-time 900` |
+| 5 | `verifyGiteaAttachmentsAlive` (auto via `finalizedBy` from step 4) | Poll uploaded `browser_download_url` for ≥5min (300s window, 30s backoff, ≥2 consecutive 200s); throw `GradleException` on any 404. Defends against the v0.4.2 footgun (memory `project-gitea-vision-app-attachments-disappear`: Gitea publish repo attachment disappeared ~1h after release). Skip with `-PverifyGiteaAttachmentsAlive.skip=true` for CI / `--offline`. Standalone invoke: `./gradlew verifyGiteaAttachmentsAlive` (dependsOn step 4) | Manual `curl` smoke for `attachments/<uuid>` only catches the **moment** of upload; this task catches the **≥5min disappearance window** v0.4.2 actually hit. Treat the manual size check below as belt-and-suspenders only — the canonical ≥5min wait is this task. |
 
 ## The Gitea 1.22.x APK 404 workaround (CRITICAL)
 
@@ -124,6 +125,14 @@ test "$LOCAL_SIZE" = "$REMOTE_SIZE" && echo "SIZE OK ($LOCAL_SIZE)" || echo "SIZ
 
 # 3. (Optional) In-app update smoke on Huawei nova 6 — see docs/smoke/2026-08-14-phase1-smoke.md
 ```
+
+**Canonical ≥5min wait is `verifyGiteaAttachmentsAlive` (pipeline step 5), not the
+single-shot `curl` size check above.** Steps 1+2 only catch attachment correctness at
+the **moment** of upload — they do NOT catch the v0.4.2 footgun where the Gitea
+publish repo's attachments disappeared ~1h after release (memory
+`project-gitea-vision-app-attachments-disappear`). The Gradle task polls for 300s
+and throws `GradleException` on any 404, so a release that exits 0 from the pipeline
+has demonstrably survived the disappearance window.
 
 ## After release: sync code to both code repos
 
@@ -201,6 +210,14 @@ ALWAYS first run `./gradlew assembleRelease` (4-minute rebuild) to produce
 the binary carrying the new versionCode. `uploadVisionReleaseToGitea` does
 NOT trigger a rebuild — it consumes whatever's in
 `app/build/outputs/apk/release/app-release.apk` at call time.
+
+**Mechanical gate (v0.5.6+)**: `app/build.gradle.kts:757` adds
+`dependsOn("assembleRelease")` to `uploadVisionReleaseToGitea`, so a bare
+`./gradlew uploadVisionReleaseToGitea` now triggers the rebuild automatically
+— no need to remember the manual `assembleRelease` step first. The "fix"
+prose above remains valid for anyone invoking the underlying task by hand or
+debugging a stale APK on disk, but the normal release path is gated
+mechanically now.
 
 **Defensive smoke**: every release, before tagging, read the APK manifest:
 
