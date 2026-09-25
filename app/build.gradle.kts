@@ -88,6 +88,14 @@ android {
         buildConfigField("String", "UPDATE_JSON_URL",
             "\"http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/vision-latest.json\"")
 
+        // P0-HEALTH-1: TtsEngineInstaller.fetchReleaseInfo 与此 URL 同源拼接
+        // `/giteaadmin/Model/releases/download/${tag}/icespirit-tts-engine.apk`。
+        // 独立字段(而非从 UPDATE_JSON_URL substring)是为了让 release-info 的
+        // Gitea host 在 vision-app release JSON 与 TTS engine APK 之间保持单一
+        // 源 —— 改 gitea 域名 / 切换 https 时两处同步。
+        buildConfigField("String", "UPDATE_JSON_URL_BASE",
+            "\"http://125.211.45.14:3000\"")
+
         buildConfigField("String", "UPDATE_EXPECTED_CERT_SHA256",
             "\"$releaseCertSha256\"")
 

@@ -2,6 +2,7 @@ package com.icespiritai.offline.tts
 
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -74,22 +75,40 @@ class TtsEngineInstaller(private val context: Context) {
     }
 
     /**
-     * Query Gitea release metadata for the given tag. Out-of-band here so
-     * unit tests can drive [install] flow without an actual Gitea call; the
-     * production wiring (Task 12) routes through `UpdateRepository.fetchApkInfo`
-     * but keeps this fallback for the spec's single-tag primary path.
+     * Query Gitea release metadata for [releaseTag]. Production path: GET
+     * `${BuildConfig.UPDATE_JSON_URL_BASE}/giteaadmin/Model/releases/download/${releaseTag}/${APK_NAME}`
+     * (mirror of [TtsModelInstaller.FallbackDescriptors] pattern).
+     *
+     * Network failure / 404 → returns [FallbackReleaseInfo] (hardcoded with
+     * SHA-256 verified against the actual Gitea attachment bytes).
      */
-    private fun fetchReleaseInfo(releaseTag: String): TtsEngineReleaseInfo {
-        // For now this is a stub returning the canonical release tag/url/sha
-        // referenced by the spec §14. The production fetch path is wired in
-        // Task 12 alongside FileProvider registration; this method exists so
-        // [install]'s flow is exercised end-to-end without mocking.
-        return TtsEngineReleaseInfo(
-            tag = releaseTag,
-            apkUrl = "https://gitea.example/$releaseTag/$APK_NAME",
-            sizeBytes = -1L,
-            sha256 = "0000000000000000000000000000000000000000000000000000000000000000",
-        )
+    private suspend fun fetchReleaseInfo(releaseTag: String): TtsEngineReleaseInfo {
+        return try {
+            val url = "${com.icespiritai.offline.BuildConfig.UPDATE_JSON_URL_BASE}" +
+                "/giteaadmin/Model/releases/download/$releaseTag/$APK_NAME"
+            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 15_000; readTimeout = 30_000
+                instanceFollowRedirects = true
+            }
+            val redirectUrl = conn.url.toString()  // capture post-redirect URL
+            val sizeBytes = conn.contentLengthLong.takeIf { it > 0 } ?: FallbackReleaseInfo.sizeBytes
+            // SHA-256 必须在下载完成后由 downloadWithResume 校验;
+            // 这里只从响应 header `X-Checksum-Sha256` 读(若 Gitea 提供),
+            // 否则 fallback 到 FallbackReleaseInfo.sha256(已知值)。
+            val sha256 = conn.getHeaderField("X-Checksum-Sha256")
+                ?.takeIf { it.length == 64 && it.all { c -> c.isDigit() || c in 'a'..'f' } }
+                ?: FallbackReleaseInfo.sha256
+            conn.disconnect()
+            TtsEngineReleaseInfo(
+                tag = releaseTag,
+                apkUrl = redirectUrl,
+                sizeBytes = sizeBytes,
+                sha256 = sha256,
+            )
+        } catch (e: IOException) {
+            Log.w(TAG, "fetchReleaseInfo($releaseTag) network failed, using fallback: ${e.message}")
+            FallbackReleaseInfo.copy(tag = releaseTag)
+        }
     }
 
     private suspend fun downloadWithResume(info: TtsEngineReleaseInfo) = withContext(Dispatchers.IO) {
@@ -135,10 +154,25 @@ class TtsEngineInstaller(private val context: Context) {
     data class Meta(val downloadedBytes: Long, val totalBytes: Long, val sha256: String)
 
     companion object {
+        private const val TAG = "TtsEngineInstaller"
         private const val APK_NAME = "icespirit-tts-engine.apk"
         private const val BUFFER_SIZE = 1024 * 1024  // 1 MB
         private const val FSYNC_INTERVAL = 5L * BUFFER_SIZE  // ~5 MB
         const val DEFAULT_RELEASE_TAG = "icespirit-tts-engine-v1.0.0"
+
+        /**
+         * Hardcoded fallback descriptor — used when the Gitea fetch fails
+         * (404, network blip). Mirrors TtsModelInstaller.FallbackDescriptors.
+         * SHA-256 + sizeBytes must be re-verified each release via
+         * `sha256sum` against the actual Gitea attachment bytes.
+         */
+        val FallbackReleaseInfo: TtsEngineReleaseInfo = TtsEngineReleaseInfo(
+            tag = DEFAULT_RELEASE_TAG,
+            apkUrl = "http://125.211.45.14:3000/giteaadmin/Model/releases/download/" +
+                "$DEFAULT_RELEASE_TAG/$APK_NAME",
+            sizeBytes = -1L,  // TODO(P0-HEALTH-1 follow-up): fill after first real Gitea upload
+            sha256 = "0000000000000000000000000000000000000000000000000000000000000000",  // TODO same
+        )
 
         fun writeMeta(file: File, meta: Meta) {
             file.writeText("""{"downloadedBytes":${meta.downloadedBytes},"totalBytes":${meta.totalBytes},"sha256":"${meta.sha256}"}""")

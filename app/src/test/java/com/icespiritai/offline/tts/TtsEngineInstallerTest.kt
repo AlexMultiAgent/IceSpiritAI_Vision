@@ -5,6 +5,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import java.io.File
 import kotlin.io.path.createTempDirectory
@@ -65,5 +66,38 @@ class TtsEngineInstallerTest {
         assertTrue(apkFile.exists())
         assertTrue(!partialFile.exists())
         assertTrue(!metaFile.exists())
+    }
+
+    /**
+     * P0-HEALTH-1: [TtsEngineInstaller.fetchReleaseInfo] no longer returns
+     * the `https://gitea.example/...` stub. It must hit the real Gitea
+     * endpoint (`UPDATE_JSON_URL_BASE`) with a hardcoded
+     * [TtsEngineInstaller.FallbackReleaseInfo] companion object as the
+     * fallback (mirrors [TtsModelInstaller.FallbackDescriptors]).
+     *
+     * This test does NOT exercise the network path — we only verify the
+     * fallback constant's shape and absence of stub URL placeholders. The
+     * `testDebugUnitTest` task is expected to run offline.
+     */
+    @Test fun `fetchReleaseInfo does not return stub placeholder`() {
+        val fallback = try {
+            TtsEngineInstaller.FallbackReleaseInfo
+        } catch (e: Throwable) {
+            fail("FallbackReleaseInfo 必须作为 companion object val 暴露: ${e.message}")
+            return  // unreachable; fail() throws AssertionError
+        }
+        assertNotNull("FallbackReleaseInfo 必须非 null", fallback)
+        assertTrue(
+            "FallbackReleaseInfo.apkUrl 必须不是 gitea.example 占位 (got: ${fallback.apkUrl})",
+            !fallback.apkUrl.contains("gitea.example"),
+        )
+        assertTrue(
+            "FallbackReleaseInfo.apkUrl 必须指回 giteaadmin/Model (got: ${fallback.apkUrl})",
+            fallback.apkUrl.contains("/giteaadmin/Model/"),
+        )
+        // Note: sizeBytes + sha256 是 P0-HEALTH-1 follow-up TODO(首次真实
+        // Gitea upload 后回填,见 FallbackReleaseInfo KDoc);fallback 路径下
+        // install() 会因 sha256 mismatch → Failed(degraded mode)。核心 fix 是
+        // 消除 stub URL,这两项留在 follow-up。
     }
 }
