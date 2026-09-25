@@ -82,34 +82,35 @@ class TtsEngineInstaller(private val context: Context) {
      * Network failure / 404 → returns [FallbackReleaseInfo] (hardcoded with
      * SHA-256 verified against the actual Gitea attachment bytes).
      */
-    private suspend fun fetchReleaseInfo(releaseTag: String): TtsEngineReleaseInfo {
-        return try {
-            val url = "${com.icespiritai.offline.BuildConfig.UPDATE_JSON_URL_BASE}" +
-                "/giteaadmin/Model/releases/download/$releaseTag/$APK_NAME"
-            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 15_000; readTimeout = 30_000
-                instanceFollowRedirects = true
+    private suspend fun fetchReleaseInfo(releaseTag: String): TtsEngineReleaseInfo =
+        withContext(Dispatchers.IO) {
+            try {
+                val url = "${com.icespiritai.offline.BuildConfig.UPDATE_JSON_URL_BASE}" +
+                    "/giteaadmin/Model/releases/download/$releaseTag/$APK_NAME"
+                val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 15_000; readTimeout = 30_000
+                    instanceFollowRedirects = true
+                }
+                val redirectUrl = conn.url.toString()  // capture post-redirect URL
+                val sizeBytes = conn.contentLengthLong.takeIf { it > 0 } ?: FallbackReleaseInfo.sizeBytes
+                // SHA-256 必须在下载完成后由 downloadWithResume 校验;
+                // 这里只从响应 header `X-Checksum-Sha256` 读(若 Gitea 提供),
+                // 否则 fallback 到 FallbackReleaseInfo.sha256(已知值)。
+                val sha256 = conn.getHeaderField("X-Checksum-Sha256")
+                    ?.takeIf { it.length == 64 && it.all { c -> c.isDigit() || c in 'a'..'f' } }
+                    ?: FallbackReleaseInfo.sha256
+                conn.disconnect()
+                TtsEngineReleaseInfo(
+                    tag = releaseTag,
+                    apkUrl = redirectUrl,
+                    sizeBytes = sizeBytes,
+                    sha256 = sha256,
+                )
+            } catch (e: IOException) {
+                Log.w(TAG, "fetchReleaseInfo($releaseTag) network failed, using fallback: ${e.message}")
+                FallbackReleaseInfo.copy(tag = releaseTag)
             }
-            val redirectUrl = conn.url.toString()  // capture post-redirect URL
-            val sizeBytes = conn.contentLengthLong.takeIf { it > 0 } ?: FallbackReleaseInfo.sizeBytes
-            // SHA-256 必须在下载完成后由 downloadWithResume 校验;
-            // 这里只从响应 header `X-Checksum-Sha256` 读(若 Gitea 提供),
-            // 否则 fallback 到 FallbackReleaseInfo.sha256(已知值)。
-            val sha256 = conn.getHeaderField("X-Checksum-Sha256")
-                ?.takeIf { it.length == 64 && it.all { c -> c.isDigit() || c in 'a'..'f' } }
-                ?: FallbackReleaseInfo.sha256
-            conn.disconnect()
-            TtsEngineReleaseInfo(
-                tag = releaseTag,
-                apkUrl = redirectUrl,
-                sizeBytes = sizeBytes,
-                sha256 = sha256,
-            )
-        } catch (e: IOException) {
-            Log.w(TAG, "fetchReleaseInfo($releaseTag) network failed, using fallback: ${e.message}")
-            FallbackReleaseInfo.copy(tag = releaseTag)
         }
-    }
 
     private suspend fun downloadWithResume(info: TtsEngineReleaseInfo) = withContext(Dispatchers.IO) {
         val existing = readMeta(metaFile)
