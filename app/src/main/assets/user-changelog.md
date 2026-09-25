@@ -20,7 +20,7 @@
 
 ### 变更
 
-- CLAUDE.md §"发布流水线踩坑" + `.claude/skills/icevision-release/SKILL.md` §"Critical ordering" 同步:advertise `verifyGiteaAttachmentsAlive` 是 release pipeline 第 5 步(不再只是 manual curl smoke);versionCode/assembleRelease 现在 mechanical gate,prose-only 提醒过时
+- CLAUDE.md §「发布流水线踩坑」 + `.claude/skills/icevision-release/SKILL.md` §「Critical ordering」 同步:advertise `verifyGiteaAttachmentsAlive` 是 release pipeline 第 5 步(不再只是 manual curl smoke);versionCode/assembleRelease 现在 mechanical gate,prose-only 提醒过时
 
 ## v0.5.5 — 2026-09-19
 
