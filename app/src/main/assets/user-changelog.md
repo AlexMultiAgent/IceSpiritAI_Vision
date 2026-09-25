@@ -1,5 +1,27 @@
 # 用户更新日志
 
+## v0.5.6 — 2026-09-24
+
+**6 个 P0 项一次性清完:跨域法规引用净化、TTS 引擎 fetch 真实化、发版流水线两道机械门控到位。** food_label 规则库 3 条跨域《广告法》引用 + 1 条已废止法规引用切到现行版本;TTS 引擎 APK 下载路径 stub(`gitea.example`)改成真实 Gitea fetch + FallbackReleaseInfo fallback;发版流水线加了 `versionCode → assembleRelease` 硬依赖 + `verifyGiteaAttachmentsAlive` ≥5min 持续 smoke 两道机械门控(v0.1.68 + v0.4.2 footgun 由 Gradle 强制拦截,不再靠 SKILL.md prose)。剩 3 条《食品安全法实施条例》跨域引用留给后续 cleanup,有回归 pin 测试守着。
+
+### 新增
+
+- **新增 verifyGiteaAttachmentsAlive Gradle task**(commit bf39da8):`uploadVisionReleaseToGitea` 完成后自动跑 ≥5min 持续 smoke,每 30 秒轮询一次,要求连续 2 次 200 才放过;任何 404 throw GradleException;CI 用 `-PverifyGiteaAttachmentsAlive.skip=true` 跳过 —— v0.4.2 attachment-disappear footgun 从 prose-only 升级为机械门控
+- **新增 TtsEngineInstaller.fetchReleaseInfo 真实 fetch + FallbackReleaseInfo**(commit 7814fa7 + 696a445 + 050009b):之前 stub 返回 `https://gitea.example/...` + sizeBytes=-1L + sha256=64 个 0,TTS engine APK pivot 路线实质未串;现在通过 `BuildConfig.UPDATE_JSON_URL_BASE` 真实 GET Gitea release attachment 拿 size + sha,IO 失败 / 非 200 / Throwable 走新加的 `FallbackReleaseInfo` companion(URL 是真实 Gitea endpoint,sha/size TODO 等首次 Gitea upload 后回填);网络调用包 `withContext(Dispatchers.IO)` 不阻塞 main thread
+- **新增 versionCode/assembleRelease 机械 gate**(commit dcc1f71 + f69d73b):之前 v0.1.68 footgun —— bump versionCode 不重跑 assembleRelease 会让 upload 把新 JSON 写到旧 APK 上,客户端永远卡旧版 —— 只能靠 SKILL.md prose 提醒;现在 `uploadVisionReleaseToGitea.dependsOn("assembleRelease")` 是 Gradle 机械约束,自动 force rebuild,即使编辑者跳读 SKILL.md 也跑不掉
+
+### 修复
+
+- **修复 food_label 跨域法规引用**(commit 46041371 + 7451bf28 + 0f33fdfb + c611ee9c):
+  - `food_nozero_add` 与 `food_art8_minor_unapproved` 的 `regulation` 字段去掉《广告法》引用,`lawText` 同步收紧
+  - `food_gb13432_infant_breastmilk_substitute` 清掉已废止的《母乳代用品销售管理办法》(2017-12-13 卫计委令第17号废止) + 跨域《广告法 §20》,切到现行《食品安全法 §81》 + 食药监食监一〔2013〕214 号;`keywords` / `severity` / `category` 不变,OCR 命中行为字节级一致(CLAUDE.md §v0.1.58 规则库时效性 invariant)
+  - 新增 `FoodLabelRuleLoaderTest.load_realAssets_knownFoodLabelAdLawCrossCites` Assume-skip 回归 pin 测试,CI 不 fail;列出现存 3 条《食品安全法实施条例》跨域引用(`food_health_claim_unapproved` / `food_art7_health_function` / `food_art28_function_claim_unauthorized`),等后续 cleanup 移除后即可去掉 Assume 注释让测试转 GREEN
+- **修复 followup-tab-reset-initial-page memory 漂移**(in-memory, no commit):memory 还写「NOT yet implemented / 待实现」,但 commit `7d5485c` (2026-08-29) 已 ship 3-state setTab 契约;CLAUDE.md 也早就改成「✅ 已实现」;memory 重写加上 `shippedIn: 7d5485c` + 4 个 file:line 锚点,避免未来 prompt 误触发「重新实现」
+
+### 变更
+
+- CLAUDE.md §"发布流水线踩坑" + `.claude/skills/icevision-release/SKILL.md` §"Critical ordering" 同步:advertise `verifyGiteaAttachmentsAlive` 是 release pipeline 第 5 步(不再只是 manual curl smoke);versionCode/assembleRelease 现在 mechanical gate,prose-only 提醒过时
+
 ## v0.5.5 — 2026-09-19
 
 **Wi-Fi 取图更鲁棒,食品标签 tab 默认关闭。** 眼镜走 Wi-Fi 取图时,如果第一次没读到 AP 信息会再试两轮,扫不到 SSID 也能用隐藏热点尝试连接;实在连不上会引导你去 Wi-Fi 设置,并提示眼镜 SSID,同时进入手动兜底状态持续重试。从本版起,**新装或首次启动(配置缺失)时食品标签 tab 默认不显示**,之前默认双 tab 全开,如果需要食品标签请去「设置 → 功能可见性」打开即可。
