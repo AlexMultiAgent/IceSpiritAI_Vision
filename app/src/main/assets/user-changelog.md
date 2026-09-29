@@ -12,15 +12,12 @@
 
 ### 修复
 
-- **修复 food_label 跨域法规引用**(commit 46041371 + 7451bf28 + 0f33fdfb + c611ee9c):
-  - `food_nozero_add` 与 `food_art8_minor_unapproved` 的 `regulation` 字段去掉《广告法》引用,`lawText` 同步收紧
-  - `food_gb13432_infant_breastmilk_substitute` 清掉已废止的《母乳代用品销售管理办法》(2017-12-13 卫计委令第17号废止) + 跨域《广告法 §20》,切到现行《食品安全法 §81》 + 食药监食监一〔2013〕214 号;`keywords` / `severity` / `category` 不变,OCR 命中行为字节级一致(CLAUDE.md §v0.1.58 规则库时效性 invariant)
-  - 新增 `FoodLabelRuleLoaderTest.load_realAssets_knownFoodLabelAdLawCrossCites` Assume-skip 回归 pin 测试,CI 不 fail;列出现存 3 条《食品安全法实施条例》跨域引用(`food_health_claim_unapproved` / `food_art7_health_function` / `food_art28_function_claim_unauthorized`),等后续 cleanup 移除后即可去掉 Assume 注释让测试转 GREEN
+- **修复 food_label 跨域法规引用**(commit 4604137 + 7451bf2 + 0f33fdf + c611ee9):`food_nozero_add` 与 `food_art8_minor_unapproved` 的 `regulation` 字段去掉《广告法》引用,`lawText` 同步收紧;`food_gb13432_infant_breastmilk_substitute` 清掉已废止的《母乳代用品销售管理办法》(2017-12-13 卫计委令第17号废止) + 跨域《广告法 §20》,切到现行《食品安全法 §81》 + 食药监食监一〔2013〕214 号,`keywords` / `severity` / `category` 不变,OCR 命中行为字节级一致;新增 `FoodLabelRuleLoaderTest.load_realAssets_knownFoodLabelAdLawCrossCites` Assume-skip 回归 pin 测试,列出现存 3 条《食品安全法实施条例》跨域引用(`food_health_claim_unapproved` / `food_art7_health_function` / `food_art28_function_claim_unauthorized`),等后续 cleanup 移除后即可去掉 Assume 注释让测试转 GREEN
 - **修复 followup-tab-reset-initial-page memory 漂移**(in-memory, no commit):memory 还写「NOT yet implemented / 待实现」,但 commit `7d5485c` (2026-08-29) 已 ship 3-state setTab 契约;CLAUDE.md 也早就改成「✅ 已实现」;memory 重写加上 `shippedIn: 7d5485c` + 4 个 file:line 锚点,避免未来 prompt 误触发「重新实现」
 
 ### 变更
 
-- CLAUDE.md §「发布流水线踩坑」 + `.claude/skills/icevision-release/SKILL.md` §「Critical ordering」 同步:advertise `verifyGiteaAttachmentsAlive` 是 release pipeline 第 5 步(不再只是 manual curl smoke);versionCode/assembleRelease 现在 mechanical gate,prose-only 提醒过时
+- **文档同步**(commit 42fc85d):发布流水线踩坑记录 + 发版 SKILL §「Critical ordering」 同步标注 `verifyGiteaAttachmentsAlive` 是 release pipeline 第 5 步(不再只是 manual curl smoke);versionCode/assembleRelease 现在是 mechanical gate,prose-only 提醒过时
 
 ## v0.5.5 — 2026-09-19
 
@@ -74,7 +71,7 @@
 
 ### 修复
 
-- **修复 v0.5.1 更新包缺少 OCR 识别模型**:该包由默认构建配置产出（不含识别模型与原生库），已重新用正确配置打包并发布；同时给发布流程加了闸门,以后再出现「缺少识别模型」的包会直接拒绝发布
+- **修复 v0.5.1 更新包缺少 OCR 识别模型**(commit 1565ea5 + 92df893 + 3e8e106):该包由默认构建配置产出（不含识别模型与原生库），已重新用正确配置打包并发布；同时给发布流程加了闸门,以后再出现「缺少识别模型」的包会直接拒绝发布
 
 ## v0.5.1 — 2026-09-17
 
