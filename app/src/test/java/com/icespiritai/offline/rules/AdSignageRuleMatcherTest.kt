@@ -4890,4 +4890,27 @@ class AdSignageRuleMatcherTest {
             hits.any { it.ruleId == "ad_signage_art27_seed_yield_guarantee" }
         )
     }
+
+    @Test fun `11 公安专项 命中 test_authority`() {
+        // Fixture #11 v8 时未覆盖,v20 实测 4 keyword 完全不覆盖公安类
+        // 改造前:miss
+        // 改造后:命中
+        val rule = AdSignageRule(
+            id = "ad_signage_edu_art24_test_authority",
+            category = "education",
+            regulation = "《广告法》第二十四条 + 第五十八条",
+            keywords = listOf(
+                "考试命题人", "阅卷老师", "考官亲自授课", "教育部推荐",
+                // v21 +11:
+                "公安专项", "公安类", "警校", "警员培训", "公安岗",
+                "公安系统", "警察考试", "警考培训", "政法干警", "公安联考", "公安院校"
+            ),
+            severity = Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("公安专项 秋考刷题班 高效提分 警员培训 公安系统")
+        assertTrue(
+            "#11 公安专项应命中 test_authority",
+            hits.any { it.ruleId == "ad_signage_edu_art24_test_authority" }
+        )
+    }
 }
