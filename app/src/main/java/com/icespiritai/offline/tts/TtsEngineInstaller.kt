@@ -172,6 +172,20 @@ class TtsEngineInstaller(private val context: Context) {
          * (404, network blip). Mirrors TtsModelInstaller.FallbackDescriptors.
          * SHA-256 + sizeBytes must be re-verified each release via
          * `sha256sum` against the actual Gitea attachment bytes.
+         *
+         * Status (2026-09-29): DEFAULT_RELEASE_TAG `icespirit-tts-engine-v1.0.0`
+         * is the PLANNED tag per `project-tts-engine-apk-pivot` memory, but
+         * the tag does NOT exist on Gitea yet (`/api/v1/repos/giteaadmin/Model/tags/icespirit-tts-engine-v1.0.0`
+         * returns HTTP 404 as of v0.5.6 audit). `sizeBytes = -1L` + zero
+         * sha256 are placeholders — actual values can only be filled after
+         * the TTS engine APK is built (wrapping sherpa-onnx + matcha-zh-baker
+         * ONNX, see `reference-gitea-model-repo-tts.md`) and uploaded to
+         * `giteaadmin/Model` repo under that tag.
+         *
+         * Until that upload happens, the fetchReleaseInfo path will always
+         * hit this fallback (HTTP 404 → FallbackReleaseInfo.copy(tag = ...)).
+         * Once uploaded: `sha256sum app/build/outputs/apk/release/icespirit-tts-engine.apk`
+         * and `ls -la` for sizeBytes, then update here.
          */
         val FallbackReleaseInfo: TtsEngineReleaseInfo = TtsEngineReleaseInfo(
             tag = DEFAULT_RELEASE_TAG,
