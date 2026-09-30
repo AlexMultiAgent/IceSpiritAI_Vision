@@ -1,5 +1,22 @@
 # 用户更新日志
 
+## v0.5.7 — 2026-09-30
+
+**食品标签规则库净化 + JSON escape 行为加固。** 3 条 food_label 规则清掉跨域引用的《食品安全法实施条例》(属 enforcement procedural,不在食品标签 KB scope;改用 parent-law《食品安全法 §125 第一款》作为处罚条款);配套 `load_realAssets_knownFoodLabelAdLawCrossCites` 测试从 v0.5.6 一直 Assume-skip 状态转硬断言 GREEN,domain-wide cross-cite invariant pin 真正生效。`LatestJsonGenerator.prettyPrint` 也加了一条 escape pin test,下次有人改 prettyPrint 而漏 ASCII 引号 escape(vision-latest.json parse 失败的 footgun)会立刻 fail。
+
+### 修复
+
+- **修复 food_label 3 条规则跨域引用《食品安全法实施条例》**:`food_health_claim_unapproved`、`food_art7_health_function`、`food_art28_function_claim_unauthorized` 的 `regulation` + `lawText` 不再引《食品安全法实施条例 §68 / §38`(enforcement procedural,scope 外);换为《食品安全法 §125 第一款》(parent-law 处罚条款,适用所有食品的功能声称违规)。`keywords` / `severity` / `category` 不变,OCR 命中行为字节级一致
+- **修复 food_label 跨域引用测试永久 Assume-skip 问题**(`FoodLabelRuleLoaderTest.load_realAssets_knownFoodLabelAdLawCrossCites`):v0.5.6 加的 domain-wide cross-cite regression pin 因 3 条规则未清处于 Assume-skip 状态;本版清完规则 + 移除 `Assume.assumeTrue` 块,test 转硬断言 GREEN,未来 drift 会立刻 catch
+
+### 变更
+
+- `LatestJsonGeneratorTest.kt` 新增 `buildLatestJson_pretty_escapesAndRoundTripsPathologicalChangelog` 测试,pin 住 bbc3e65 同源 footgun:pretty mode 下 ASCII 引号必须 escape 为 `\"`、embedded newline 必须 escape 为 `\n`、control char (< 0x20) 必须 escape 为 `\uXXXX`,parser 反解回原值无信息丢失。原 escape test 只覆盖 compact 模式;本条补 pretty 模式覆盖
+
+### 文档
+
+- `TtsEngineInstaller.FallbackReleaseInfo` KDoc 标注 `icespirit-tts-engine-v1.0.0` tag 当前在 Gitea 不存在 (HTTP 404),size/sha 仍是占位;附未来 dev 用 `sha256sum app/build/outputs/apk/release/icespirit-tts-engine.apk` + `ls -la` 回填的指令。**不会**影响用户行为,纯内部文档
+
 ## v0.5.6 — 2026-09-24
 
 **6 个 P0 项一次性清完:跨域法规引用净化、TTS 引擎 fetch 真实化、发版流水线两道机械门控到位。** food_label 规则库 3 条跨域《广告法》引用 + 1 条已废止法规引用切到现行版本;TTS 引擎 APK 下载路径 stub(`gitea.example`)改成真实 Gitea fetch + FallbackReleaseInfo fallback;发版流水线加了 `versionCode → assembleRelease` 硬依赖 + `verifyGiteaAttachmentsAlive` ≥5min 持续 smoke 两道机械门控(v0.1.68 + v0.4.2 footgun 由 Gradle 强制拦截,不再靠 SKILL.md prose)。剩 3 条《食品安全法实施条例》跨域引用留给后续 cleanup,有回归 pin 测试守着。
