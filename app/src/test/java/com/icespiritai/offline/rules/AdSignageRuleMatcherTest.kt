@@ -4836,4 +4836,58 @@ class AdSignageRuleMatcherTest {
             hits.any { it.ruleId == "ad_signage_signage_food_disease_target" }
         )
     }
+
+    @Test fun `13 豌豆多且饱满 命中 seed_yield_guarantee`() {
+        // Fixture #13 v8 时 weak(关键词薄),v20 仍未扩
+        // 改造前:miss(规则无「饱满」「多且饱满」「籽粒饱满」「油亮饱满」)
+        // 改造后:命中
+        val rule = AdSignageRule(
+            id = "ad_signage_art27_seed_yield_guarantee",
+            category = "agricultural",
+            regulation = "《广告法》第二十七条 + 《种子法》第三十一条 + 第五十八条",
+            keywords = listOf(
+                "必增产", "保证增产", "确保增产", "承诺增产", "产量保证", "产量承诺",
+                "高产", "高产保证", "丰产", "稳产", "保证丰产", "保证稳产",
+                "效益保证", "效益承诺", "增产达", "亩产保证", "科学上无法验证",
+                "干鲜两用", "抗病", "早熟", "超高产", "超高产王",
+                "南北方栽培", "南北方种植", "全国适宜",
+                // v21 +10:
+                "饱满", "多且饱满", "籽粒饱满", "油亮饱满", "颗粒饱满",
+                "饱满度高", "瓜型好", "心小肉厚", "新改良", "改良"
+            ),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("豌豆种子 多且饱满 高产 4 大豆种 籽粒饱满 油亮饱满")
+        assertTrue(
+            "#13 豌豆饱满应命中 seed_yield_guarantee",
+            hits.any { it.ruleId == "ad_signage_art27_seed_yield_guarantee" }
+        )
+    }
+
+    @Test fun `23 黑旋风冬瓜 命中 seed_yield_guarantee`() {
+        // Fixture #23 v8 时 weak
+        // 改造前:仅「高产」可触发;「瓜型好」「心小肉厚」「新改良」miss
+        // 改造后:命中
+        val rule = AdSignageRule(
+            id = "ad_signage_art27_seed_yield_guarantee",
+            category = "agricultural",
+            regulation = "《广告法》第二十七条 + 《种子法》第三十一条 + 第五十八条",
+            keywords = listOf(
+                "必增产", "保证增产", "确保增产", "承诺增产", "产量保证", "产量承诺",
+                "高产", "高产保证", "丰产", "稳产", "保证丰产", "保证稳产",
+                "效益保证", "效益承诺", "增产达", "亩产保证", "科学上无法验证",
+                "干鲜两用", "抗病", "早熟", "超高产", "超高产王",
+                "南北方栽培", "南北方种植", "全国适宜",
+                // v21 +10:
+                "饱满", "多且饱满", "籽粒饱满", "油亮饱满", "颗粒饱满",
+                "饱满度高", "瓜型好", "心小肉厚", "新改良", "改良"
+            ),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("黑旋风冬瓜 瓜型好 心小肉厚 高产 新改良")
+        assertTrue(
+            "#23 黑旋风冬瓜形态描述应命中 seed_yield_guarantee",
+            hits.any { it.ruleId == "ad_signage_art27_seed_yield_guarantee" }
+        )
+    }
 }
