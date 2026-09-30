@@ -1,5 +1,20 @@
 # 用户更新日志
 
+## v0.5.9 — 2026-09-30
+
+**changelog 格式二次修复 —— 含 ASCII `()` 与 「」 的 entries head 正确切分。** 主君 2026-09-30 反馈前次 unify_changelog.py 漏 track ASCII 括号与角括号,致 v0.4.0 → v0.5.7 中含 `(图库 / 眼镜 / 拍照)` 「报纸」等内容的 entries 被错切到 mid-line 位置(例:`**三个底部按钮(图库**: 眼镜 / 拍照)...`)。重写脚本,quote tracking 扩到 7 种容器(backtick / ASCII `"` / ASCII `'` / 中文 `"` / 「」 / `()` ASCII + full-width / `【】` ASCII + full-width),保证 head/tail 切分位置正确。共 22 个 entry 重写,v0.5.2+ 全部统一。版本号 bump 89 因 release-only changelog 修复需要新 APK(同 versionCode 不重发避免 cert-pin 失配 + in-app update 不触发)。
+
+### 修复
+
+- **修复 changelog 格式 head/tail 切错**:`unify_changelog.py` quote tracking 加 ASCII `()` + 「」 跟踪,22 个含括号内容的 entry 重新格式化(从 `**head**: 错位切到 mid-line` 改为 `**正确 head**(commit xxx): 正确 tail`)
+- **修复前次错误归一遗漏**:v0.5.2 / v0.5.3 / v0.5.4 / v0.5.5 / v0.5.6 / v0.5.7 6 个版本的 entries 现在 head/tail 位置 100% 正确(已 ChangelogScreenTest + validate-changelog-format.js hook 双重校验)
+
+### 变更
+
+- **规则库版本 v22 → v23**:`app/src/main/assets/rules/ad_signage_rules.json` 顶部 `version` 字段 bump(本次仅 changelog 修复,规则内容无变化)
+- **`AssetRuleLoaderTest` version pin** 22 → 23 (跟随 bump)
+- **versionCode 88 → 89,versionName "0.5.8" → "0.5.9"**:`app/build.gradle.kts` 按 release prep 模板 bump
+
 ## v0.5.8 — 2026-09-30
 
 **广告规则库 v22 — 误命中 gate 阻断 + 通用化 keyword 扩展。** 4 张「参照样本」误命中已用 `categoryAnchorsAbsent` 反向 anchor 阻断政府/新闻出版/公益 (覆盖 #113) + 零售/门头/烟酒行 (覆盖 #86);4 个规则扩 keyword 覆盖旧 weak case (#11 公安专项 / #13 豌豆饱满 / #15 国潮茶文化 / #23 黑旋风冬瓜 / #55 前列腺养护);同批每规则再扩 8-13 个 organ/symptom/形态/品质/公职/商业街区 类通用 keyword,让未来类似违规广告可类推识别。
