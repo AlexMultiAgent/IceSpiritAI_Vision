@@ -4938,4 +4938,89 @@ class AdSignageRuleMatcherTest {
             hits.any { it.ruleId == "ad_signage_re_art26_planned_facility" }
         )
     }
+
+    // === 2026-09-30 mid-turn 用户要求:通用化 keyword,让类似违规广告可类推识别 ===
+    // 4 组通用性测试覆盖 organ/symptom/形态/品质/公职/商业街区 6 类典型变体
+
+    @Test fun `通用性_乳腺结节食品广告应命中 food_disease_target`() {
+        val rule = AdSignageRule(
+            id = "ad_signage_signage_food_disease_target",
+            category = "signage",
+            regulation = "《广告法》第十七条 + 第五十八条",
+            keywords = listOf(
+                "糖尿病患者", "高血压患者", "前列腺患者", "男性健康",
+                // v21 +13 generic:
+                "乳腺", "乳腺结节", "乳腺增生", "子宫肌瘤", "卵巢囊肿",
+                "宫颈炎", "盆腔炎", "腰椎间盘突出", "痛经", "月经不调",
+                "失眠多梦", "湿疹"
+            ),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("某保健品 乳腺结节 妇科炎症 改善月经不调")
+        assertTrue(
+            "通用 organ/symptom claim 应命中",
+            hits.any { it.ruleId == "ad_signage_signage_food_disease_target" }
+        )
+    }
+
+    @Test fun `通用性_出油率高含油量种子广告应命中 seed_yield_guarantee`() {
+        val rule = AdSignageRule(
+            id = "ad_signage_art27_seed_yield_guarantee",
+            category = "agricultural",
+            regulation = "《广告法》第二十七条 + 第五十八条",
+            keywords = listOf(
+                "高产", "超高产", "干鲜两用", "抗病",
+                // v21 +12 generic:
+                "颗粒大", "长势好", "出苗率高", "抗旱", "抗寒",
+                "抗倒伏", "抗虫", "出油率高", "千粒重",
+                "含油量高", "蛋白质含量", "特级"
+            ),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("东北大豆 出油率高 含油量高 千粒重 特级")
+        assertTrue(
+            "通用 形态/品质 claim 应命中",
+            hits.any { it.ruleId == "ad_signage_art27_seed_yield_guarantee" }
+        )
+    }
+
+    @Test fun `通用性_公考公务员定向选调广告应命中 test_authority`() {
+        val rule = AdSignageRule(
+            id = "ad_signage_edu_art24_test_authority",
+            category = "education",
+            regulation = "《广告法》第二十四条第(二)项 + 第五十八条",
+            keywords = listOf(
+                "考试命题人", "教育部推荐", "公安系统",
+                // v21 +10 generic:
+                "公务员", "选调生", "事业编", "定向选调", "紧缺选调",
+                "狱警", "司法行政", "检察官", "法院法官", "三支一扶"
+            ),
+            severity = Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("公务员 选调生 定向选调 笔试培训")
+        assertTrue(
+            "通用 公职/司法教育应命中",
+            hits.any { it.ruleId == "ad_signage_edu_art24_test_authority" }
+        )
+    }
+
+    @Test fun `通用性_总部基地商业中心房地产广告应命中 planned_facility`() {
+        val rule = AdSignageRule(
+            id = "ad_signage_re_art26_planned_facility",
+            category = "realestate",
+            regulation = "《广告法》第二十六条第(四)项 + 第五十八条 + 《房地产广告发布规定》",
+            keywords = listOf(
+                "地铁直达", "规划学校", "智慧健康",
+                // v21 +8 generic:
+                "创意街区", "文旅街区", "网红街区", "总部基地",
+                "商业中心", "步行街", "文化街", "地标商业"
+            ),
+            severity = Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("总部基地 商业中心 创意街区 投资首选")
+        assertTrue(
+            "通用 商业/文旅街区应命中",
+            hits.any { it.ruleId == "ad_signage_re_art26_planned_facility" }
+        )
+    }
 }
