@@ -1,22 +1,21 @@
 // PostToolUse hook for Edit/Write on app/src/main/assets/user-changelog.md.
 //
 // Fires when an Edit / Write / MultiEdit tool modifies the user changelog.
-// After the edit lands, re-reads the file from disk and runs five checks:
+// After the edit lands, re-reads the file from disk and runs four checks:
 //
 //   1. 首行必须是 `# 用户更新日志`
 //   2. 每个版本顶部必须匹配 `## vX.Y.Z — YYYY-MM-DD`
-//   3. 每个版本必须有 **bold 中文摘要。** 行(紧跟标题)
+//   3. 每个版本必须有摘要行(plain text,以 `。` 结尾,无 `**`)
 //   4. 每个 ### 子段标题必须在允许列表(新增 / 修复 / 变更 / 文档 / 调整 / 优化 / 测试)
-//   5. 每条 - entry 必须以 `- **` 开头(必须加粗前缀)
+//   5. 每条 - entry 必须以 `- ` 开头(plain text,不允许 `**` bold)
 //
-// On violation: exit 2 + stderr Claude Code surfaces to the user.
-//
-// 主君 2026-09-30 mid-turn 要求:"以后不要再发生"格式漂移。
-// 锁定于 commit dfd0dae(本批 + 上批 v0.5.8 changelog entry commit 后)。
+// 主君 2026-10-01 mid-turn 要求:整个更新日志不要出现 `**(bold markdown),
+// 给用户看要简洁。本 hook 锁定无 bold plain text 风格。
+// 锁定于 commit 3631d4b(2026-09-30 changelog 格式二次修复)。
 
 const VALID_SECTIONS = ['新增', '修复', '变更', '文档', '调整', '优化', '测试'];
 const TOP_HEADER_REGEX = /^## v\d+\.\d+\.\d+ — \d{4}-\d{2}-\d{2}$/;
-const SUMMARY_REGEX = /^\*\*[^*]+\*\*\.?/;
+const ENTRY_PREFIX = '- ';
 
 let input = '';
 process.stdin.setEncoding('utf8');
@@ -52,16 +51,34 @@ process.stdin.on('end', () => {
     process.exit(0);
   }
 
-  // Split into lines preserving line breaks; normalize CRLF.
+  // Check 0: the entire file must contain zero `**` (bold markdown is banned
+  // user-facing-wise; 主君 2026-10-01 explicit rule).
+  if (raw.includes('**')) {
+    const lines = raw.split('\n');
+    const linesWithBold = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes('**')) linesWithBold.push(i + 1);
+    }
+    process.stderr.write(
+      'BLOCKED by IceSpiritAI_Vision validate-changelog-format hook:\n' +
+      '  File: ' + filePath + '\n' +
+      '  主君 2026-10-01 要求整个更新日志不要出现 `**`(bold markdown 给用户看不简洁)。\n' +
+      '  共 ' + linesWithBold.length + ' 行含 `**`,例如:\n' +
+      linesWithBold.slice(0, 5).map(i => '    L' + i + ': ' + lines[i-1].slice(0, 80)).join('\n') + '\n' +
+      (linesWithBold.length > 5 ? '    ...(后续略)\n' : '') +
+      '  移除 `**` 标记后重试。\n',
+    );
+    process.exit(2);
+  }
+
   const lines = raw.replace(/\r\n/g, '\n').split('\n');
   const errors = [];
 
-  // --- Check 1: 首行必须是 # 用户更新日志 ---
+  // Check 1: 首行必须是 "# 用户更新日志"
   if (!lines[0].startsWith('# 用户更新日志')) {
     errors.push(`第 1 行必须是「# 用户更新日志」(实际:「${lines[0]}」)`);
   }
 
-  // --- 遍历所有行做 2-5 检查 ---
   let inVersion = false;
   let sawSummary = false;
   let inSection = false;
@@ -69,7 +86,6 @@ process.stdin.on('end', () => {
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
 
-    // 跳过空行(不重置 in_section,因为视觉空行在 ### 子段与 - entry 之间是合法格式)
     if (line.trim() === '') continue;
 
     if (line.startsWith('## v')) {
@@ -82,14 +98,11 @@ process.stdin.on('end', () => {
       continue;
     }
 
-    if (!inVersion) {
-      // 文件顶部第一个版本之前的容许内容(比如空行)
-      continue;
-    }
+    if (!inVersion) continue;
 
     if (!sawSummary) {
-      if (!SUMMARY_REGEX.test(line.trim())) {
-        errors.push(`第 ${i+1} 行:版本摘要行必须是「**bold 摘要。**」格式(实际: ${line.trim()})`);
+      if (!line.trim().endsWith('。') && !line.trim().endsWith('!') && !line.trim().endsWith('?')) {
+        errors.push(`第 ${i+1} 行:版本摘要行必须以「。」(或 !/?)结尾的 plain text 句子(实际: ${line.trim()})`);
       }
       sawSummary = true;
       continue;
@@ -104,12 +117,9 @@ process.stdin.on('end', () => {
       continue;
     }
 
-    if (line.startsWith('- ')) {
+    if (line.startsWith(ENTRY_PREFIX)) {
       if (!inSection) {
         errors.push(`第 ${i+1} 行:条目「- ...」前必须有 ### 子段标题(实际行: ${line})`);
-      }
-      if (!line.startsWith('- **')) {
-        errors.push(`第 ${i+1} 行:条目必须以「- **加粗开头**:detail」格式(实际: ${line})`);
       }
       continue;
     }
@@ -125,11 +135,11 @@ process.stdin.on('end', () => {
       '  File: ' + filePath + '\n' +
       '  错误 ' + errors.length + ' 项:\n' +
       errors.map(e => '    - ' + e).join('\n') + '\n' +
-      '  锁定格式(2026-09-30):\n' +
+      '  锁定格式(2026-10-01):\n' +
       '    ## vX.Y.Z — YYYY-MM-DD\n' +
-      '    **bold 中文摘要。**\n' +
+      '    plain text 中文摘要以「。」结尾。\n' +
       '    ### 新增 / 修复 / 变更 / 文档 / 调整 / 优化 / 测试\n' +
-      '    - **加粗开头**[(commit xxx)]: detail\n' +
+      '    - plain text(无 ** bold)\n' +
       '  Reference: docs/superpowers/specs/2026-09-30-ad-rule-fp-gates-and-keywords-design.md\n',
     );
     process.exit(2);
