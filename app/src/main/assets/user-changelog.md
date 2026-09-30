@@ -1,5 +1,34 @@
 # 用户更新日志
 
+## v0.5.8 — 2026-09-30
+
+**广告规则库 v22 — 误命中 gate 阻断 + 通用化 keyword 扩展。** 4 张「参照样本」误命中已用 `categoryAnchorsAbsent` 反向 anchor 阻断政府/新闻出版/公益 (覆盖 #113) + 零售/门头/烟酒行 (覆盖 #86);4 个规则扩 keyword 覆盖旧 weak case (#11 公安专项 / #13 豌豆饱满 / #15 国潮茶文化 / #23 黑旋风冬瓜 / #55 前列腺养护);同批每规则再扩 8-13 个 organ/symptom/形态/品质/公职/商业街区 类通用 keyword,让未来类似违规广告可类推识别。
+
+### 修复
+
+- **修复「参照样本」误命中(2 类规则)**(commit 3b3f2bf + fcb8896):fixture #113 哈尔滨新闻出版局国庆图书惠民公益展 / #86 兰泽烟酒零售门头 各加 `categoryAnchorsAbsent` 反向 anchor (#113 = 28 个 政府/新闻出版/公益/教育/文艺 marker;#86 = 25 个 零售/门头/烟酒行 marker);`national_political_symbol_misuse` 与 `alcohol_drink_scenario` 两条规则改后 severity 不变,正向命中不阻断(测试 case 覆盖)
+
+### 新增
+
+- **新增 fixture #55 / #13 / #23 / #11 / #15 命中 keyword**(commit 4ccf677 + a6352e1 + b7d09fa + 5e28912):`signage_food_disease_target` +7(前列腺养护 / 护前列腺炎 / 尿频尿急 / 男性生活伴侣 / 前列腺健康 / 前列腺保健 / 泌尿健康);`art27_seed_yield_guarantee` +10(饱满 / 多且饱满 / 籽粒饱满 / 油亮饱满 / 颗粒饱满 / 饱满度高 / 瓜型好 / 心小肉厚 / 新改良 / 改良);`edu_art24_test_authority` +11(公安专项 / 公安类 / 警校 / 警员培训 / 公安岗 / 公安系统 / 警察考试 / 警考培训 / 政法干警 / 公安联考 / 公安院校);`re_art26_planned_facility` +9(主题商街 / 国潮茶文化 / 茶巷 / 商街 / 国潮 / 国潮街区 / 茶文化 / 国潮主题 / 商圈核心)
+- **新增通用化 keyword 覆盖 organ/symptom/形态/品质/公职/商业街区**(commit 802124e,同类违规广告类推):4 个规则各加 8-13 个通用 keyword,未来类似食品/医疗/种子/教育公职/地产商业 域违规广告可识别
+
+### 变更
+
+- **规则库版本 v20 → v21 → v22**:`app/src/main/assets/rules/ad_signage_rules.json` 顶部 `version` 字段连续两次 bump(中间 4 个规则 +37 keyword,后 4 个 broad keyword +43 keyword,共 +80)
+- **`违规案例/` fixture 同步**(commit ad244f2):#68 德伦堡短保啤酒 + #100 哈药牌钙铁锌口服液 从 audit71/ 复制到 违规案例/(137 张,与 audit71 71 张 #67-#137 完全对齐)
+
+### 测试
+
+- `AdSignageRuleMatcherTest` 新增 12 组 case(2 + 2 + 1 + 1 + 1 + 1 + 4 通用 = 12):命中/不命中双向覆盖 #113 / #127 / #86 / #18 / #55 / #13 / #23 / #11 / #15 / 通用 organ / 通用 形态 / 通用 公职 / 通用 商业街区
+- `testDebugUnitTest` 全量回归 PASS
+
+### 文档
+
+- `docs/superpowers/specs/2026-09-30-ad-rule-fp-gates-and-keywords-design.md`(设计 spec,本批实施 counterpart)
+- `docs/superpowers/plans/2026-09-30-ad-rule-fp-gates-and-keywords.md`(实施 plan,8 + 4 通用 + 2 文档化 = 14 task)
+- `user-changelog.md` 顶部加本 v0.5.8 条目(下次更新应继续此格式,详见 `validate-changelog-format.js` hook)
+
 ## v0.5.7 — 2026-09-30
 
 **食品标签规则库净化 + JSON escape 行为加固。** 3 条 food_label 规则清掉跨域引用的《食品安全法实施条例》(属 enforcement procedural,不在食品标签 KB scope;改用 parent-law《食品安全法 §125 第一款》作为处罚条款);配套 `load_realAssets_knownFoodLabelAdLawCrossCites` 测试从 v0.5.6 一直 Assume-skip 状态转硬断言 GREEN,domain-wide cross-cite invariant pin 真正生效。`LatestJsonGenerator.prettyPrint` 也加了一条 escape pin test,下次有人改 prettyPrint 而漏 ASCII 引号 escape(vision-latest.json parse 失败的 footgun)会立刻 fail。
