@@ -4762,4 +4762,52 @@ class AdSignageRuleMatcherTest {
             hits.any { it.ruleId == "ad_signage_signage_national_political_symbol_misuse" }
         )
     }
+
+    @Test fun `86 烟酒零售门头 不应命中 alcohol_drink_scenario`() {
+        // Fixture #86 真实文本:OCR 应检出「酒类」「白酒」,但属零售类目标识
+        // 改造前:命中(规则无 gate)
+        // 改造后:不命中(categoryAnchorsAbsent 含「零售/门头/招牌/烟酒行」等)
+        val rule = AdSignageRule(
+            id = "ad_signage_signage_alcohol_drink_scenario",
+            category = "restricted",
+            regulation = "《广告法》第二十三条 + 第五十七条",
+            keywords = listOf("白酒", "茅台", "五粮液", "洋河", "剑南春", "泸州老窖", "汾酒",
+                "酒类", "酒精度", "纯粮", "闻香", "清爽顺滑", "商务宴请", "陈酿"),
+            categoryAnchorsAbsent = listOf(
+                "零售", "批发", "门店", "门头", "招牌", "标识", "经销", "经销商",
+                "代理", "加盟店", "连锁店", "总店", "分店", "商行", "烟酒行",
+                "名酒行", "便利店", "超市", "酒行", "酒庄", "直营", "加盟",
+                "专营", "专卖店", "烟酒专卖"
+            ),
+            severity = Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("兰泽烟酒零售门头 白酒 酒类销售 招牌")
+        assertTrue(
+            "#86 烟酒零售门头不应被识别为酒类广告违规",
+            hits.none { it.ruleId == "ad_signage_signage_alcohol_drink_scenario" }
+        )
+    }
+
+    @Test fun `18 白酒电商页闻香 应命中 alcohol_drink_scenario gate 不阻断饮用场景`() {
+        // Fixture #18 真实文本:电商页文案「闻香 天然桦树清香 与酒香交织 入口」
+        // 改造前后都应命中(「电商页」「闻香」「入口」不在 absent 列表)
+        val rule = AdSignageRule(
+            id = "ad_signage_signage_alcohol_drink_scenario",
+            category = "restricted",
+            regulation = "《广告法》第二十三条 + 第五十七条",
+            keywords = listOf("白酒", "闻香", "清爽顺滑"),
+            categoryAnchorsAbsent = listOf(
+                "零售", "批发", "门店", "门头", "招牌", "标识", "经销", "经销商",
+                "代理", "加盟店", "连锁店", "总店", "分店", "商行", "烟酒行",
+                "名酒行", "便利店", "超市", "酒行", "酒庄", "直营", "加盟",
+                "专营", "专卖店", "烟酒专卖"
+            ),
+            severity = Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("白酒 闻香 天然桦树清香 与酒香交织 入口 层次丰富 清爽顺滑 淘宝")
+        assertTrue(
+            "#18 白酒电商页应继续命中",
+            hits.any { it.ruleId == "ad_signage_signage_alcohol_drink_scenario" }
+        )
+    }
 }
