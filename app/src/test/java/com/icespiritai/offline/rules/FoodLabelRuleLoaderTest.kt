@@ -6,7 +6,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
-import org.junit.Assume
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -200,36 +199,24 @@ class FoodLabelRuleLoaderTest {
         // pin + T2 punch-list. Asserts that NO food_label rule cites either
         // 《广告法》 or 《食品安全法实施条例》 in its regulation field.
         //
-        // Status: RED today (4 → 3 cross-cite violations remain after T2).
-        // T2 实际只清理 1 条 (`food_gb13432_infant_breastmilk_substitute`)
-        // — 该规则同时有《广告法》§20 跨域引用 + 已废止《母乳代用品销售
-        // 管理办法》引用,两个问题在一个 commit 里一起修。剩 3 条
-        // (`food_health_claim_unapproved` / `food_art7_health_function` /
-        // `food_art28_function_claim_unauthorized` 引《食品安全法实施条例》)
-        // 不在本发版号 P0 scope 内,留给 future cleanup task。本测试在所有
-        // 4 条清理后才会转 GREEN,作为 domain-wide cross-cite 回归 pin。
-        // do NOT delete even after it turns GREEN — this is the regression
-        // pin for `feedback-foodlabel-kb-scope`.
-        //
-        // Per memory `feedback-foodlabel-kb-scope` (2026-09-10), both
-        // statutes are cross-domain for the food_label scope: 《广告法》
-        // belongs in ad_signage_rules.json, and 《食品安全法实施条例》 is
-        // enforcement procedural detail rather than labeling substance,
-        // so it sits outside the GB 7718 / 食品标识监督管理办法 / 食品安全法
-        // / sector-specific-standards core.
-        //
-        // T2 PUNCH-LIST (cross-cite IDs to clean to make this test GREEN):
-        //   1. [T2-CLEANED 2026-09-25] food_gb13432_infant_breastmilk_substitute
-        //      — cited 广告法 §20 + abolished 母乳代用品销售管理办法. T2
+        // History (T1 + T2 + post-v0.5.6 cleanup chain):
+        //   1. [T1-CLEANED 2026-09-25] food_nozero_add + food_art8_minor_unapproved
+        //      — both cited 《广告法》. T1 commit `fix(rules): food_label 跨域引《广告法》清理(2 条)`
+        //      replaced those refs with in-domain 食品标识监督管理办法 / GB 7718-2011 citations.
+        //   2. [T2-CLEANED 2026-09-25] food_gb13432_infant_breastmilk_substitute
+        //      — cited 广告法 §20 + abolished 母乳代用品销售管理办法. T2 commit
         //      removes the entire cluster, leaving only
         //      `GB 13432-2013 §3.c + 食品安全法 第八十一条`.
-        //   2. [FUTURE] food_health_claim_unapproved — cites
-        //      食品安全法实施条例 §68 (处罚依据 in `regulation` 字段,
-        //      属 enforcement procedural).
-        //   3. [FUTURE] food_art7_health_function — cites
-        //      食品安全法实施条例 §68 (同 2,处罚依据 形态).
-        //   4. [FUTURE] food_art28_function_claim_unauthorized — cites
-        //      食品安全法实施条例 §38 (处罚依据 形态).
+        //   3. [POST-v0.5.6 CLEANED] food_health_claim_unapproved /
+        //      food_art7_health_function / food_art28_function_claim_unauthorized
+        //      — cited 食品安全法实施条例 §68/§38 (处罚依据 in `regulation` 字段).
+        //      Replaced 食品安全法实施条例 cross-cite with 食品安全法 §125 第一款
+        //      (the underlying parent-law penalty provision; 食品安全法实施条例 is
+        //      enforcement procedural detail outside the food_label KB scope).
+        //
+        // Test now hard-asserts GREEN — see `feedback-foodlabel-kb-scope`
+        // for the scope invariant this pins. Do NOT delete the test; any
+        // future drift introducing either cross-cite will immediately fail CI.
         //
         // Why this is a separate test from
         // `load_realAssets_t1ScopedRulesDoNotCiteAdLaw`: the T1 test is
@@ -253,29 +240,10 @@ class FoodLabelRuleLoaderTest {
             rule.regulation.contains("广告法") ||
                 rule.regulation.contains("食品安全法实施条例")
         }
-        // CI gate (v0.5.6 final-review polish, 2026-09-25): this test is a
-        // regression pin for cross-domain citations in food_label rules. The
-        // 3 remaining entries (《食品安全法实施条例》 cites, out of v0.5.6 P0
-        // scope per user directive) currently fail the hard `assertEquals(0, …)`;
-        // JUnit `Assume.assumeTrue` reports the test as SKIPPED (not FAILED)
-        // when the assumption fails, so `./gradlew testDebugUnitTest` stays
-        // GREEN in CI (`.github/workflows/android-ci.yml` runs this task).
-        // When future cleanup removes the last 3 IDs, `assumeTrue` passes,
-        // the assertion body runs normally, and the test goes GREEN for real.
-        // RE-ENABLE INSTRUCTIONS: when all cross-cite IDs are cleaned, delete
-        // the `assumeTrue` block and the test will assert hard as originally
-        // designed.
-        Assume.assumeTrue(
-            "REGRESSION PIN — re-enable hard assertion when food_label cross-cite " +
-                "cleanups land. See in-test comment for re-enable instructions. " +
-                "Remaining 3 IDs: food_health_claim_unapproved / " +
-                "food_art7_health_function / food_art28_function_claim_unauthorized",
-            crossCiteRules.isEmpty(),
-        )
         assertEquals(
             "food_label rules 不得跨域引《广告法》/《食品安全法实施条例》" +
                 "(memory feedback-foodlabel-kb-scope). " +
-                "T2 PUNCH-LIST — ${crossCiteRules.size} cross-cite violation(s) remain: " +
+                "Cross-cite violation(s): " +
                 crossCiteRules.sortedBy { it.id }.joinToString {
                     "${it.id}(regulation='${it.regulation}')"
                 },
