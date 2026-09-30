@@ -4913,4 +4913,29 @@ class AdSignageRuleMatcherTest {
             hits.any { it.ruleId == "ad_signage_edu_art24_test_authority" }
         )
     }
+
+    @Test fun `15 国潮茶文化 命中 re_art26_planned_facility`() {
+        // Fixture #15 银泰集茶巷 OCR 召回「主题商街」「国潮茶文化」「茶巷」
+        // 改造前:`re_art26_planned_facility` miss(8 keyword 不含这些);
+        //         `art26_re_prm` 命中(已含「财富启航/主题商街/银泰商圈」)
+        // 改造后:`re_art26_planned_facility` 也命中(双规则命中,total 命中数提升)
+        val rule = AdSignageRule(
+            id = "ad_signage_re_art26_planned_facility",
+            category = "realestate",
+            regulation = "《广告法》第二十六条第(四)项 + 第五十八条 + 《房地产广告发布规定》",
+            keywords = listOf(
+                "地铁直达", "学区确定", "规划学校", "规划医院", "未来 X 号线",
+                "智慧健康", "体检区", "健康体检区",
+                // v21 +9:
+                "主题商街", "国潮茶文化", "茶巷", "商街", "国潮",
+                "国潮街区", "茶文化", "国潮主题", "商圈核心"
+            ),
+            severity = Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("银泰集茶巷 品牌加冕 财富实力启航 主题商街 国潮茶文化")
+        assertTrue(
+            "#15 国潮茶文化应命中 re_art26_planned_facility",
+            hits.any { it.ruleId == "ad_signage_re_art26_planned_facility" }
+        )
+    }
 }
