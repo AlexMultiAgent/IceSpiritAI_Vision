@@ -4810,4 +4810,30 @@ class AdSignageRuleMatcherTest {
             hits.any { it.ruleId == "ad_signage_signage_alcohol_drink_scenario" }
         )
     }
+
+    @Test fun `55 前列腺养护 命中 food_disease_target`() {
+        // Fixture #55 京东京造番茄红素沙棘果油
+        // 改造前:miss(规则 keyword 仅有「前列腺患者」,不含「前列腺养护」「护前列腺炎」)
+        // 改造后:命中(新增 keyword 7 个)
+        val rule = AdSignageRule(
+            id = "ad_signage_signage_food_disease_target",
+            category = "signage",
+            regulation = "《广告法》第十七条 + 《保健食品广告审查暂行规定》",
+            keywords = listOf(
+                "糖尿病患者", "高血压患者", "癌症病人", "肿瘤病人", "冠心病患者",
+                "心脑血管病人", "关节炎患者", "骨质疏松患者", "便秘患者", "痔疮患者",
+                "前列腺患者", "男性健康", "妇科疾病", "妇科炎症", "白癜风", "牛皮癣",
+                "抗癌", "防癌", "抗癌防癌",
+                // v21 +7:
+                "前列腺养护", "护前列腺炎", "尿频尿急", "男性生活伴侣",
+                "前列腺健康", "前列腺保健", "泌尿健康"
+            ),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("京东京造番茄红素沙棘果油 前列腺养护 护前列腺炎 尿频尿急 男性生活伴侣 增强免疫力")
+        assertTrue(
+            "#55 前列腺养护应命中 food_disease_target",
+            hits.any { it.ruleId == "ad_signage_signage_food_disease_target" }
+        )
+    }
 }
