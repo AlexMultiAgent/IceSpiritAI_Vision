@@ -89,6 +89,55 @@ class LatestJsonGeneratorTest {
     }
 
     @Test
+    fun buildLatestJson_pretty_escapesAndRoundTripsPathologicalChangelog() {
+        // Regression pin for bbc3e65 + future prettyPrint refactors:
+        // pretty mode must (a) escape ASCII quotes / backslashes / control chars
+        // inside string values, (b) preserve embedded newlines as \n (NOT raw),
+        // (c) round-trip through the parser without loss.
+        //
+        // Test input mixes: ASCII quotes, backslash, embedded newline,
+        // control character (\u0001 = SOH, must become \u0001 in JSON).
+        val pathologicalChangelog = """## v0.5.6
+- 修复 §"发布流水线踩坑" 引用
+- 含 backslash: \\path\\to\\file
+- 含 newline:
+  第二行
+- 中文 + 引号 "嵌套\"""".trimIndent()
+            .let { it + "\u0001" }  // 末尾加 SOH control character
+
+        val pretty = LatestJsonGenerator.buildLatestJson(
+            versionCode = 1, versionName = "0.5.6",
+            apkUrl = "http://x/y.apk", apkSize = 1L,
+            apkSha256 = "h".repeat(64),
+            changelog = pathologicalChangelog,
+            pretty = true,
+        )
+
+        // (a) ASCII quotes inside string must be escaped as \"
+        assertTrue(
+            "pretty 输出必须含 \\\"(escaped form,got: ${pretty.take(400)}…)",
+            pretty.contains("\\\""),
+        )
+        // (b) embedded newline 在 JSON wire form 必须是 \\n (2 chars),不是 raw \n (1 char)
+        //     raw \n 会让 prettyPrint 把 string 提前关闭,后续字符被误解析为下一个 token
+        //     简化:数 pretty 中 \\n 出现次数,至少 1 次(changelog 里 embedded newline)
+        val escapedNewlineCount = "\\n".toRegex().findAll(pretty).count()
+        assertTrue(
+            "pretty 输出必须含 \\\\n(escaped newline),actual count=$escapedNewlineCount,got: ${pretty.take(400)}…",
+            escapedNewlineCount >= 1,
+        )
+        // (c) control char (< 0x20) 必须 escape 成 \\uXXXX
+        assertTrue(
+            "pretty 输出必须含 \\\\u0001(control char escape),got: ${pretty.take(400)}…",
+            pretty.contains("\\u0001"),
+        )
+        // (d) parser 不抛 —— 说明整个 wire JSON 合法
+        val info = parser.decodeFromString(TestAppVersionInfo.serializer(), pretty)
+        // (e) round-trip —— parser 反解回原值,无信息丢失
+        assertEquals(pathologicalChangelog, info.changelog)
+    }
+
+    @Test
     fun sha256Hex_isStableAndLowerCase64() {
         val tmp = java.io.File.createTempFile("icespirit-hash", ".bin")
         tmp.writeBytes(ByteArray(1024) { it.toByte() })
