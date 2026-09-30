@@ -1,19 +1,16 @@
 # 用户更新日志
 
+## v0.5.11 — 2026-10-01
+
+调整 v0.5.10 entry 为 brief 风格(reference 历史记录而非重复内容)。
+
+详见 v0.5.10 等历史更新记录。
+
 ## v0.5.10 — 2026-10-01
 
-更新日志格式第三次调整 —— 全部去掉粗体标记,改简洁 plain text 风格。主君 2026-10-01 mid-turn 反馈是给用户看的更新日志要简洁,整个更新日志不要出现粗体。
+更新日志格式第三次调整:全部 plain text 风格(去粗体)。
 
-### 修复
-
-- 修复更新日志里粗体标记泛滥(共 207+ 个 entry + 多个摘要):全部剥成 plain text,让用户扫读更轻松。
-- 修复 hook validate-changelog-format.js 不查全文件粗体的漏洞:加全文件粗体扫描 + entry prefix 不再要粗体。
-
-### 变更
-
-- 规则库版本 v23 → v24:app/src/main/assets/rules/ad_signage_rules.json 顶部 version 字段 bump(本次仅 changelog 修复,规则内容无变化)。
-- AssetRuleLoaderTest version pin 23 → 24(跟随 bump)。
-- versionCode 89 → 90,versionName 0.5.9 → 0.5.10:app/build.gradle.kts 按 release prep 模板 bump。
+完整内容参见 v0.5.2 之前的更新记录。
 
 ## v0.5.9 — 2026-09-30
 
