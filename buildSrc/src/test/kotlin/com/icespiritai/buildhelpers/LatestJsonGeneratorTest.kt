@@ -144,6 +144,43 @@ class LatestJsonGeneratorTest {
         val md = "## v0.1.0 · 2026-08-14\n\n## v0.0.0 · 2026-08-01\n\n- old\n"
         assertEquals("## v0.1.0 · 2026-08-14", LatestJsonGenerator.extractLatestChangelog(md))
     }
+
+    @Test
+    fun buildLatestJson_asciiQuotesInChangelogAreEscapedAndRoundTrip() {
+        // Regression pin for bbc3e65 (2026-09-25): user-changelog.md 里的 ASCII 双引号
+        // (如 §"发布流水线踩坑") 之前未 escape,导致 vision-latest.json line 7 column 2804
+        // JSON parse 失败。修复:jsonString() 现在 escape " 为 \"。本测试确保下次有人改回
+        // 手动 StringBuilder 拼接(绕开 jsonString)会立刻 fail。
+        val changelogWithAsciiQuotes = """## v0.5.6
+- 修复 §"发布流水线踩坑" 引用
+- §"Critical ordering" 同步""".trimIndent()
+        val json = LatestJsonGenerator.buildLatestJson(
+            versionCode = 1, versionName = "0.5.6",
+            apkUrl = "http://x/y.apk", apkSize = 1L,
+            apkSha256 = "a".repeat(64),
+            changelog = changelogWithAsciiQuotes,
+        )
+        // 1. JSON parse 不抛 —— 说明 escape 正确,wire JSON 合法
+        val info = parser.decodeFromString(TestAppVersionInfo.serializer(), json)
+        // 2. round-trip 后 changelog 跟原始一致 —— escape + unescape 无损
+        assertEquals(changelogWithAsciiQuotes, info.changelog)
+        // 3. raw JSON 必须包含 \"(escaped 形式),而不是 raw ASCII "
+        assertTrue(
+            "raw JSON 必须含 \\\"(escaped form),got: ${json.take(300)}…",
+            json.contains("\\\""),
+        )
+        // 4. 反例:wire changelog 字段里不应有 raw ASCII "(只能出现 \")
+        //    用 regex 区分:"(?<!\\)" 匹配不前导 \ 的 " —— 这是 raw,wire 上必须为 0
+        val changelogStart = json.indexOf("\"changelog\":\"") + "\"changelog\":\"".length
+        val changelogEnd = json.indexOf("\",\"apkCumulativeDownloads\"")
+        val wireChangelog = json.substring(changelogStart, changelogEnd)
+        val unescapedQuotes = Regex("(?<!\\\\)\"").findAll(wireChangelog).count()
+        assertEquals(
+            "wire changelog 字段里 raw \" 必须 escape 成 \\\"(got: ${wireChangelog.take(200)}…)",
+            0,
+            unescapedQuotes,
+        )
+    }
 }
 
 /**
