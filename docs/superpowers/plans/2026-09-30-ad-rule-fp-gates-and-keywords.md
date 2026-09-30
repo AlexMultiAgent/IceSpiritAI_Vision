@@ -778,8 +778,606 @@ git log -6 --oneline
 | 4 | feat(rules): seed_yield_guarantee +10 keyword 覆盖 #13 #23 | rules.json + matcher test |
 | 5 | feat(rules): edu_art24_test_authority +11 keyword 覆盖 #11 | rules.json + matcher test |
 | 6 | feat(rules): re_art26_planned_facility +9 keyword 覆盖 #15 | rules.json + matcher test |
+| 7 | test(fixtures): 违规案例/ 同步 audit71 #68 + #100 | 违规案例/ (tracked) |
 
-(无 Task 7 commit — `违规案例/` 在 .gitignore)
+---
+
+## Task 9: 通用化 keyword 扩展(用户 mid-turn 要求:"类似的违规广告图像以后可以于此类推")
+
+> **2026-09-30 mid-turn 用户追加要求**:本轮修改应具有通用性,使类似违规广告图像未来可类推识别。
+
+**Files:**
+- Modify: `app/src/main/assets/rules/ad_signage_rules.json`(4 个规则各加 ~10 通用 keyword)
+- Modify: `app/src/test/java/com/icespiritai/offline/rules/AdSignageRuleMatcherTest.kt`(新增 4 组通用性测试,每规则 1 例)
+
+- [ ] **Step 9.1: `signage_food_disease_target` 扩 13 通用 keyword(器官 + 症状)**
+
+定位 `"ad_signage_signage_food_disease_target"` 的 `keywords` 数组,在 `泌尿健康` 后追加:
+
+```json
+"乳腺",
+"乳腺结节",
+"乳腺增生",
+"子宫肌瘤",
+"子宫腺肌",
+"卵巢囊肿",
+"宫颈炎",
+"盆腔炎",
+"腰椎间盘突出",
+"痛经",
+"月经不调",
+"失眠多梦",
+"湿疹"
+```
+
+(覆盖 `#55` 类似 organ/symptom 模式,v20 当前 27 → 40 个)
+
+- [ ] **Step 9.2: 通用性测试 — 类似 organ claim 应命中**
+
+```kotlin
+@Test fun `通用性_乳腺结节食品广告应命中 food_disease_target`() {
+    val rule = AdSignageRule(
+        id = "ad_signage_signage_food_disease_target",
+        category = "signage",
+        regulation = "《广告法》第十七条 + 第五十八条",
+        keywords = listOf(
+            "糖尿病患者", "高血压患者", "癌症病人", "前列腺患者", "男性健康",
+            // v21 generic ext:
+            "乳腺结节", "乳腺增生", "子宫肌瘤", "卵巢囊肿", "宫颈炎",
+            "盆腔炎", "腰椎间盘突出", "痛经", "月经不调", "失眠多梦", "湿疹"
+        ),
+        severity = Severity.Violation,
+    )
+    val hits = AdSignageRuleMatcher(listOf(rule)).scan("某保健品 乳腺结节 妇科炎症 改善月经不调")
+    assertTrue(
+        "通用 organ/symptom claim 应命中",
+        hits.any { it.ruleId == "ad_signage_signage_food_disease_target" }
+    )
+}
+```
+
+- [ ] **Step 9.3: `art27_seed_yield_guarantee` 扩 12 通用 keyword(形态 + 抗性 + 品质)**
+
+定位 `"ad_signage_art27_seed_yield_guarantee"` 的 `keywords` 数组,在 `改良` 后追加:
+
+```json
+"颗粒大",
+"长势好",
+"出苗率高",
+"抗旱",
+"抗寒",
+"抗倒伏",
+"抗虫",
+"出油率高",
+"千粒重",
+"含油量高",
+"蛋白质含量",
+"特级"
+```
+
+(v20 当前 35 → 47 个)
+
+- [ ] **Step 9.4: 通用性测试 — 类似形态/品质 claim 应命中**
+
+```kotlin
+@Test fun `通用性_出油率高含油量种子广告应命中 seed_yield_guarantee`() {
+    val rule = AdSignageRule(
+        id = "ad_signage_art27_seed_yield_guarantee",
+        category = "agricultural",
+        regulation = "《广告法》第二十七条 + 第五十八条",
+        keywords = listOf(
+            "高产", "超高产", "干鲜两用", "抗病",
+            // v21 generic ext:
+            "颗粒大", "长势好", "出苗率高", "抗旱", "抗寒", "抗倒伏",
+            "出油率高", "千粒重", "含油量高", "蛋白质含量", "特级"
+        ),
+        severity = Severity.Violation,
+    )
+    val hits = AdSignageRuleMatcher(listOf(rule)).scan("东北大豆 出油率高 含油量高 千粒重 特级")
+    assertTrue(
+        "通用 形态/品质 claim 应命中",
+        hits.any { it.ruleId == "ad_signage_art27_seed_yield_guarantee" }
+    )
+}
+```
+
+- [ ] **Step 9.5: `edu_art24_test_authority` 扩 10 通用 keyword(公职 + 司法 + 教师)**
+
+定位 `"ad_signage_edu_art24_test_authority"` 的 `keywords` 数组,在 `公安院校` 后追加:
+
+```json
+"公务员",
+"选调生",
+"事业编",
+"三支一扶",
+"狱警",
+"司法行政",
+"检察官",
+"法院法官",
+"紧缺选调",
+"定向选调"
+```
+
+(v20 当前 15 → 25 个)
+
+- [ ] **Step 9.6: 通用性测试 — 类似公职/司法教育应命中**
+
+```kotlin
+@Test fun `通用性_公考公务员定向选调广告应命中 test_authority`() {
+    val rule = AdSignageRule(
+        id = "ad_signage_edu_art24_test_authority",
+        category = "education",
+        regulation = "《广告法》第二十四条第(二)项 + 第五十八条",
+        keywords = listOf(
+            "考试命题人", "教育部推荐", "公安系统",
+            // v21 generic ext:
+            "公务员", "选调生", "事业编", "定向选调", "紧缺选调",
+            "狱警", "司法行政", "检察官", "法院法官", "三支一扶"
+        ),
+        severity = Severity.Warning,
+    )
+    val hits = AdSignageRuleMatcher(listOf(rule)).scan("公务员 选调生 定向选调 笔试培训")
+    assertTrue(
+        "通用 公职/司法教育应命中",
+        hits.any { it.ruleId == "ad_signage_edu_art24_test_authority" }
+    )
+}
+```
+
+- [ ] **Step 9.7: `re_art26_planned_facility` 扩 8 通用 keyword(商业 + 文旅)**
+
+定位 `"ad_signage_re_art26_planned_facility"` 的 `keywords` 数组,在 `商圈核心` 后追加:
+
+```json
+"创意街区",
+"文旅街区",
+"网红街区",
+"总部基地",
+"商业中心",
+"步行街",
+"文化街",
+"地标商业"
+```
+
+(v20 当前 17 → 25 个)
+
+- [ ] **Step 9.8: 通用性测试 — 类似商业/文旅街区应命中**
+
+```kotlin
+@Test fun `通用性_总部基地商业中心房地产广告应命中 planned_facility`() {
+    val rule = AdSignageRule(
+        id = "ad_signage_re_art26_planned_facility",
+        category = "realestate",
+        regulation = "《广告法》第二十六条第(四)项 + 第五十八条",
+        keywords = listOf(
+            "地铁直达", "规划学校", "智慧健康",
+            // v21 generic ext:
+            "创意街区", "文旅街区", "网红街区", "总部基地",
+            "商业中心", "步行街", "文化街", "地标商业"
+        ),
+        severity = Severity.Warning,
+    )
+    val hits = AdSignageRuleMatcher(listOf(rule)).scan("总部基地 商业中心 创意街区 投资首选")
+    assertTrue(
+        "通用 商业/文旅街区应命中",
+        hits.any { it.ruleId == "ad_signage_re_art26_planned_facility" }
+    )
+}
+```
+
+- [ ] **Step 9.9: 跑全量 matcher test 验证**
+
+```bash
+cd /d/GitHub/IceSpiritAI_Vision
+export JAVA_HOME="/c/Users/37311/.gradle/jdks/jdk-17.0.18+8"
+./gradlew.bat testDebugUnitTest --tests "com.icespiritai.offline.rules.AdSignageRuleMatcherTest"
+```
+
+Expected: BUILD SUCCESSFUL(含本批 4 组新增通用性测试)
+
+- [ ] **Step 9.10: Commit**
+
+```bash
+cd /d/GitHub/IceSpiritAI_Vision
+git add app/src/main/assets/rules/ad_signage_rules.json \
+        app/src/test/java/com/icespiritai/offline/rules/AdSignageRuleMatcherTest.kt
+git -c user.name="AlexMultiAgent" -c user.email="AlexMultiAgent@users.noreply.github.com" commit -m "$(cat <<'EOF'
+feat(rules): 通用化 keyword 扩展覆盖 organ/symptom/形态/品质/公职/商业街区
+
+用户 2026-09-30 要求:本轮修改应具有通用性,使类似违规广告图像未来可类推
+识别。
+
+4 个规则各加 ~10 通用 keyword,覆盖 v21 spec 已有的 organ/symptom/形态/
+品质/公职/商业街区 类典型变体:
+
+- signage_food_disease_target +13:乳腺/乳腺结节/乳腺增生/子宫肌瘤/卵巢囊肿
+  /宫颈炎/盆腔炎/腰椎间盘突出/痛经/月经不调/失眠多梦/湿疹
+- art27_seed_yield_guarantee +12:颗粒大/长势好/出苗率高/抗旱/抗寒/抗倒伏
+  /抗虫/出油率高/千粒重/含油量高/蛋白质含量/特级
+- edu_art24_test_authority +10:公务员/选调生/事业编/三支一扶/狱警/司法行政
+  /检察官/法院法官/紧缺选调/定向选调
+- re_art26_planned_facility +8:创意街区/文旅街区/网红街区/总部基地/商业
+  中心/步行街/文化街/地标商业
+
+测试:4 组通用性测试(类似 organ/形态/公职/商业街区 claim 应命中)
+
+关联:docs/superpowers/specs/2026-09-30-ad-rule-fp-gates-and-keywords-design.md §2.3
+EOF
+)"
+```
+
+---
+
+## Task 10: 添加 v0.5.8 更新日志条目
+
+> **2026-09-30 mid-turn 用户要求**:更新日志格式不统一,此轮修复后加 v0.5.8 条目,且条目本身要遵守 Task 11 即将统一的格式。
+
+**Files:**
+- Modify: `app/src/main/assets/user-changelog.md`(顶部加 v0.5.8 条目)
+
+- [ ] **Step 10.1: 写入 v0.5.8 条目**
+
+打开 `app/src/main/assets/user-changelog.md`,在顶部 (第 3 行 `## v0.5.7 — 2026-09-30` 之前) 插入:
+
+```markdown
+## v0.5.8 — 2026-09-30
+
+**广告规则库 v21 — 误命中 gate 阻断 + 通用化 keyword 扩展。** 4 张「参照样本」误命中已用 `categoryAnchorsAbsent` 反向 anchor 阻断政府/新闻出版/公益 (覆盖 #113) + 零售/门头/烟酒行 (覆盖 #86);4 个规则扩 keyword 覆盖旧 weak case (#11 公安专项 / #13 豌豆饱满 / #15 国潮茶文化 / #23 黑旋风冬瓜 / #55 前列腺养护);同批每规则再扩 8-13 个 organ/symptom/形态/品质/公职/商业街区 类通用 keyword,让未来类似违规广告可类推识别。
+
+### 修复
+
+- **修复「参照样本」误命中(2 类规则)**:fixture #113 哈尔滨新闻出版局国庆图书惠民公益展 / #86 兰泽烟酒零售门头 各加 `categoryAnchorsAbsent` 反向 anchor (#113 = 28 个 政府/新闻出版/公益/教育/文艺 marker;#86 = 25 个 零售/门头/烟酒行 marker);`national_political_symbol_misuse` 与 `alcohol_drink_scenario` 两条规则改后 severity 不变,正向命中不阻断(测试 case 覆盖)
+
+### 新增
+
+- **新增 fixture #55 / #13 / #23 / #11 / #15 命中 keyword**:`signage_food_disease_target` +7(前列腺养护 / 护前列腺炎 / 尿频尿急 / 男性生活伴侣 / 前列腺健康 / 前列腺保健 / 泌尿健康);`art27_seed_yield_guarantee` +10(饱满 / 多且饱满 / 籽粒饱满 / 油亮饱满 / 颗粒饱满 / 饱满度高 / 瓜型好 / 心小肉厚 / 新改良 / 改良);`edu_art24_test_authority` +11(公安专项 / 公安类 / 警校 / 警员培训 / 公安岗 / 公安系统 / 警察考试 / 警考培训 / 政法干警 / 公安联考 / 公安院校);`re_art26_planned_facility` +9(主题商街 / 国潮茶文化 / 茶巷 / 商街 / 国潮 / 国潮街区 / 茶文化 / 国潮主题 / 商圈核心)
+- **新增通用化 keyword 覆盖 organ/symptom/形态/品质/公职/商业街区**(同类违规广告类推):4 个规则各加 8-13 个通用 keyword(详见 Task 9 commit),未来类似食品/医疗/种子/教育公职/地产商业 域违规广告可识别
+
+### 变更
+
+- **规则库版本 v20 → v21**:`app/src/main/assets/rules/ad_signage_rules.json` 顶部 `version` 字段 bump
+- **`违规案例/` fixture 同步**:#68 德伦堡短保啤酒 + #100 哈药牌钙铁锌口服液 从 audit71/ 复制到 违规案例/(137 张,与 audit71 71 张 #67-#137 完全对齐)
+
+### 测试
+
+- `AdSignageRuleMatcherTest` 新增 12 组 case(2 + 2 + 1 + 1 + 1 + 1 + 4 通用 = 12):命中/不命中双向覆盖 #113 / #127 / #86 / #18 / #55 / #13 / #23 / #11 / #15 / 通用 organ / 通用 形态 / 通用 公职 / 通用 商业街区
+- `testDebugUnitTest` 全量回归 PASS
+
+### 文档
+
+- `docs/superpowers/specs/2026-09-30-ad-rule-fp-gates-and-keywords-design.md`(设计 spec,本 spec 是实施 counterpart)
+- `docs/superpowers/plans/2026-09-30-ad-rule-fp-gates-and-keywords.md`(实施 plan,8 + 4 通用 + 2 文档化 = 14 task)
+- `user-changelog.md` 顶部加本 v0.5.8 条目(下次更新应继续此格式)
+
+```
+
+- [ ] **Step 10.2: 跑现有 changelog 解析测试**
+
+```bash
+cd /d/GitHub/IceSpiritAI_Vision
+export JAVA_HOME="/c/Users/37311/.gradle/jdks/jdk-17.0.18+8"
+./gradlew.bat testDebugUnitTest --tests "*ChangelogScreen*"
+```
+
+Expected: BUILD SUCCESSFUL(`ChangelogScreenTest` 解析 changelog markdown 渲染 UI,新增 v0.5.8 条目应正常显示)
+
+- [ ] **Step 10.3: Commit**
+
+```bash
+cd /d/GitHub/IceSpiritAI_Vision
+git add app/src/main/assets/user-changelog.md
+git diff --cached | grep -i "Co-Authored-By" || echo "OK: no trailer"
+git -c user.name="AlexMultiAgent" -c user.email="AlexMultiAgent@users.noreply.github.com" commit -m "$(cat <<'EOF'
+docs(changelog): v0.5.8 广告规则库 v21 — gate + 通用化 keyword
+
+本版主要变更:
+- 2 个规则加 categoryAnchorsAbsent 阻断「参照样本」误命中(#113/#86)
+- 4 个规则扩 keyword 覆盖旧 weak case(#11/#13/#15/#23/#55)
+- 4 个规则再扩通用 keyword 覆盖同类违规(organ/symptom/形态/品质/公职/商业街区)
+- 规则库版本 v20 → v21
+- 违规案例/ fixture 同步 #68 + #100
+
+关联:docs/superpowers/specs/2026-09-30-ad-rule-fp-gates-and-keywords-design.md
+EOF
+)"
+```
+
+---
+
+## Task 11: 统一历史 changelog 格式(用户 mid-turn 要求)
+
+> **2026-09-30 mid-turn 用户要求**:更新日志格式不统一,此修复完成后一并修复历史格式,且未来不要再发生(Task 12 加 hook)。
+
+**Files:**
+- Modify: `app/src/main/assets/user-changelog.md`(全文件 938 行重写格式)
+
+- [ ] **Step 11.1: 读现有 ChangelogScreen.kt 解析逻辑确认格式约束**
+
+```bash
+cd /d/GitHub/IceSpiritAI_Vision
+grep -n "versionEntryRegex\|## v\|### " app/src/main/java/com/icespiritai/offline/ui/settings/ChangelogScreen.kt | head -30
+```
+
+Expected: 找到 entry 正则(确认 `## v###` 是必填分隔符,`### 新增 / 修复 / 文档` 等子段是 UI 渲染期望)
+
+- [ ] **Step 11.2: 用统一格式重写历史版本**
+
+打开 `app/src/main/assets/user-changelog.md`,把所有历史的 v0.1.0 → v0.5.7 条目**逐个**改写为标准格式。标准格式:
+
+```markdown
+## vX.Y.Z — YYYY-MM-DD
+
+**一行中文摘要(bold)。** 一段多行补充说明(可选)。
+
+### 新增
+
+- **加粗开头**[(commit xxx)]:detail
+- **加粗开头**[(commit xxx)]:detail
+
+### 修复
+
+- **加粗开头**[(commit xxx)]:detail
+
+### 变更 / 文档 / 调整 / 优化
+
+- **加粗开头**[(commit xxx)]:detail
+```
+
+具体改造规则:
+- 旧版 `### 优化 / 调整 / 文档 / 变更 / 新增 / 修复` 全部统一保留(避免 UI 渲染崩)
+- 旧版 `** 加粗开头**... 详细描述...` 全部统一为 `- **加粗开头**(commit xxx): 详细描述` 格式
+- 旧版没有 commit hash 的,加 `(无 commit)` 占位
+- 旧版 `### 修复了 X 的问题` 等短标题改成 `- **修复 X**:`problem 格式
+
+**不修改**(避免信息丢失):
+- 各版本 release date(已知确切)
+- 各 commit hash(已知)
+- 各版本实质改动描述
+
+- [ ] **Step 11.3: 跑 changelog 测试**
+
+```bash
+cd /d/GitHub/IceSpiritAI_Vision
+export JAVA_HOME="/c/Users/37311/.gradle/jdks/jdk-17.0.18+8"
+./gradlew.bat testDebugUnitTest --tests "*ChangelogScreen*"
+```
+
+Expected: BUILD SUCCESSFUL(历史格式统一后,ChangelogScreen 解析 + 渲染全部正常)
+
+- [ ] **Step 11.4: Commit**
+
+```bash
+cd /d/GitHub/IceSpiritAI_Vision
+git add app/src/main/assets/user-changelog.md
+git diff --cached | grep -i "Co-Authored-By" || echo "OK: no trailer"
+git -c user.name="AlexMultiAgent" -c user.email="AlexMultiAgent@users.noreply.github.com" commit -m "$(cat <<'EOF'
+docs(changelog): 统一历史 v0.1.0 → v0.5.7 条目格式
+
+主君 2026-09-30 mid-turn 要求:更新日志格式不统一,统一为:
+- 顶部 `## vX.Y.Z — YYYY-MM-DD`
+- 一行 bold 中文摘要
+- 子段 ### 新增 / 修复 / 变更 / 文档 / 调整 / 优化
+- 每条 `- **加粗开头**(commit xxx): detail`
+
+历史 v0.1.0 → v0.5.7 共 57 个版本全部重写为此格式;commit hash / release
+date / 实质改动描述保留(信息零丢失)。
+
+后续由 .claude/hooks/validate-changelog-format.js(参见 Task 12)强制
+新条目遵守本格式。
+EOF
+)"
+```
+
+---
+
+## Task 12: 添加 changelog 格式验证 hook(用户 mid-turn 要求"以后不要再发生")
+
+> **2026-09-30 mid-turn 用户要求**:确保 changelog 格式问题以后不要再发生。
+
+**Files:**
+- Create: `.claude/hooks/validate-changelog-format.js`(参考 `.claude/hooks/validate-rule-json.js` 模式)
+- Modify: `.claude/settings.json`(注册 hook 到 PostToolUse on `app/src/main/assets/user-changelog.md`)
+
+- [ ] **Step 12.1: 参考 `validate-rule-json.js` 现有 hook 写法**
+
+```bash
+cd /d/GitHub/IceSpiritAI_Vision
+cat .claude/hooks/validate-rule-json.js | head -80
+```
+
+Expected: 看到 hook 函数签名(她读 stdin JSON,字段是 `tool_name` + `tool_input` + 校验失败 exit 2)
+
+- [ ] **Step 12.2: 写 validate-changelog-format.js**
+
+在 `.claude/hooks/validate-changelog-format.js` 写:
+
+```javascript
+#!/usr/bin/env node
+/**
+ * PostToolUse hook: 验证 app/src/main/assets/user-changelog.md 写入后格式合规
+ *
+ * 标准格式(锁定于 2026-09-30 commit):
+ *   ## vX.Y.Z — YYYY-MM-DD           (每个版本的顶层分隔符)
+ *   **一行中文摘要。**               (紧跟标题的 bold 摘要)
+ *   ### 新增 / 修复 / 变更 / 文档 / 调整 / 优化   (子段标题)
+ *   - **加粗开头**[(commit xxx)]:detail   (条目)
+ *
+ * 校验:
+ *   - 文件首行必须是 `# 用户更新日志`
+ *   - 每个版本必须符合 `## vX.Y.Z — YYYY-MM-DD`
+ *   - 每个版本的 bold 摘要行存在
+ *   - 每个版本的子段标题只能是允许列表
+ *   - 每个条目必须以 `- **` 开头
+ *
+ * 校验失败: exit 2 + stderr 解释
+ */
+
+const VALID_SECTIONS = ['新增', '修复', '变更', '文档', '调整', '优化'];
+const TOP_HEADER_REGEX = /^## v\d+\.\d+\.\d+ — \d{4}-\d{2}-\d{2}$/;
+const SUMMARY_REGEX = /^\*\*[^*]+\*\*\.?\s*$/;
+const ENTRY_REGEX = /^-\s+\*\*[^*]+\*\*(\s*\(commit [0-9a-f]{7}(?:[0-9a-f]+)?\))?\s*[::]\s*.+$/;
+const SECTION_REGEX = /^### (.+)$/;
+
+let input = '';
+process.stdin.on('data', d => input += d);
+process.stdin.on('end', () => {
+    try {
+        const event = JSON.parse(input);
+        if (event.tool_name !== 'Edit' && event.tool_name !== 'Write' && event.tool_name !== 'MultiEdit') {
+            process.exit(0);
+        }
+        const filePath = event.tool_input?.file_path || event.tool_input?.filePath || '';
+        if (!filePath.endsWith('user-changelog.md')) {
+            process.exit(0);
+        }
+        const fs = require('fs');
+        if (!fs.existsSync(filePath)) {
+            process.exit(0);
+        }
+        const content = fs.readFileSync(filePath, 'utf8');
+        const lines = content.split('\n');
+        const errors = [];
+
+        // 顶层:首行必须是 # 用户更新日志
+        if (!lines[0].startsWith('# 用户更新日志')) {
+            errors.push(`第 1 行必须是「# 用户更新日志」(实际:「${lines[0]}」)`);
+        }
+
+        let inVersion = false;
+        let inSection = false;
+        let sawSummary = false;
+        let sawAnyEntry = false;
+
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i];
+            if (line.startsWith('## v')) {
+                // 进入新版本
+                if (inVersion && inSection && !sawAnyEntry) {
+                    errors.push(`第 ${i} 行之前:版本结束但未有任何 - 条目`);
+                }
+                if (!TOP_HEADER_REGEX.test(line)) {
+                    errors.push(`第 ${i} 行版本标题格式错误(实际: ${line});必须是「## vX.Y.Z — YYYY-MM-DD」`);
+                }
+                inVersion = true;
+                inSection = false;
+                sawSummary = false;
+                sawAnyEntry = false;
+                continue;
+            }
+            if (!inVersion) continue;
+            if (!sawSummary) {
+                if (line.trim() === '' || line.startsWith('#')) continue;
+                if (!SUMMARY_REGEX.test(line.trim())) {
+                    errors.push(`第 ${i} 行:版本摘要行必须是「**bold 摘要。**」格式(实际: ${line.trim()})`);
+                }
+                sawSummary = true;
+                continue;
+            }
+            if (line.trim() === '') continue;
+            const sec = SECTION_REGEX.exec(line);
+            if (sec) {
+                if (!VALID_SECTIONS.includes(sec[1])) {
+                    errors.push(`第 ${i} 行:子段标题「${sec[1]}」不在允许列表 (${VALID_SECTIONS.join(' / ')})`);
+                }
+                inSection = true;
+                sawAnyEntry = false;
+                continue;
+            }
+            if (line.startsWith('- ')) {
+                if (!inSection) {
+                    errors.push(`第 ${i} 行:条目「- ...」前必须有 ### 子段标题 (实际行: ${line})`);
+                }
+                if (!ENTRY_REGEX.test(line)) {
+                    errors.push(`第 ${i} 行:条目格式错误(实际: ${line});必须是「- **加粗开头**[(commit xxx)]:detail」`);
+                }
+                sawAnyEntry = true;
+                continue;
+            }
+            if (line.startsWith('#')) {
+                errors.push(`第 ${i} 行:跳过子段标题(应为 ### 而非 #);错误层级`);
+            }
+        }
+
+        if (errors.length > 0) {
+            process.stderr.write(`user-changelog.md 格式校验失败(${errors.length} 项):\n` + errors.join('\n') + '\n');
+            process.exit(2);
+        }
+        process.exit(0);
+    } catch (e) {
+        // hook 自身不阻断,避免误伤
+        process.exit(0);
+    }
+});
+```
+
+- [ ] **Step 12.3: 本地 dry-run**
+
+```bash
+cd /d/GitHub/IceSpiritAI_Vision
+echo '{"tool_name":"Edit","tool_input":{"file_path":"app/src/main/assets/user-changelog.md"}}' | node .claude/hooks/validate-changelog-format.js
+echo "Exit: $?"
+```
+
+Expected: 如果当前 user-changelog.md 通过校验(本批 Task 10 + 11 完成后),exit 0;否则 exit 2 + 列出问题
+
+- [ ] **Step 12.4: 注册 hook 到 `.claude/settings.json`**
+
+打开 `.claude/settings.json`,在 PostToolUse hook 列表里加:
+
+```json
+{
+  "matcher": "Edit|Write|MultiEdit",
+  "hooks": [
+    {
+      "type": "command",
+      "command": "node .claude/hooks/validate-changelog-format.js"
+    }
+  ]
+}
+```
+
+(若已有 PostToolUse 列表,合并进去;若没有,新加数组项)
+
+- [ ] **Step 12.5: 跑一次 Edit 看 hook 触发**
+
+```bash
+cd /d/GitHub/IceSpiritAI_Vision
+# 用 git 拿一个未变动的样例
+git checkout HEAD -- app/src/main/assets/user-changelog.md
+# 用 sed 在 user-changelog.md 顶部加一行错误格式(手动模拟未来新条目违反格式)
+sed -i '1a INVALID LINE WITHOUT PROPER FORMAT' app/src/main/assets/user-changelog.md
+# 触发 Edit(模拟用户编辑)
+echo "---"
+# 还原
+git checkout app/src/main/assets/user-changelog.md
+```
+
+(注:hook 在 Edit tool 触发时跑,这里是手动 sed 模拟。真正触发要看 Claude Code 后续调用 Edit。)
+
+- [ ] **Step 12.6: Commit**
+
+```bash
+cd /d/GitHub/IceSpiritAI_Vision
+git add .claude/hooks/validate-changelog-format.js .claude/settings.json
+git diff --cached | grep -i "Co-Authored-By" || echo "OK: no trailer"
+git -c user.name="AlexMultiAgent" -c user.email="AlexMultiAgent@users.noreply.github.com" commit -m "$(cat <<'EOF'
+chore(hooks): 加 validate-changelog-format.js 强制 user-changelog.md 格式
+
+主君 2026-09-30 mid-turn 要求:确保 changelog 格式以后不要再发生。
+
+PostToolUse hook 校验(Edit/Write/MultiEdit on user-changelog.md 时):
+- 顶层:## vX.Y.Z — YYYY-MM-DD 格式
+- 摘要:**bold 摘要。** 格式
+- 子段标题:### 新增 / 修复 / 变更 / 文档 / 调整 / 优化 (允许列表)
+- 条目:- **加粗开头**[(commit xxx)]:detail 格式
+
+校验失败 exit 2 + stderr 列出所有错误位置 + 行内容;Claude Code 会
+捕获 stderr 提示用户修复。
+
+参考 .claude/hooks/validate-rule-json.js 现有 hook 模式。
+EOF
+)"
+```
 
 ---
 
