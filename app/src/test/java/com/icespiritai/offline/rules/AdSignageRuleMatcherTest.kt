@@ -4712,4 +4712,54 @@ class AdSignageRuleMatcherTest {
         val hits = AdSignageRuleMatcher(listOf(rule)).scan("男性优先招聘,形象气质佳岗位,限女生急招")
         assertEquals(3, hits.size)
     }
+
+    // === 2026-09-30 改造:fixture #113/#86/#55/#13/#23/#11/#15 规则调整测试 ===
+    // 关联:docs/superpowers/specs/2026-09-30-ad-rule-fp-gates-and-keywords-design.md
+
+    @Test fun `113 政府公益图书惠民展 不应命中 national_political_symbol_misuse`() {
+        // Fixture #113 真实文本:OCR 应检出「庆国庆」「国庆图书惠民」
+        // 改造前:命中(规则无 gate)
+        // 改造后:不命中(categoryAnchorsAbsent 含「政府/新闻出版/公益/惠民/图书惠民」等)
+        val rule = AdSignageRule(
+            id = "ad_signage_signage_national_political_symbol_misuse",
+            category = "signage",
+            regulation = "《广告法》第九条第(一)项 + 第(七)项 + 第五十七条",
+            keywords = listOf("庆国庆", "天安门", "盛世华诞", "建国周年"),
+            categoryAnchorsAbsent = listOf(
+                "政府", "新闻出版", "出版局", "出版社", "中共", "党办", "党政",
+                "宣传部", "主办", "政府主办", "公益", "惠民", "图书惠民",
+                "书展", "图书展", "书市", "图书馆", "书店", "纪念馆", "博物馆",
+                "文联", "作协", "书协", "美协", "教育局", "学校", "校园", "师生"
+            ),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("哈尔滨新闻出版局 国庆图书惠民公益展 庆国庆")
+        assertTrue(
+            "#113 政府公益展不应被识别为国家标志商业滥用",
+            hits.none { it.ruleId == "ad_signage_signage_national_political_symbol_misuse" }
+        )
+    }
+
+    @Test fun `127 人民咖啡馆国庆立牌 应命中 national_political_symbol_misuse gate 不阻断商业`() {
+        // Fixture #127 真实文本:商业品牌「人民咖啡馆」借天安门元素
+        // 改造前后都应命中(「人民咖啡馆」不在 absent 列表中)
+        val rule = AdSignageRule(
+            id = "ad_signage_signage_national_political_symbol_misuse",
+            category = "signage",
+            regulation = "《广告法》第九条第(一)项 + 第(七)项 + 第五十七条",
+            keywords = listOf("天安门", "国庆立牌", "庆国庆"),
+            categoryAnchorsAbsent = listOf(
+                "政府", "新闻出版", "出版局", "出版社", "中共", "党办", "党政",
+                "宣传部", "主办", "政府主办", "公益", "惠民", "图书惠民",
+                "书展", "图书展", "书市", "图书馆", "书店", "纪念馆", "博物馆",
+                "文联", "作协", "书协", "美协", "教育局", "学校", "校园", "师生"
+            ),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("人民咖啡馆 天安门 国庆立牌 庆国庆")
+        assertTrue(
+            "#127 商业品牌借国家标志应继续命中",
+            hits.any { it.ruleId == "ad_signage_signage_national_political_symbol_misuse" }
+        )
+    }
 }
