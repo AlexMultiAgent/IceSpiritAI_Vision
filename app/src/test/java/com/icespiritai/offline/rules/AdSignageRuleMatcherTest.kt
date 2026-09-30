@@ -4712,4 +4712,315 @@ class AdSignageRuleMatcherTest {
         val hits = AdSignageRuleMatcher(listOf(rule)).scan("男性优先招聘,形象气质佳岗位,限女生急招")
         assertEquals(3, hits.size)
     }
+
+    // === 2026-09-30 改造:fixture #113/#86/#55/#13/#23/#11/#15 规则调整测试 ===
+    // 关联:docs/superpowers/specs/2026-09-30-ad-rule-fp-gates-and-keywords-design.md
+
+    @Test fun `113 政府公益图书惠民展 不应命中 national_political_symbol_misuse`() {
+        // Fixture #113 真实文本:OCR 应检出「庆国庆」「国庆图书惠民」
+        // 改造前:命中(规则无 gate)
+        // 改造后:不命中(categoryAnchorsAbsent 含「政府/新闻出版/公益/惠民/图书惠民」等)
+        val rule = AdSignageRule(
+            id = "ad_signage_signage_national_political_symbol_misuse",
+            category = "signage",
+            regulation = "《广告法》第九条第(一)项 + 第(七)项 + 第五十七条",
+            keywords = listOf("庆国庆", "天安门", "盛世华诞", "建国周年"),
+            categoryAnchorsAbsent = listOf(
+                "政府", "新闻出版", "出版局", "出版社", "中共", "党办", "党政",
+                "宣传部", "主办", "政府主办", "公益", "惠民", "图书惠民",
+                "书展", "图书展", "书市", "图书馆", "书店", "纪念馆", "博物馆",
+                "文联", "作协", "书协", "美协", "教育局", "学校", "校园", "师生"
+            ),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("哈尔滨新闻出版局 国庆图书惠民公益展 庆国庆")
+        assertTrue(
+            "#113 政府公益展不应被识别为国家标志商业滥用",
+            hits.none { it.ruleId == "ad_signage_signage_national_political_symbol_misuse" }
+        )
+    }
+
+    @Test fun `127 人民咖啡馆国庆立牌 应命中 national_political_symbol_misuse gate 不阻断商业`() {
+        // Fixture #127 真实文本:商业品牌「人民咖啡馆」借天安门元素
+        // 改造前后都应命中(「人民咖啡馆」不在 absent 列表中)
+        val rule = AdSignageRule(
+            id = "ad_signage_signage_national_political_symbol_misuse",
+            category = "signage",
+            regulation = "《广告法》第九条第(一)项 + 第(七)项 + 第五十七条",
+            keywords = listOf("天安门", "国庆立牌", "庆国庆"),
+            categoryAnchorsAbsent = listOf(
+                "政府", "新闻出版", "出版局", "出版社", "中共", "党办", "党政",
+                "宣传部", "主办", "政府主办", "公益", "惠民", "图书惠民",
+                "书展", "图书展", "书市", "图书馆", "书店", "纪念馆", "博物馆",
+                "文联", "作协", "书协", "美协", "教育局", "学校", "校园", "师生"
+            ),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("人民咖啡馆 天安门 国庆立牌 庆国庆")
+        assertTrue(
+            "#127 商业品牌借国家标志应继续命中",
+            hits.any { it.ruleId == "ad_signage_signage_national_political_symbol_misuse" }
+        )
+    }
+
+    @Test fun `86 烟酒零售门头 不应命中 alcohol_drink_scenario`() {
+        // Fixture #86 真实文本:OCR 应检出「酒类」「白酒」,但属零售类目标识
+        // 改造前:命中(规则无 gate)
+        // 改造后:不命中(categoryAnchorsAbsent 含「零售/门头/招牌/烟酒行」等)
+        val rule = AdSignageRule(
+            id = "ad_signage_signage_alcohol_drink_scenario",
+            category = "restricted",
+            regulation = "《广告法》第二十三条 + 第五十七条",
+            keywords = listOf("白酒", "茅台", "五粮液", "洋河", "剑南春", "泸州老窖", "汾酒",
+                "酒类", "酒精度", "纯粮", "闻香", "清爽顺滑", "商务宴请", "陈酿"),
+            categoryAnchorsAbsent = listOf(
+                "零售", "批发", "门店", "门头", "招牌", "标识", "经销", "经销商",
+                "代理", "加盟店", "连锁店", "总店", "分店", "商行", "烟酒行",
+                "名酒行", "便利店", "超市", "酒行", "酒庄", "直营", "加盟",
+                "专营", "专卖店", "烟酒专卖"
+            ),
+            severity = Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("兰泽烟酒零售门头 白酒 酒类销售 招牌")
+        assertTrue(
+            "#86 烟酒零售门头不应被识别为酒类广告违规",
+            hits.none { it.ruleId == "ad_signage_signage_alcohol_drink_scenario" }
+        )
+    }
+
+    @Test fun `18 白酒电商页闻香 应命中 alcohol_drink_scenario gate 不阻断饮用场景`() {
+        // Fixture #18 真实文本:电商页文案「闻香 天然桦树清香 与酒香交织 入口」
+        // 改造前后都应命中(「电商页」「闻香」「入口」不在 absent 列表)
+        val rule = AdSignageRule(
+            id = "ad_signage_signage_alcohol_drink_scenario",
+            category = "restricted",
+            regulation = "《广告法》第二十三条 + 第五十七条",
+            keywords = listOf("白酒", "闻香", "清爽顺滑"),
+            categoryAnchorsAbsent = listOf(
+                "零售", "批发", "门店", "门头", "招牌", "标识", "经销", "经销商",
+                "代理", "加盟店", "连锁店", "总店", "分店", "商行", "烟酒行",
+                "名酒行", "便利店", "超市", "酒行", "酒庄", "直营", "加盟",
+                "专营", "专卖店", "烟酒专卖"
+            ),
+            severity = Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("白酒 闻香 天然桦树清香 与酒香交织 入口 层次丰富 清爽顺滑 淘宝")
+        assertTrue(
+            "#18 白酒电商页应继续命中",
+            hits.any { it.ruleId == "ad_signage_signage_alcohol_drink_scenario" }
+        )
+    }
+
+    @Test fun `55 前列腺养护 命中 food_disease_target`() {
+        // Fixture #55 京东京造番茄红素沙棘果油
+        // 改造前:miss(规则 keyword 仅有「前列腺患者」,不含「前列腺养护」「护前列腺炎」)
+        // 改造后:命中(新增 keyword 7 个)
+        val rule = AdSignageRule(
+            id = "ad_signage_signage_food_disease_target",
+            category = "signage",
+            regulation = "《广告法》第十七条 + 《保健食品广告审查暂行规定》",
+            keywords = listOf(
+                "糖尿病患者", "高血压患者", "癌症病人", "肿瘤病人", "冠心病患者",
+                "心脑血管病人", "关节炎患者", "骨质疏松患者", "便秘患者", "痔疮患者",
+                "前列腺患者", "男性健康", "妇科疾病", "妇科炎症", "白癜风", "牛皮癣",
+                "抗癌", "防癌", "抗癌防癌",
+                // v21 +7:
+                "前列腺养护", "护前列腺炎", "尿频尿急", "男性生活伴侣",
+                "前列腺健康", "前列腺保健", "泌尿健康"
+            ),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("京东京造番茄红素沙棘果油 前列腺养护 护前列腺炎 尿频尿急 男性生活伴侣 增强免疫力")
+        assertTrue(
+            "#55 前列腺养护应命中 food_disease_target",
+            hits.any { it.ruleId == "ad_signage_signage_food_disease_target" }
+        )
+    }
+
+    @Test fun `13 豌豆多且饱满 命中 seed_yield_guarantee`() {
+        // Fixture #13 v8 时 weak(关键词薄),v20 仍未扩
+        // 改造前:miss(规则无「饱满」「多且饱满」「籽粒饱满」「油亮饱满」)
+        // 改造后:命中
+        val rule = AdSignageRule(
+            id = "ad_signage_art27_seed_yield_guarantee",
+            category = "agricultural",
+            regulation = "《广告法》第二十七条 + 《种子法》第三十一条 + 第五十八条",
+            keywords = listOf(
+                "必增产", "保证增产", "确保增产", "承诺增产", "产量保证", "产量承诺",
+                "高产", "高产保证", "丰产", "稳产", "保证丰产", "保证稳产",
+                "效益保证", "效益承诺", "增产达", "亩产保证", "科学上无法验证",
+                "干鲜两用", "抗病", "早熟", "超高产", "超高产王",
+                "南北方栽培", "南北方种植", "全国适宜",
+                // v21 +10:
+                "饱满", "多且饱满", "籽粒饱满", "油亮饱满", "颗粒饱满",
+                "饱满度高", "瓜型好", "心小肉厚", "新改良", "改良"
+            ),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("豌豆种子 多且饱满 高产 4 大豆种 籽粒饱满 油亮饱满")
+        assertTrue(
+            "#13 豌豆饱满应命中 seed_yield_guarantee",
+            hits.any { it.ruleId == "ad_signage_art27_seed_yield_guarantee" }
+        )
+    }
+
+    @Test fun `23 黑旋风冬瓜 命中 seed_yield_guarantee`() {
+        // Fixture #23 v8 时 weak
+        // 改造前:仅「高产」可触发;「瓜型好」「心小肉厚」「新改良」miss
+        // 改造后:命中
+        val rule = AdSignageRule(
+            id = "ad_signage_art27_seed_yield_guarantee",
+            category = "agricultural",
+            regulation = "《广告法》第二十七条 + 《种子法》第三十一条 + 第五十八条",
+            keywords = listOf(
+                "必增产", "保证增产", "确保增产", "承诺增产", "产量保证", "产量承诺",
+                "高产", "高产保证", "丰产", "稳产", "保证丰产", "保证稳产",
+                "效益保证", "效益承诺", "增产达", "亩产保证", "科学上无法验证",
+                "干鲜两用", "抗病", "早熟", "超高产", "超高产王",
+                "南北方栽培", "南北方种植", "全国适宜",
+                // v21 +10:
+                "饱满", "多且饱满", "籽粒饱满", "油亮饱满", "颗粒饱满",
+                "饱满度高", "瓜型好", "心小肉厚", "新改良", "改良"
+            ),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("黑旋风冬瓜 瓜型好 心小肉厚 高产 新改良")
+        assertTrue(
+            "#23 黑旋风冬瓜形态描述应命中 seed_yield_guarantee",
+            hits.any { it.ruleId == "ad_signage_art27_seed_yield_guarantee" }
+        )
+    }
+
+    @Test fun `11 公安专项 命中 test_authority`() {
+        // Fixture #11 v8 时未覆盖,v20 实测 4 keyword 完全不覆盖公安类
+        // 改造前:miss
+        // 改造后:命中
+        val rule = AdSignageRule(
+            id = "ad_signage_edu_art24_test_authority",
+            category = "education",
+            regulation = "《广告法》第二十四条 + 第五十八条",
+            keywords = listOf(
+                "考试命题人", "阅卷老师", "考官亲自授课", "教育部推荐",
+                // v21 +11:
+                "公安专项", "公安类", "警校", "警员培训", "公安岗",
+                "公安系统", "警察考试", "警考培训", "政法干警", "公安联考", "公安院校"
+            ),
+            severity = Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("公安专项 秋考刷题班 高效提分 警员培训 公安系统")
+        assertTrue(
+            "#11 公安专项应命中 test_authority",
+            hits.any { it.ruleId == "ad_signage_edu_art24_test_authority" }
+        )
+    }
+
+    @Test fun `15 国潮茶文化 命中 re_art26_planned_facility`() {
+        // Fixture #15 银泰集茶巷 OCR 召回「主题商街」「国潮茶文化」「茶巷」
+        // 改造前:`re_art26_planned_facility` miss(8 keyword 不含这些);
+        //         `art26_re_prm` 命中(已含「财富启航/主题商街/银泰商圈」)
+        // 改造后:`re_art26_planned_facility` 也命中(双规则命中,total 命中数提升)
+        val rule = AdSignageRule(
+            id = "ad_signage_re_art26_planned_facility",
+            category = "realestate",
+            regulation = "《广告法》第二十六条第(四)项 + 第五十八条 + 《房地产广告发布规定》",
+            keywords = listOf(
+                "地铁直达", "学区确定", "规划学校", "规划医院", "未来 X 号线",
+                "智慧健康", "体检区", "健康体检区",
+                // v21 +9:
+                "主题商街", "国潮茶文化", "茶巷", "商街", "国潮",
+                "国潮街区", "茶文化", "国潮主题", "商圈核心"
+            ),
+            severity = Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("银泰集茶巷 品牌加冕 财富实力启航 主题商街 国潮茶文化")
+        assertTrue(
+            "#15 国潮茶文化应命中 re_art26_planned_facility",
+            hits.any { it.ruleId == "ad_signage_re_art26_planned_facility" }
+        )
+    }
+
+    // === 2026-09-30 mid-turn 用户要求:通用化 keyword,让类似违规广告可类推识别 ===
+    // 4 组通用性测试覆盖 organ/symptom/形态/品质/公职/商业街区 6 类典型变体
+
+    @Test fun `通用性_乳腺结节食品广告应命中 food_disease_target`() {
+        val rule = AdSignageRule(
+            id = "ad_signage_signage_food_disease_target",
+            category = "signage",
+            regulation = "《广告法》第十七条 + 第五十八条",
+            keywords = listOf(
+                "糖尿病患者", "高血压患者", "前列腺患者", "男性健康",
+                // v21 +13 generic:
+                "乳腺", "乳腺结节", "乳腺增生", "子宫肌瘤", "卵巢囊肿",
+                "宫颈炎", "盆腔炎", "腰椎间盘突出", "痛经", "月经不调",
+                "失眠多梦", "湿疹"
+            ),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("某保健品 乳腺结节 妇科炎症 改善月经不调")
+        assertTrue(
+            "通用 organ/symptom claim 应命中",
+            hits.any { it.ruleId == "ad_signage_signage_food_disease_target" }
+        )
+    }
+
+    @Test fun `通用性_出油率高含油量种子广告应命中 seed_yield_guarantee`() {
+        val rule = AdSignageRule(
+            id = "ad_signage_art27_seed_yield_guarantee",
+            category = "agricultural",
+            regulation = "《广告法》第二十七条 + 第五十八条",
+            keywords = listOf(
+                "高产", "超高产", "干鲜两用", "抗病",
+                // v21 +12 generic:
+                "颗粒大", "长势好", "出苗率高", "抗旱", "抗寒",
+                "抗倒伏", "抗虫", "出油率高", "千粒重",
+                "含油量高", "蛋白质含量", "特级"
+            ),
+            severity = Severity.Violation,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("东北大豆 出油率高 含油量高 千粒重 特级")
+        assertTrue(
+            "通用 形态/品质 claim 应命中",
+            hits.any { it.ruleId == "ad_signage_art27_seed_yield_guarantee" }
+        )
+    }
+
+    @Test fun `通用性_公考公务员定向选调广告应命中 test_authority`() {
+        val rule = AdSignageRule(
+            id = "ad_signage_edu_art24_test_authority",
+            category = "education",
+            regulation = "《广告法》第二十四条第(二)项 + 第五十八条",
+            keywords = listOf(
+                "考试命题人", "教育部推荐", "公安系统",
+                // v21 +10 generic:
+                "公务员", "选调生", "事业编", "定向选调", "紧缺选调",
+                "狱警", "司法行政", "检察官", "法院法官", "三支一扶"
+            ),
+            severity = Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("公务员 选调生 定向选调 笔试培训")
+        assertTrue(
+            "通用 公职/司法教育应命中",
+            hits.any { it.ruleId == "ad_signage_edu_art24_test_authority" }
+        )
+    }
+
+    @Test fun `通用性_总部基地商业中心房地产广告应命中 planned_facility`() {
+        val rule = AdSignageRule(
+            id = "ad_signage_re_art26_planned_facility",
+            category = "realestate",
+            regulation = "《广告法》第二十六条第(四)项 + 第五十八条 + 《房地产广告发布规定》",
+            keywords = listOf(
+                "地铁直达", "规划学校", "智慧健康",
+                // v21 +8 generic:
+                "创意街区", "文旅街区", "网红街区", "总部基地",
+                "商业中心", "步行街", "文化街", "地标商业"
+            ),
+            severity = Severity.Warning,
+        )
+        val hits = AdSignageRuleMatcher(listOf(rule)).scan("总部基地 商业中心 创意街区 投资首选")
+        assertTrue(
+            "通用 商业/文旅街区应命中",
+            hits.any { it.ruleId == "ad_signage_re_art26_planned_facility" }
+        )
+    }
 }
