@@ -1,5 +1,9 @@
 # 用户更新日志
 
+## v0.5.12 — 2026-10-02
+
+v0.5.3 - v0.5.9 全部压缩为 brief reference,主君原话:"0.5.2 后的更新记录参见 0.5.2 及之前的更新记录"。
+
 ## v0.5.11 — 2026-10-01
 
 调整 v0.5.10 entry 为 brief 风格(reference 历史记录而非重复内容)。
@@ -14,129 +18,31 @@
 
 ## v0.5.9 — 2026-09-30
 
-changelog 格式二次修复 —— 含 ASCII `()` 与 「」 的 entries head 正确切分。 主君 2026-09-30 反馈前次 unify_changelog.py 漏 track ASCII 括号与角括号,致 v0.4.0 → v0.5.7 中含 `(图库 / 眼镜 / 拍照)` 「报纸」等内容的 entries 被错切到 mid-line 位置(例:`三个底部按钮(图库: 眼镜 / 拍照)...`)。重写脚本,quote tracking 扩到 7 种容器(backtick / ASCII `"` / ASCII `'` / 中文 `"` / 「」 / `()` ASCII + full-width / `【】` ASCII + full-width),保证 head/tail 切分位置正确。共 22 个 entry 重写,v0.5.2+ 全部统一。版本号 bump 89 因 release-only changelog 修复需要新 APK(同 versionCode 不重发避免 cert-pin 失配 + in-app update 不触发)。
-
-### 修复
-
-- 修复 changelog 格式 head/tail 切错:`unify_changelog.py` quote tracking 加 ASCII `()` + 「」 跟踪,22 个含括号内容的 entry 重新格式化(从 `head: 错位切到 mid-line` 改为 `正确 head(commit xxx): 正确 tail`)
-- 修复前次错误归一遗漏:v0.5.2 / v0.5.3 / v0.5.4 / v0.5.5 / v0.5.6 / v0.5.7 6 个版本的 entries 现在 head/tail 位置 100% 正确(已 ChangelogScreenTest + validate-changelog-format.js hook 双重校验)
-
-### 变更
-
-- 规则库版本 v22 → v23:`app/src/main/assets/rules/ad_signage_rules.json` 顶部 `version` 字段 bump(本次仅 changelog 修复,规则内容无变化)
-- `AssetRuleLoaderTest` version pin 22 → 23 (跟随 bump)
-- versionCode 88 → 89,versionName "0.5.8" → "0.5.9":`app/build.gradle.kts` 按 release prep 模板 bump
+详见 v0.5.2 等历史更新记录。
 
 ## v0.5.8 — 2026-09-30
 
-广告规则库 v22 — 误命中 gate 阻断 + 通用化 keyword 扩展。 4 张「参照样本」误命中已用 `categoryAnchorsAbsent` 反向 anchor 阻断政府/新闻出版/公益 (覆盖 #113) + 零售/门头/烟酒行 (覆盖 #86);4 个规则扩 keyword 覆盖旧 weak case (#11 公安专项 / #13 豌豆饱满 / #15 国潮茶文化 / #23 黑旋风冬瓜 / #55 前列腺养护);同批每规则再扩 8-13 个 organ/symptom/形态/品质/公职/商业街区 类通用 keyword,让未来类似违规广告可类推识别。
-
-### 修复
-
-- 修复「参照样本」误命中(2 类规则)(commit 3b3f2bf + fcb8896):fixture #113 哈尔滨新闻出版局国庆图书惠民公益展 / #86 兰泽烟酒零售门头 各加 `categoryAnchorsAbsent` 反向 anchor (#113 = 28 个 政府/新闻出版/公益/教育/文艺 marker;#86 = 25 个 零售/门头/烟酒行 marker);`national_political_symbol_misuse` 与 `alcohol_drink_scenario` 两条规则改后 severity 不变,正向命中不阻断(测试 case 覆盖)
-
-### 新增
-
-- 新增 fixture #55 / #13 / #23 / #11 / #15 命中 keyword(commit 4ccf677 + a6352e1 + b7d09fa + 5e28912):`signage_food_disease_target` +7(前列腺养护 / 护前列腺炎 / 尿频尿急 / 男性生活伴侣 / 前列腺健康 / 前列腺保健 / 泌尿健康);`art27_seed_yield_guarantee` +10(饱满 / 多且饱满 / 籽粒饱满 / 油亮饱满 / 颗粒饱满 / 饱满度高 / 瓜型好 / 心小肉厚 / 新改良 / 改良);`edu_art24_test_authority` +11(公安专项 / 公安类 / 警校 / 警员培训 / 公安岗 / 公安系统 / 警察考试 / 警考培训 / 政法干警 / 公安联考 / 公安院校);`re_art26_planned_facility` +9(主题商街 / 国潮茶文化 / 茶巷 / 商街 / 国潮 / 国潮街区 / 茶文化 / 国潮主题 / 商圈核心)
-- 新增通用化 keyword 覆盖 organ/symptom/形态/品质/公职/商业街区(commit 802124e,同类违规广告类推):4 个规则各加 8-13 个通用 keyword,未来类似食品/医疗/种子/教育公职/地产商业 域违规广告可识别
-
-### 变更
-
-- 规则库版本 v20 → v21 → v22:`app/src/main/assets/rules/ad_signage_rules.json` 顶部 `version` 字段连续两次 bump(中间 4 个规则 +37 keyword,后 4 个 broad keyword +43 keyword,共 +80)
-- `违规案例/` fixture 同步(commit ad244f2):#68 德伦堡短保啤酒 + #100 哈药牌钙铁锌口服液 从 audit71/ 复制到 违规案例/(137 张,与 audit71 71 张 #67-#137 完全对齐)
-
-### 测试
-
-- `AdSignageRuleMatcherTest` 新增 12 组 case(2 + 2 + 1 + 1 + 1 + 1 + 4 通用 = 12): 命中/不命中双向覆盖 #113 / #127 / #86 / #18 / #55 / #13 / #23 / #11 / #15 / 通用 organ / 通用 形态 / 通用 公职 / 通用 商业街区
-- `testDebugUnitTest` 全量回归 PASS
-
-### 文档
-
-- `docs/superpowers/specs/2026-09-30-ad-rule-fp-gates-and-keywords-design.md`(设计 spec,本批实施 counterpart)
-- `docs/superpowers/plans/2026-09-30-ad-rule-fp-gates-and-keywords.md`(实施 plan,8 + 4 通用 + 2 文档化 = 14 task)
-- `user-changelog.md` 顶部加本 v0.5.8 条目(下次更新应继续此格式,详见 `validate-changelog-format.js` hook)
+详见 v0.5.2 等历史更新记录。
 
 ## v0.5.7 — 2026-09-30
 
-食品标签规则库净化 + JSON escape 行为加固。 3 条 food_label 规则清掉跨域引用的《食品安全法实施条例》(属 enforcement procedural,不在食品标签 KB scope;改用 parent-law《食品安全法 §125 第一款》作为处罚条款);配套 `load_realAssets_knownFoodLabelAdLawCrossCites` 测试从 v0.5.6 一直 Assume-skip 状态转硬断言 GREEN,domain-wide cross-cite invariant pin 真正生效。`LatestJsonGenerator.prettyPrint` 也加了一条 escape pin test,下次有人改 prettyPrint 而漏 ASCII 引号 escape(vision-latest.json parse 失败的 footgun)会立刻 fail。
-
-### 修复
-
-- 修复 food_label 3 条规则跨域引用《食品安全法实施条例》:`food_health_claim_unapproved`、`food_art7_health_function`、`food_art28_function_claim_unauthorized` 的 `regulation` + `lawText` 不再引《食品安全法实施条例 §68 / §38`(enforcement procedural,scope 外);换为《食品安全法 §125 第一款》(parent-law 处罚条款,适用所有食品的功能声称违规)。`keywords` / `severity` / `category` 不变,OCR 命中行为字节级一致
-- 修复 food_label 跨域引用测试永久 Assume-skip 问题(`FoodLabelRuleLoaderTest.load_realAssets_knownFoodLabelAdLawCrossCites`):v0.5.6 加的 domain-wide cross-cite regression pin 因 3 条规则未清处于 Assume-skip 状态;本版清完规则 + 移除 `Assume.assumeTrue` 块,test 转硬断言 GREEN,未来 drift 会立刻 catch
-
-### 变更
-
-- `LatestJsonGeneratorTest.kt` 新增 `buildLatestJson_pretty_escapesAndRoundTripsPathologicalChangelog` 测试,pin 住 bbc3e65 同源 footgun: pretty mode 下 ASCII 引号必须 escape 为 `\"`、embedded newline 必须 escape 为 `\n`、control char (< 0x20) 必须 escape 为 `\uXXXX`,parser 反解回原值无信息丢失。原 escape test 只覆盖 compact 模式;本条补 pretty 模式覆盖
-
-### 文档
-
-- `TtsEngineInstaller.FallbackReleaseInfo` KDoc 标注 `icespirit-tts-engine-v1.0.0` tag 当前在 Gitea 不存在 (HTTP 404),size/sha 仍是占位;附未来 dev 用 `sha256sum app/build/outputs/apk/release/icespirit-tts-engine.apk` + `ls -la` 回填的指令。不会影响用户行为,纯内部文档
+详见 v0.5.2 等历史更新记录。
 
 ## v0.5.6 — 2026-09-24
 
-6 个 P0 项一次性清完:跨域法规引用净化、TTS 引擎 fetch 真实化、发版流水线两道机械门控到位。 food_label 规则库 3 条跨域《广告法》引用 + 1 条已废止法规引用切到现行版本;TTS 引擎 APK 下载路径 stub(`gitea.example`)改成真实 Gitea fetch + FallbackReleaseInfo fallback;发版流水线加了 `versionCode → assembleRelease` 硬依赖 + `verifyGiteaAttachmentsAlive` ≥5min 持续 smoke 两道机械门控(v0.1.68 + v0.4.2 footgun 由 Gradle 强制拦截,不再靠 SKILL.md prose)。剩 3 条《食品安全法实施条例》跨域引用留给后续 cleanup,有回归 pin 测试守着。
-
-### 新增
-
-- 新增 verifyGiteaAttachmentsAlive Gradle task(commit bf39da8):`uploadVisionReleaseToGitea` 完成后自动跑 ≥5min 持续 smoke,每 30 秒轮询一次,要求连续 2 次 200 才放过;任何 404 throw GradleException;CI 用 `-PverifyGiteaAttachmentsAlive.skip=true` 跳过 —— v0.4.2 attachment-disappear footgun 从 prose-only 升级为机械门控
-- 新增 TtsEngineInstaller.fetchReleaseInfo 真实 fetch + FallbackReleaseInfo(commit 7814fa7 + 696a445 + 050009b):之前 stub 返回 `https://gitea.example/...` + sizeBytes=-1L + sha256=64 个 0,TTS engine APK pivot 路线实质未串;现在通过 `BuildConfig.UPDATE_JSON_URL_BASE` 真实 GET Gitea release attachment 拿 size + sha,IO 失败 / 非 200 / Throwable 走新加的 `FallbackReleaseInfo` companion(URL 是真实 Gitea endpoint,sha/size TODO 等首次 Gitea upload 后回填);网络调用包 `withContext(Dispatchers.IO)` 不阻塞 main thread
-- 新增 versionCode/assembleRelease 机械 gate(commit dcc1f71 + f69d73b):之前 v0.1.68 footgun —— bump versionCode 不重跑 assembleRelease 会让 upload 把新 JSON 写到旧 APK 上,客户端永远卡旧版 —— 只能靠 SKILL.md prose 提醒;现在 `uploadVisionReleaseToGitea.dependsOn("assembleRelease")` 是 Gradle 机械约束,自动 force rebuild,即使编辑者跳读 SKILL.md 也跑不掉
-
-### 修复
-
-- 修复 food_label 跨域法规引用(commit 4604137 + 7451bf2 + 0f33fdf + c611ee9):`food_nozero_add` 与 `food_art8_minor_unapproved` 的 `regulation` 字段去掉《广告法》引用,`lawText` 同步收紧;`food_gb13432_infant_breastmilk_substitute` 清掉已废止的《母乳代用品销售管理办法》(2017-12-13 卫计委令第17号废止) + 跨域《广告法 §20》,切到现行《食品安全法 §81》 + 食药监食监一〔2013〕214 号,`keywords` / `severity` / `category` 不变,OCR 命中行为字节级一致;新增 `FoodLabelRuleLoaderTest.load_realAssets_knownFoodLabelAdLawCrossCites` Assume-skip 回归 pin 测试,列出现存 3 条《食品安全法实施条例》跨域引用(`food_health_claim_unapproved` / `food_art7_health_function` / `food_art28_function_claim_unauthorized`),等后续 cleanup 移除后即可去掉 Assume 注释让测试转 GREEN
-- 修复 followup-tab-reset-initial-page memory 漂移(in-memory, no commit):memory 还写「NOT yet implemented / 待实现」,但 commit `7d5485c` (2026-08-29) 已 ship 3-state setTab 契约;CLAUDE.md 也早就改成「✅ 已实现」;memory 重写加上 `shippedIn: 7d5485c` + 4 个 file:line 锚点,避免未来 prompt 误触发「重新实现」
-
-### 变更
-
-- 文档同步(commit 42fc85d):发布流水线踩坑记录 + 发版 SKILL §「Critical ordering」 同步标注 `verifyGiteaAttachmentsAlive` 是 release pipeline 第 5 步(不再只是 manual curl smoke);versionCode/assembleRelease 现在是 mechanical gate,prose-only 提醒过时
+详见 v0.5.2 等历史更新记录。
 
 ## v0.5.5 — 2026-09-19
 
-Wi-Fi 取图更鲁棒,食品标签 tab 默认关闭。 眼镜走 Wi-Fi 取图时,如果第一次没读到 AP 信息会再试两轮,扫不到 SSID 也能用隐藏热点尝试连接;实在连不上会引导你去 Wi-Fi 设置,并提示眼镜 SSID,同时进入手动兜底状态持续重试。从本版起,新装或首次启动(配置缺失)时食品标签 tab 默认不显示,之前默认双 tab 全开,如果需要食品标签请去「设置 → 功能可见性」打开即可。
-
-### 新增
-
-- 新增 Wi-Fi 取图官方 AP 重试与手动兜底(commit 15d4436):眼镜走 Wi-Fi 取图时,0x36/0x39 命令后会重新读取 AP 信息最多两轮;扫描不到 SSID 时仍用 WifiNetworkSpecifier 尝试隐藏热点连接;如果还是连不上,显示「去 Wi-Fi 设置」入口和眼镜 SSID 提示,并进入手动兜底 —— 每 6 秒重发 0x36 与 transferAp,直到用户主动结束,期间眼镜 AP 持续保持
-- 新增食品标签默认隐藏(commit 151da7a):默认行为变化 —— 新装或首次启动(配置缺失)时,首页 tab 只显示「广告招牌」;以前默认双 tab 全开,现在需要食品标签的用户去「设置 → 功能可见性」手动开启
+详见 v0.5.2 等历史更新记录。
 
 ## v0.5.4 — 2026-09-19
 
-眼镜拍照、OCR 识别、TTS 朗读这条链路一次性补了多处边角问题。 眼镜端 640×480 的小图现在会先放大再送 OCR;糊或太暗的照片会自动重拍最多 3 张;长按识别图可放大识别某一块文字;拍照链路断了 1-2 秒就能重试;TTS 提示语音期间不会再被识别报告打断;固件升级结果现在常驻显示。
-
-### 新增
-
-- 新增长按图片放大识别局部区域(commit 9978879):在识别图上长按任意位置,App 把那块裁出来放大 3 倍后重新送 OCR,识别到的文字合并进现有报告;同一区域再次长按会提示「这块的文字已经识别过了」并跳过,避免重复命中(只比对 2 字以上的子串,避免单字被长句偶然吃掉)
-- 新增拍糊或拍暗自动重拍(commit 58682a9):每次眼镜出图后计算清晰度(拉普拉斯方差)与亮度,糊或暗就自动再拍最多 3 张、保留最清晰的一张;默认开启,设置页「拍糊自动重拍」可关闭,关闭后只拍一张
-- 新增拍照过程语音提示(commit 58682a9):重拍进度与最终建议通过 TTS 直接念到眼镜,手机同步 Toast 显示同一句话
-- 新增小图先放大再送 OCR(commit a8e244d):针对眼镜 AI 流只有 640×480 的现实,BitmapLoader 对最长边小于 960px 的图先放大到 1280 再送 OCR(相册大图零影响),约能多认 9% 的字
-- 新增提示语音播完后再播判读结果(commit ddedabf):播放「正在识别」之类的提示语音期间,识别报告改为排队等待,不再打断提示;新提示会替换旧排队,stop/release 会清空排队
-
-### 修复
-
-- 修复拍照流程不再卡在「眼镜已就绪」(commit 0ad7b8a):之前连接阶段异常导致 capture() 流水线没起来时,Ready 界面无超时也无按钮,只能杀 App 重来;现在变成可重试的 Failed,Ready 分支显示「正在通过眼镜拍照」进度,并提供「关闭」入口(仍会发取消指令)。同时重画了眼镜按钮图标,24dp 下更像眼镜而非无穷符号
-- 修复重拍流程被旧的拍照成功帧卡死的问题(commit 7223f91):连续重拍时不再被旧的 0x51 SUCCESS 帧在队列头自旋阻塞;重拍前等 800 毫秒让固件收尾,若仍先收到旧 SUCCESS 则退避重发拍照请求
-- 修复重拍张数播报易读错的措辞(commit 7223f91):把「2/3」改为「第 2 张,共 3 张」,避免 TTS 念成「三分之二」造成误解
-- 修复链路断开时立刻结束补洞(commit a9be423):之前传输中途链路掉线后,补洞循环还会对着死链路空转约 50 秒(40 次写超时,每次等满 2 秒),用户看到「补传缺块中」停了 50 秒才看到失败;现在首次写被拒即中止整批并明确提示「蓝牙连接已断开请重试」,1-2 秒内弹出可重试的失败
-- 修复两副眼镜场景下不再误判「连接已断开」(commit c5e08e4):当用户有两副眼镜、state 记录的地址与实际链路不匹配时,旧逻辑按地址比对失败 → 每次都报「蓝牙连接已断开」(链路其实 Connected,MTU=517);现在遇到这种「链路健康但指向另一副」的情况,会重新指向实际链路并继续,不再误导性地失败
-- 修复固件升级结果常驻显示(commit 7b335d9):之前升级成功后只显示在对话框里,关闭对话框后即便跑完了也静默;App 重启后连状态都没了。现在升级进入 Success/Failed 时用设置页 snackbar 即时提示,「检查固件更新」一行常驻显示「升级完成:旧 → 新 / 升级失败:原因」,固件版本持久化到 GlassesDeviceStore,App 重启后冷启动直接显示上次读到的版本
+详见 v0.5.2 等历史更新记录。
 
 ## v0.5.3 — 2026-09-17
 
-眼镜硬件能力自动识别了,固件升级也不再走到一半卡死。 不同眼镜走的传图路线不一样,以前要用户自己试 FTP / Wi-Fi AP / P2P 哪条通;现在 App 主动问眼镜支持哪种,自动选定。固件升级链路也补全了关键一步 —— 升级前明确告诉你眼镜蓝牙共享还没开,而不是默默失败让你猜。Wi-Fi 取图不通时多了一条诊断路径,卡在 AP 协商还是 FTP 传输能直接告诉你。
-
-### 新增
-
-- 新增读取眼镜设备信息自动判定传图路线(commit 63919e9):App 主动读眼镜存储/文件数/FTP/P2P/AP 账号六个字段,按硬件能力自动选 FTP / Wi-Fi AP / P2P 之一,不再需要用户试错
-- 新增 Wi-Fi 取图诊断(commit 9276d7b):走 0x36/0x39 命令 + SSID 扫描 + WifiNetworkSpecifier + FTP 取图计时,卡在哪一步(AP 协商 vs FTP 传输)能精确定位,以前只能盲等
-- 新增固件升级前主动让眼镜启用蓝牙共享网络(commit 3508e93):App 在下发升级 URL 前主动发 0x3E 让眼镜开蓝牙网络共享,补上之前 OTA 链路漏的那一步
-- 新增固件升级提示「蓝牙共享网络」缺失(commit 44fec08):检测到眼镜未启用蓝牙共享网络时显式提示用户,而不是默默升级失败;同时按官方修正 0x15 帧的极性
-
-### 修复
-
-- 修复 Wi-Fi 取图诊断要求先读到 AP 配置的卡死(commit f09f689):V2.4.6/V2.6.2 固件都是在 App 发命令后才下 AP 配置,旧版诊断先等 AP 配置再发命令永远等不到;改成先发命令再收配置
-- 修复固件升级对话框无法关闭、且中途无法重发网络共享与 URL(commit df20b55):以前升级中网络共享失败只能杀 App 重来;现在对话框可关闭,网络共享与升级 URL 都可重发,不用退出整个 App
+详见 v0.5.2 等历史更新记录。
 
 ## v0.5.2 — 2026-09-17
 
