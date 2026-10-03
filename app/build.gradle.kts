@@ -75,8 +75,8 @@ android {
         minSdk = 26
         targetSdk = 37
         // v0.1.68 footgun: 历史教训 — bump versionCode 后不重跑 assembleRelease 会让 uploadVisionReleaseToGitea 把新 JSON 写到旧 APK 上,客户端永远卡旧版。详见 .claude/skills/icevision-release/SKILL.md §"Critical ordering"。机械 gate 已加在 uploadVisionReleaseToGitea.dependsOn("assembleRelease")(本文件 line ~757),Gradle 会强制重 build。
-        versionCode = 92
-        versionName = "0.5.12"
+        versionCode = 93
+        versionName = "0.5.13"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
