@@ -82,6 +82,8 @@ process.stdin.on('end', () => {
   let inVersion = false;
   let sawSummary = false;
   let inSection = false;
+  const seenVersions = new Map();
+  let lastVersionLine = '';
 
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
@@ -92,6 +94,22 @@ process.stdin.on('end', () => {
       if (!TOP_HEADER_REGEX.test(line)) {
         errors.push(`第 ${i+1} 行版本标题格式错误(实际: ${line});必须是「## vX.Y.Z — YYYY-MM-DD」`);
       }
+      // 主君 2026-10-02 反馈:重复的 ## v header 导致 APP 设置页 LazyColumn key
+      // 冲突(IllegalStateException: Key 'vX.Y.Z' was already used),整个更新
+      // 日志页闪退。Detect duplicate IMMEDIATELY.
+      if (line === lastVersionLine) {
+        errors.push(`第 ${i+1} 行:版本标题与上一行重复 (${line});会触发 APP 设置页 LazyColumn key 冲突导致闪退。立即 dedupe`);
+      }
+      const verMatch = line.match(/^## (v\d+\.\d+\.\d+)/);
+      if (verMatch) {
+        const ver = verMatch[1];
+        if (seenVersions.has(ver)) {
+          errors.push(`第 ${i+1} 行:版本 ${ver} 在文件中出现多次(已记录的行号 ${seenVersions.get(ver)} + 当前 ${i+1});LazyColumn key 冲突导致闪退`);
+        } else {
+          seenVersions.set(ver, i+1);
+        }
+      }
+      lastVersionLine = line;
       inVersion = true;
       sawSummary = false;
       inSection = false;
