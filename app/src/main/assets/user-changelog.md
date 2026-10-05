@@ -1,8 +1,25 @@
 # 用户更新日志
 
+## v0.5.15 — 2026-10-06
+
+修 APP 设置 → 更新日志页只显示版本号+日期的 bug。VersionHistoryRenderer 之前只抓 `##v` 头 + `- ` bullet 两类内容,中间版次(v0.5.2 起)按用户偏好改的 plain text 1-2 行 prose summary 被静默丢弃,卡片只剩空白。同时补回 v0.5.12 + v0.5.13 两条被前序 prep commit 替换掉的 entry,中间不再跳号。
+
+### 修复
+
+- 修复 APP 设置 → 更新日志只显示版本号:VersionHistoryRenderer 抓 `##` 头后第一段以 `。`/`!`/`?` 结尾的 prose 作为 summary,HistoryEntry 新增 summary 字段;ChangelogScreen EntryBlock 在 header 下渲染 summary 段落;15 个新单测覆盖 中文句号/ASCII 叹号/无终止符 prose 忽略/legacy `###` 子段 共 5 种 case
+- 修复 v0.5.12 + v0.5.13 entry 缺失:v0.5.12 prep commit 把 `## v0.5.12` 重命名成 `## v0.5.13` 丢了 v0.5.12 内容,v0.5.14 prep 又把 v0.5.13 替换掉。本版按 commit 历史补回两条 brief entry,位置插在 v0.5.14 与 v0.5.11 之间,validate-changelog-format.js hook Check 4 通过
+
 ## v0.5.14 — 2026-10-02
 
 修 APP 设置页打开更新日志闪退:user-changelog.md 整个文件每个版本 header 都被复制了两遍(v0.1.0 - v0.5.13 共 80 个 dup),APP 设置页 LazyColumn 用版本号作 key,重复 key 直接抛 IllegalStateException 导致整个 changelog 页崩溃。Dedupe 后正常显示。同时 validate-changelog-format.js hook 加重复 header 检测防未来 drift。
+
+## v0.5.13 — 2026-10-02
+
+撤销 v0.5.12 的 collapse 误操作:之前把 v0.5.3-v0.5.9 砍成单行 reference 误解了主君原话"参见 历史",导致 APP 设置页只剩版本号+日期看不出每版具体改了什么。本版把 v0.5.3-v0.5.12 共 10 个版本都补回 1-2 行 plain text 实际变更摘要。
+
+## v0.5.12 — 2026-10-02
+
+把 v0.5.3-v0.5.9 七条详细 entry 压缩为 brief reference,主君原话"0.5.2 后的更新记录参见 0.5.2 及之前的更新记录"——意图是降滚动长度,但意外让后续版本的卡片在 APP 设置页只剩版本号+日期(详见 v0.5.13 撤销)。
 
 ## v0.5.11 — 2026-10-01
 

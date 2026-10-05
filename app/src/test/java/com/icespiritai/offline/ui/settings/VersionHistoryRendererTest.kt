@@ -27,6 +27,7 @@ class VersionHistoryRendererTest {
         assertEquals(1, result.size)
         assertEquals("v1.0.0", result[0].version)
         assertEquals("2026-08-01", result[0].date)
+        assertEquals("", result[0].summary)
         assertEquals(listOf("第一条", "第二条"), result[0].bullets)
     }
 
@@ -57,6 +58,7 @@ class VersionHistoryRendererTest {
         val md = "## v1.0.0 · 2026-08-01\n"
         val result = VersionHistoryRenderer.parse(md)
         assertEquals(1, result.size)
+        assertEquals("", result[0].summary)
         assertTrue(result[0].bullets.isEmpty())
     }
 
@@ -66,6 +68,7 @@ class VersionHistoryRendererTest {
         val result = VersionHistoryRenderer.parse(md)
         assertEquals("v1.0", result[0].version)
         assertEquals("", result[0].date)
+        assertEquals("", result[0].summary)
         assertEquals(listOf("x"), result[0].bullets)
     }
 
@@ -90,6 +93,7 @@ class VersionHistoryRendererTest {
         val result = VersionHistoryRenderer.parse(md)
         assertEquals("v1.0", result[0].version)
         assertEquals("2026-08-18", result[0].date)
+        assertEquals("", result[0].summary)
         assertEquals(listOf("fix"), result[0].bullets)
     }
 
@@ -105,11 +109,16 @@ class VersionHistoryRendererTest {
     }
 
     @Test
-    fun non_bullet_non_header_lines_are_ignored() {
+    fun prose_without_summary_terminator_is_ignored() {
+        // Regression pin for the legacy "non-bullet non-header lines are ignored"
+        // behavior: a prose line that does NOT end with `。`/`!`/`?` is still
+        // dropped. This guards against the parser accidentally treating any
+        // prose line as a summary (the summary format requires the
+        // validate-changelog-format.js Check 4 terminator).
         val md = """
             # 顶层标题
 
-            一些描述性段落文字,不算 bullet
+            一些描述性段落文字,没有以句号结尾
 
             ## v1.0 · 2026-08-01
 
@@ -118,6 +127,7 @@ class VersionHistoryRendererTest {
 
         val result = VersionHistoryRenderer.parse(md)
         assertEquals(1, result.size)
+        assertEquals("", result[0].summary)
         assertEquals(listOf("唯一一条 bullet"), result[0].bullets)
     }
 
@@ -131,6 +141,115 @@ class VersionHistoryRendererTest {
 
         val result = VersionHistoryRenderer.parse(md)
         assertEquals(1, result.size)
+        assertEquals("", result[0].summary)
         assertEquals(listOf("real bullet"), result[0].bullets)
+    }
+
+    // --- prose summary capture (v0.5.13+ brief format) ---------------------
+
+    @Test
+    fun summary_line_terminated_with_chinese_period_is_captured() {
+        // Mirrors the current shipping format: header → 1-2 line prose summary
+        // → optionally bullets. The summary ends with `。` (中文句号) per
+        // validate-changelog-format.js Check 4.
+        val md = """
+            ## v1.0 · 2026-08-01
+
+            修一个闪退 bug。
+
+            - 修复具体某处崩溃
+        """.trimIndent()
+
+        val result = VersionHistoryRenderer.parse(md)
+        assertEquals(1, result.size)
+        assertEquals("修一个闪退 bug。", result[0].summary)
+        assertEquals(listOf("修复具体某处崩溃"), result[0].bullets)
+    }
+
+    @Test
+    fun summary_terminated_with_ascii_bang_or_question_mark() {
+        // ASCII `!` / `?` are also accepted terminators (validate hook allows
+        // both). Realistic case: a question-form summary.
+        val md1 = """
+            ## v1.0 · 2026-08-01
+
+            重大更新!
+
+        """.trimIndent()
+        assertEquals("重大更新!", VersionHistoryRenderer.parse(md1)[0].summary)
+
+        val md2 = """
+            ## v1.0 · 2026-08-01
+
+            这次修了什么?
+
+        """.trimIndent()
+        assertEquals("这次修了什么?", VersionHistoryRenderer.parse(md2)[0].summary)
+    }
+
+    @Test
+    fun summary_section_with_no_bullets_still_captures_summary() {
+        // The brief style (v0.5.3-v0.5.14) has ONLY a prose summary, no
+        // bullets — the previous parser rendered these as empty cards. The
+        // fix: capture summary regardless of whether bullets follow.
+        val md = """
+            ## v1.0 · 2026-08-01
+
+            一段只有摘要没有 bullet 的 entry。
+        """.trimIndent()
+
+        val result = VersionHistoryRenderer.parse(md)
+        assertEquals(1, result.size)
+        assertEquals("一段只有摘要没有 bullet 的 entry。", result[0].summary)
+        assertTrue(result[0].bullets.isEmpty())
+    }
+
+    @Test
+    fun only_first_prose_line_is_summary_subsequent_paragraphs_dropped() {
+        // Per `validate-changelog-format.js`, each version has exactly ONE
+        // summary line. Multiple paragraphs under one `## v` are not the
+        // supported format; only the first prose-terminating line is
+        // captured as summary.
+        val md = """
+            ## v1.0 · 2026-08-01
+
+            第一段摘要。
+
+            第二段说明文字,会被忽略。
+
+            - bullet
+        """.trimIndent()
+
+        val result = VersionHistoryRenderer.parse(md)
+        assertEquals(1, result.size)
+        assertEquals("第一段摘要。", result[0].summary)
+        assertEquals(listOf("bullet"), result[0].bullets)
+    }
+
+    @Test
+    fun summary_with_legacy_sub_section_after_it() {
+        // Full format: header → summary → `### 新增` → bullets. The summary
+        // is captured, then the `### ` line acts as a sub-section header
+        // (not currently modeled in the data class — bullets go straight
+        // under the version entry). This pins current behavior so a future
+        // refactor doesn't accidentally move bullets under a sub-section.
+        val md = """
+            ## v1.0 · 2026-08-01
+
+            这次加了一个新功能,顺便修一个 bug。
+
+            ### 新增
+
+            - 新增 A
+
+            ### 修复
+
+            - 修复 B
+        """.trimIndent()
+
+        val result = VersionHistoryRenderer.parse(md)
+        assertEquals(1, result.size)
+        assertEquals("这次加了一个新功能,顺便修一个 bug。", result[0].summary)
+        assertEquals(listOf("新增 A", "修复 B"), result[0].bullets)
     }
 }

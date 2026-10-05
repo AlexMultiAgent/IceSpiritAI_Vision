@@ -94,6 +94,13 @@ private fun EntryBlock(entry: VersionHistoryRenderer.HistoryEntry) {
             text = header,
             style = MaterialTheme.typography.titleMedium,
         )
+        if (entry.summary.isNotEmpty()) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = entry.summary,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
         if (entry.bullets.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             entry.bullets.forEach { bullet ->
