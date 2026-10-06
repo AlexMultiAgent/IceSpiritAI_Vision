@@ -398,6 +398,10 @@ Settings 新增「长报告摘要」Switch(默认 OFF):`TtsSetting.longReportSum
   - **双 repo 分工**:代码仓库 `giteaadmin/IceSpiritAI_Vision`(git remote `gitea`)— release route **broken**(`/releases/download/<tag>/` 对 .apk + .json 都 404),但客户端从不上这里下载;发布仓库 `giteaadmin/vision-app`(`giteaRepo = "giteaadmin/vision-app"` + `BuildConfig.UPDATE_JSON_URL`)—完全健康
   - 完整证据 / nginx reverse proxy 候选配置见 [docs/knowledge/gitea-1.22x-release-route-broken.md](docs/knowledge/gitea-1.22x-release-route-broken.md)
 
+- **2026-10-06 v0.5.15 — Post-release wording 改动触发 force-move tag**:发版后改 bundled asset(`user-changelog.md` / `strings.xml` / `assets/*` / `res/*` 等)会让 `assembleRelease` 重建 → 新 APK SHA ≠ release commit 时记录的 SHA → Triple-SHA drift。**前提**:先 `curl .../vision-latest.json | jq .apkCumulativeDownloads` 确认 == 0(无用户下到旧 APK,本案例 = 0);**修复**:`git tag -f v0.X.Y <new-commit>` + force-update `latest` ref → push 两 code repo。**下载数 > 0 时不要 force-move** —— 用户拿到的旧 APK 跟 tag 后的新 APK SHA 不一致,in-app update 走 cert-pin 校验会拒装,正确做法是 revert + 新发版号(v0.X.Y+1)。
+
+- **`chore(release): v0.X.Y prep` commits 是 REPLACE 不是 APPEND**:每次 prep commit 把 `## v0.X.Y` 作为顶部新 entry 写入,前一次 prep commit 的 entry 内容被覆盖(不是累加)。2026-10-04 真实事件:v0.5.12 prep → v0.5.13 prep → v0.5.14 prep 3 次后,只 v0.5.14 留下,v0.5.12 + v0.5.13 内容丢失(v0.5.15 prep commit 顺手补回)。**正确做法**:每次 prep commit 只包含当前版本自己的新 entry,不动已有 entry;需要重写历史 entry 时走单独的 `docs(changelog):` 修复 commit。
+
 ## 文档索引
 
 | 文档 | 用途 |
