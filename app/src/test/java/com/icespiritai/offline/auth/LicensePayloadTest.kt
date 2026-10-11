@@ -42,9 +42,9 @@ class LicensePayloadTest {
     }
 
     @Test
-    fun rejects_negative_or_huge_v() {
-        val bad = LicensePayload(v = 99, u = "x", n = "y", e = 20270630)
-        // 这里不抛 — 校验在 Codec 阶段做;Payload 自身只承数据形状
-        assertEquals(99, bad.v)
+    fun payload_does_not_validate_v_field() {
+        val p = LicensePayload(v = 99, u = "x", n = "y", e = 20270630)
+        // Payload 自身只承数据形状,不做范围校验;Codec 阶段才校验 v
+        assertEquals(99, p.v)
     }
 }
