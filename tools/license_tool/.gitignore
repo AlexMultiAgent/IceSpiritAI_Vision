@@ -1,0 +1,7 @@
+icespiritai-license-private.pem
+许可证台账.csv
+__pycache__/
+*.egg-info/
+build/
+dist/
+*.dpapi
