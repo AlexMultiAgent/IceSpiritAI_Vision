@@ -27,13 +27,14 @@ def build():
         sys.executable, "-m", "PyInstaller",
         "--onefile",
         "--windowed",
-        "--name", "签发工具",
+        "--name", "SignTool",
         "--distpath", str(OUTPUT_DIR),
         "--workpath", str(HERE / "build"),
         "--specpath", str(HERE),
         str(SPEC),
     ]
-    r = subprocess.run(cmd, cwd=str(HERE))
+    env = {**__import__("os").environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
+    r = subprocess.run(cmd, cwd=str(HERE), env=env, encoding="utf-8")
     if r.returncode != 0:
         sys.exit(r.returncode)
 
@@ -41,7 +42,7 @@ def build():
     (OUTPUT_DIR / "README.txt").write_text(
         "冰灵锐目 激活码签发工具\n"
         "========================\n\n"
-        "1. 双击「签发工具.exe」\n"
+        "1. 双击「SignTool.exe」(可右键改名为中文,如「签发工具.exe」)\n"
         "2. 点击「选择私钥 PEM 文件」,选你的 icespiritai-license-private.pem\n"
         "3. 填 UID / 名称 / 到期日 → 签发或续期\n"
         "4. 签出的码发给客户(微信 / 邮件)\n\n"
@@ -49,7 +50,7 @@ def build():
         "私钥备份:请妥善保管,丢失 = 所有已激活客户需重发版\n",
         encoding="utf-8",
     )
-    print(f"\n✓ 打包完成:{OUTPUT_DIR}")
+    print(f"\n[OK] Done. Output: {OUTPUT_DIR}")
 
 
 if __name__ == "__main__":
