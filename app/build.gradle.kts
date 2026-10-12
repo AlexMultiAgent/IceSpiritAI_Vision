@@ -100,6 +100,27 @@ android {
         buildConfigField("String", "UPDATE_EXPECTED_CERT_SHA256",
             "\"$releaseCertSha256\"")
 
+        // License-gate (Tasks 7+): client-side pin for the embedded license
+        // public key. Mirrors releaseCertSha256's environment-variable-or-
+        // gradle-property-or-default pattern so production builds can swap
+        // keys without touching source. Task 8 will replace the placeholder
+        // Base64 with the actual EC P-256 SubjectPublicKeyInfo DER that
+        // matches the license-tool signing key. The default below is a REAL
+        // (but throwaway) EC P-256 SubjectPublicKeyInfo so PublicKeyProvider
+        // can decode it at runtime — Task 8 will mint the real key.
+        val licensePublicKey = providers.environmentVariable("ICESPIRITAI_LICENSE_PUBLIC_KEY")
+            .orElse(providers.gradleProperty("ICESPIRITAI_LICENSE_PUBLIC_KEY"))
+            .orElse("MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE4o9Y87ydEJ3SsR+CZZpiW3sFpi20wgSv1w5SN95SESoeiMVMzoOeSolgwF++5sUWlv9qMcf3w08b+ZdMPEsyuw==")
+            .get()
+
+        val licenseKeyFingerprint = providers.environmentVariable("ICESPIRITAI_LICENSE_KEY_FINGERPRINT")
+            .orElse(providers.gradleProperty("ICESPIRITAI_LICENSE_KEY_FINGERPRINT"))
+            .orElse("0000000000000000")
+            .get()
+
+        buildConfigField("String", "LICENSE_PUBLIC_KEY", "\"$licensePublicKey\"")
+        buildConfigField("String", "LICENSE_KEY_FINGERPRINT", "\"$licenseKeyFingerprint\"")
+
         // Bug 3 pivot (v0.1.60): TTS fallback downloads its ONNX models
         // (Matcha acoustic + Vocos vocoder) from `giteaadmin/Model` release
         // `sherpa-onnx-matcha-zh-baker`. The release is also mirrored as
