@@ -22,8 +22,8 @@ class LicenseVerifierTest {
         return s.sign()
     }
 
-    private fun makeCode(kp: java.security.KeyPair, e: Long = 20270630, u: String = "a1b2c3", n: String = "acme", d: String = "ad"): String {
-        val p = LicensePayload(1, u, n, e, d)
+    private fun makeCode(kp: java.security.KeyPair, e: Long = 20270630, n: String = "acme", d: String = "ad"): String {
+        val p = LicensePayload(1, n, e, d)
         val bytes = LicenseCodec.encodePayload(p)
         val sig = sign(kp.private, bytes)
         return LicenseCodec.format(bytes, sig)
@@ -37,7 +37,6 @@ class LicenseVerifierTest {
         val r = verifier.verify(code, today = 20260101)
         assertTrue(r is VerifyResult.Valid)
         val valid = r as VerifyResult.Valid
-        assertEquals("a1b2c3", valid.payload.u)
         assertEquals("acme", valid.payload.n)
     }
 
@@ -48,7 +47,7 @@ class LicenseVerifierTest {
         val code = makeCode(kp)
         val parts = code.split(".")
         val tamperedPayloadBytes = LicenseCodec.encodePayload(
-            LicensePayload(1, "a1b2c3", "evil", 20270630)
+            LicensePayload(1, "evil", 20270630)
         )
         val tamperedCode = "ICS1.${Base64.getUrlEncoder().withoutPadding().encodeToString(tamperedPayloadBytes)}.${parts[2]}"
         val r = verifier.verify(tamperedCode, today = 20260101)

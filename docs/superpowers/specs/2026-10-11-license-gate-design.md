@@ -13,10 +13,14 @@
 - 首次启动 / 卸载重装后强制登录,登录前 App 主功能不渲染
 - 用户名(文本)+ 激活码(字符串)双输入校验
 - 激活码 = 数字签名(ECDSA P-256),私钥离线签发,**零网络依赖**
-- 可续期:同一 uid 签发新码覆盖旧码,App 自动识别续期
+- 可续期:同一 name 签发新码覆盖旧码,App 自动识别续期
 - 到期日可选(绝对日期 `yyyyMMdd` 或 `0`=永久)
 - 签码工具:Windows 桌面程序(独立 `.exe`),市局广告处独立运行
 - 加客户/续期**不发版**,工具单点即可
+
+> **V2 更新(2026-10-12)**:payload 移除 `u` 字段,UID == name(管理员只需在工具里填一个 name)。
+> 这是 breaking change:V1 签的码(带 `u` 字段)V2 客户端无法解析(`ignoreUnknownKeys = false`),
+> 但 V2 签的码 V1 客户端也无法解析(字段语义变化),`LicenseCodec` 不做向后兼容。
 
 ### 1.2 不在范围内(v1 显式不做)
 
@@ -50,9 +54,9 @@ ICS1.<payload-base64url>.<signature-base64url>
 | 字段 | 含义 | 例 |
 |---|---|---|
 | `v` | 码格式版本 | `1` |
-| `u` | 客户稳定 ID,6 位字符串,续期不变 | `"a1b2c3"` |
 | `n` | 用户名(文本,用于客户自检) | `"acme"` |
 | `e` | 到期日 `yyyyMMdd`,或 `0` 表示永久 | `20270630` 或 `0` |
+| `d` | 管理处室 key(默认 `ad`) | `"ad"` |
 
 ### 2.2 签名
 
@@ -62,8 +66,8 @@ ICS1.<payload-base64url>.<signature-base64url>
 
 ### 2.3 续期语义
 
-- 同 uid(`u` 字段相同)→ 视为续期,DataStore 直接覆盖原码
-- 不同 uid → 视为新客户激活,需 DataStore 清空再写
+- 同 `n` → 视为续期,DataStore 直接覆盖原码
+- 不同 `n` → 视为新客户激活,需 DataStore 清空再写
 
 ### 2.4 到期日
 
@@ -72,8 +76,8 @@ ICS1.<payload-base64url>.<signature-base64url>
 
 ### 2.5 长度估算
 
-- payload 约 80-100 字符
-- base64url 后 ~110-130 字符
+- payload 约 60-80 字符(去掉 `u` 字段后)
+- base64url 后 ~85-100 字符
 - signature base64url 后 ~76 字符
 - 总长约 **200 字符以内**,单行可读,支持长按复制 / 一键粘贴
 
@@ -163,7 +167,7 @@ Idle --[submit]--> Verifying --[ok]--> Active(整个 Activity 重 compose)
 ### 4.5 UX 要点
 
 - 登录页不做花哨拖动 / 手势,**输入框 + 登录按钮**即可,与现有「免责声明」一致
-- **续期零摩擦**:用户拿到新码重新登录,App 自动判断 `u` 相同覆盖,**无「续期」按钮**
+- **续期零摩擦**:用户拿到新码重新登录,App 自动判断 `n` 相同覆盖,**无「续期」按钮**
 - **到期前 14 天首屏顶部 banner**:实现方式参照现有 `stallDetectorJob` 时机把控(别太早让人焦虑)
 - **登录失败不消耗次数**:签名验签 O(1),无限重试
 - **没有「忘记密码」/「注册」入口**:工单走市局广告处
@@ -189,8 +193,8 @@ Idle --[submit]--> Verifying --[ok]--> Active(整个 Activity 重 compose)
 ### 5.2 子命令
 
 ```
-python license_tool.py new     --uid<6 位> --name <用户名> --expire <yyyyMMdd | 0=永久>
-python license_tool.py renew   --uid <uid> --expire <yyyyMMdd | 0=永久>
+python license_tool.py new     --name <用户名> --expire <yyyyMMdd | 0=永久>
+python license_tool.py renew   --name <用户名> --expire <yyyyMMdd | 0=永久>
 python license_tool.py info    --code '<ICS1....>'  # 仅解 payload,不验签,销售助理可跑
 python license_tool.py verify  --code '<ICS1....>'  # 验签,需要私钥,内部用
 ```
@@ -198,7 +202,7 @@ python license_tool.py verify  --code '<ICS1....>'  # 验签,需要私钥,内部
 ### 5.3 安全策略
 
 - **`renew` 自动拒绝缩短期限**:若新 expire 早于或等于台账当前值,**拒绝并提示**「客户已是永久 / 已续到更晚」。防误操作
-- **`new` uid 不可复用**:已签发的 uid 不能重新 `new`(必须 `renew`),防止 uid 撞车把别人覆盖
+- **`new` name 不可复用**:已签发的 name 不能重新 `new`(必须 `renew`),防止撞车把别人覆盖
 - `info` 命令不需要私钥,可单独交给销售助理
 - `verify` 命令读私钥,UI 上标注「内部使用」
 
@@ -214,9 +218,9 @@ python license_tool.py verify  --code '<ICS1....>'  # 验签,需要私钥,内部
  ┌────────────────────────────────────────┐
   │  冰灵锐目 激活码签发工具                │
   │ ────────────────────────────────────── │
-  │  UID:    [______]  ← 6 位,自动建议 │
-  │  名称:   [______]  ← 用户/机构代号     │
-  │  到期日: [______]  ← yyyyMMdd,留空=永久│
+  │  名称:     [______]  ← 用户/机构代号     │
+  │  管理处室: [_____]  ← 下拉选 ad / food  │
+  │  到期日:   [______]  ← yyyyMMdd,留空=永久│
   │                                        │
   │  [ 签发新码 ]  [ 续期 ]  [ 查询码信息 ] │
   │                                        │
@@ -233,8 +237,8 @@ python license_tool.py verify  --code '<ICS1....>'  # 验签,需要私钥,内部
 ### 5.6 台账
 
 - `许可证台账.csv`(gitignored,与私钥同目录)
-- 每次 `new` / `renew` 追加一行:`ts,op,uid,name,issued_expire,note`
-- `info` 命令(可选增强)读 CSV 反查某 uid 历史
+- 每次 `new` / `renew` 追加一行:`ts,op,name,issued_expire,note,d`
+- `info` 命令(可选增强)读 CSV 反查某 name 历史
 
 ---
 
@@ -244,7 +248,7 @@ python license_tool.py verify  --code '<ICS1....>'  # 验签,需要私钥,内部
 |---|---|---|
 | 纯函数(无 Android) | `LicenseCodecTest` | Base64URL 编解码、payload 解析、`ICS1.x.y` 缺段/段过短/非 base64url |
 | 验签(JVM) | `LicenseVerifierTest` | 正确签通过;payload 任何字节篡改拒;signature 篡改拒;公钥错配拒;过期拒;`e:0` 永久通过 |
-| 续期语义 | `LicenseStoreTest` | 同 uid 第二次写入覆盖前次;不同 uid 共存;空 DataStore 启动返回 null |
+| 续期语义 | `LicenseStoreTest` | 同 n 第二次写入覆盖前次;不同 n 共存;空 DataStore 启动返回 null |
 | ViewModel | `LicenseViewModelTest` | 4 种 Error 状态触发路径;成功路径不残留 Error |
 | **跨语言** | `LicenseInteropTest`(集成) | **用 Python `license_tool.py new` 现场签一张码,Android `LicenseVerifier.verify` 必须通过** —— 唯一一处真正验证两端 ECDSA 实现对齐 |
 | UI | `LicenseGateScreenTest`(Robolectric) | 输入合法码显示 Active;输入 `signature_mismatch` 显示「请联系市局广告处」+ 按钮可点 |

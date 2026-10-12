@@ -50,10 +50,9 @@ class LicenseViewModelTest {
     private fun makeCode(
         kp: java.security.KeyPair = keyPair,
         e: Long = 20270630,
-        n: String = "acme",
-        u: String = "a1b2c3"
+        n: String = "acme"
     ): String {
-        val p = LicensePayload(1, u, n, e)
+        val p = LicensePayload(1, n, e)
         val bytes = LicenseCodec.encodePayload(p)
         return LicenseCodec.format(bytes, sign(kp.private, bytes))
     }

@@ -44,7 +44,6 @@ object LicenseCodec {
 
         val payload = decodePayloadBytes(payloadBytes) ?: return null
         if (payload.v != 1) return null
-        if (payload.u.length != 6) return null
         if (payload.n.isBlank()) return null
         if (payload.e != 0L && payload.e.toString().length != 8) return null
         if (payload.d.length > 8) return null

@@ -2,9 +2,12 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **V2 更新(2026-10-12)**:本 plan 实施时为 V1(`LicensePayload(v, u, n, e, d)`),签发器要求填 6 位 uid。
+> 2026-10-12 起落地 V2:删除 `u` 字段(UID == name),签发器只填一个 name。spec 见 [`2026-10-11-license-gate-design.md §1.1`](docs/superpowers/specs/2026-10-11-license-gate-design.md)。
+
 **Goal:** 在用户首次启动冰灵锐目时,必须输入用户名 + 激活码才能进入主功能。激活码由 ECDSA P-256 私钥离线签发,App 用公钥验签;签码工具以 Windows `.exe` 形式交付市局广告处使用。
 
-**Architecture:** 单 Activity + NavHost 之上加一层 `LicenseGateScreen`,未激活时 NavHost 完全不 compose。激活码 = `ICS1.<payload-base64url>.<sig-base64url>`,payload JSON 含 `v/u/n/e`。续期靠同 uid 新码覆盖,App 每次启动重跑验签 + 到期判断(不存布尔标志)。签码工具是 Python 纯函数 CLI + PySide6 GUI + PyInstaller 打包,核心纯函数可在 Android 单测里直接调 Python `subprocess` 验签跨语言对齐。
+**Architecture:** 单 Activity + NavHost 之上加一层 `LicenseGateScreen`,未激活时 NavHost 完全不 compose。激活码 = `ICS1.<payload-base64url>.<sig-base64url>`,payload JSON 含 `v/n/e/d`(V2 移除 `u` 字段,UID == name)。续期靠同 name 新码覆盖,App 每次启动重跑验签 + 到期判断(不存布尔标志)。签码工具是 Python 纯函数 CLI + PySide6 GUI + PyInstaller 打包,核心纯函数可在 Android 单测里直接调 Python `subprocess` 验签跨语言对齐。
 
 **Tech Stack:**
 - App 侧:Kotlin 2.4.10 / Jetpack Compose / DataStore Preferences / `java.security`(Conscrypt ECDSA P-256,Android 8.0+ 内置)/ kotlinx.serialization

@@ -94,21 +94,18 @@ class LicenseInteropTest {
                 )
             }
 
-            // 5. 清掉旧 ledger — 否则连续跑会产生 "uid 已存在" ParseException
+            // 5. 清掉旧 ledger — 否则连续跑会产生 "name 已存在" ParseException
             //    (keyDir 持久,ledger 视为 ephemeral test state)
             File(keyDir, LEDGER_NAME).delete()
 
             // 6. 用 license_tool.py new 签一张码
-            //    注:Python LicenseTool 要求 uid 长度恰为 6(LicenseCodec 契约 —— 跨语言一致)。
-            //    任务 spec 草稿用了 "interop1" (8 字符) 会直接被 ParseException 拒,
-            //    这里改用 6 字符变体 "intop1" 保持可识别的"interop"前缀 + 1 个数字。
+            //    V2 移除 u 字段后,签发器只接受 name。原先 V1 的 6 字符 uid "intop1" 变体不再需要。
             val licenseTool = File(repoRoot, "tools/license_tool/license_tool.py")
             val code = runPython(
                 listOf(
                     "python",
                     licenseTool.absolutePath,
                     "new",
-                    "--uid", "intop1",
                     "--name", "interoptest",
                     "--d", "ad",
                     "--expire", "20270630",
@@ -154,7 +151,6 @@ class LicenseInteropTest {
         val r = verifier.verify(pythonSignedCode, today = 20260101)
         assertTrue("expected Valid but was $r", r is VerifyResult.Valid)
         val valid = r as VerifyResult.Valid
-        assertEquals("intop1", valid.payload.u)
         assertEquals("interoptest", valid.payload.n)
         assertEquals(20270630L, valid.payload.e)
     }
@@ -163,7 +159,6 @@ class LicenseInteropTest {
     fun android_codec_can_parse_python_signed_code() {
         // round-trip via LicenseCodec.parse
         val parsed = LicenseCodec.parse(pythonSignedCode)
-        assertEquals("intop1", parsed?.payload?.u)
         assertEquals("interoptest", parsed?.payload?.n)
         assertEquals(20270630L, parsed?.payload?.e)
     }

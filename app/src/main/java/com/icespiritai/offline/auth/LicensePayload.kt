@@ -5,7 +5,6 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class LicensePayload(
     val v: Int,
-    val u: String,
     val n: String,
     val e: Long,
     val d: String = "ad"

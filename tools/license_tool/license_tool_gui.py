@@ -66,8 +66,6 @@ class LicenseToolGUI(QMainWindow):
         # 签发 / 续期 表单
         form = QGroupBox("签发 / 续期")
         form_layout = QFormLayout()
-        self.uid_input = QLineEdit()
-        self.uid_input.setPlaceholderText("6 位,如 a1b2c3")
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("用户名 / 机构代号")
         self.expire_input = QLineEdit()
@@ -75,7 +73,6 @@ class LicenseToolGUI(QMainWindow):
         self.dept_combo = QComboBox()
         for label, key in DEPARTMENTS:
             self.dept_combo.addItem(label, key)
-        form_layout.addRow("UID:", self.uid_input)
         form_layout.addRow("名称:", self.name_input)
         form_layout.addRow("管理处室:", self.dept_combo)
         form_layout.addRow("到期日:", self.expire_input)
@@ -136,7 +133,6 @@ class LicenseToolGUI(QMainWindow):
         d = self._current_dept_key()
         rc, out = self._run_tool([
             "new",
-            "--uid", self.uid_input.text().strip(),
             "--name", self.name_input.text().strip(),
             "--d", d,
             "--expire", expire
@@ -177,18 +173,13 @@ class LicenseToolGUI(QMainWindow):
         if self.pem_path is None:
             QMessageBox.warning(self, "缺少私钥", "请先选择私钥 PEM 文件")
             return False
-        uid = self.uid_input.text().strip()
-        # 续期按 name(不再需要 uid);仅签发新码时校验 uid 长度。
+        # V2: 签发 / 续期都按 name 走,不再有 uid 输入项。续期按 name 查台账。
         if require_name:
             if not self.name_input.text().strip():
                 QMessageBox.warning(self, "缺少名称", "请输入用户名 / 机构代号")
                 return False
             if not self.dept_combo.currentData() and require_dept:
                 QMessageBox.warning(self, "缺少管理处室", "请选择管理处室")
-                return False
-        else:
-            if len(uid) != 6:
-                QMessageBox.warning(self, "UID 错", "UID 必须是 6 位")
                 return False
         return True
 
