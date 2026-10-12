@@ -30,6 +30,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,7 +46,10 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.icespiritai.offline.AppGraph
 import com.icespiritai.offline.BuildConfig
+import com.icespiritai.offline.IceSpiritVisionActivity
 import com.icespiritai.offline.R
+import com.icespiritai.offline.auth.LicenseCodec
+import com.icespiritai.offline.auth.LicenseStore
 import com.icespiritai.offline.glasses.GlassesDevice
 import com.icespiritai.offline.glasses.GlassesPhotoCaptureRepository
 import com.icespiritai.offline.glasses.GlassesFirmwareUpdater
@@ -322,6 +326,18 @@ fun SettingsScreen(
                         enabled = glassesEnabled,
                     )
                 }
+            }
+            // License card: clears the persisted license_code so the gate re-renders.
+            // No-op in current test runs — `Activity` cast is null under Robolectric
+            // without an Activity host — so the button is wired through the
+            // `onRelogin` callback rather than dereferencing `Activity` inline.
+            Card(modifier = Modifier.fillMaxWidth()) {
+                LicenseSection(
+                    licenseStore = LicenseStore(context.applicationContext),
+                    onRelogin = {
+                        (context as? IceSpiritVisionActivity)?.reloginLicense()
+                    },
+                )
             }
             Spacer(modifier = Modifier.height(8.dp))
             Column(modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -989,6 +1005,82 @@ private fun GlassesFirmwareUpgradeRow(
             }
         },
     )
+}
+
+/**
+ * "切换账号 / 重新登录" settings card (§4.4 license gate).
+ *
+ * Reads the persisted license code via [LicenseStore.observeCode], parses it
+ * with [LicenseCodec] to extract the username (`payload.n`), and renders a
+ * single CTA button. The button opens a confirmation [AlertDialog] — on
+ * confirm we delegate to the host Activity via the `onRelogin` callback
+ * (`IceSpiritVisionActivity.reloginLicense()` runs the synchronous
+ * DataStore clear + `recreate()`). No `Activity` cast inside this composable
+ * so the function stays Robolectric-test-friendly: tests can stub
+ * `onRelogin` without an Activity host.
+ *
+ * The `Card` wrapping is at the call-site (matches the existing
+ * [TtsSection] / [FeatureVisibilitySection] pattern). The Activity callback
+ * path is the ONLY way for the card to leave the screen — there is no
+ * `LocalContext` to Service or `intent.startActivity(...)` jump because
+ * the real side-effect (`recreate()`) must run on the Activity instance
+ * itself.
+ *
+ * `LicenseStore.observeCode` is a Flow backed by a process-singleton
+ * DataStore — multiple `LicenseStore(context)` instances in different
+ * Compose passes share the same underlying file, no data corruption.
+ */
+@Composable
+private fun LicenseSection(
+    licenseStore: LicenseStore,
+    onRelogin: () -> Unit,
+) {
+    val code by licenseStore.observeCode().collectAsState(initial = null)
+    val parsed = code?.let { LicenseCodec.parse(it) }
+    val username = parsed?.payload?.n ?: "—"
+
+    var showDialog by remember { mutableStateOf(false) }
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text(stringResource(R.string.license_relogin_dialog_title)) },
+            text = { Text(stringResource(R.string.license_relogin_dialog_body, username)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDialog = false
+                    onRelogin()
+                }) {
+                    Text(stringResource(R.string.license_relogin_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDialog = false }) {
+                    Text(stringResource(R.string.license_relogin_cancel))
+                }
+            },
+        )
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.license_relogin_button),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = stringResource(R.string.license_relogin_current_account, username),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        TextButton(onClick = { showDialog = true }) {
+            Text(stringResource(R.string.license_relogin_button))
+        }
+    }
 }
 
 /** `2 655 536 B` → `2.5 MB`, for the upgrade dialog. */

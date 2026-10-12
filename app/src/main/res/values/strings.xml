@@ -272,6 +272,7 @@
     <string name="license_error_expired">激活码已于 %1$s 到期,请联系市局广告处续期</string>
     <string name="license_relogin_button">切换账号 / 重新登录</string>
     <string name="license_relogin_dialog_title">重新登录</string>
+    <string name="license_relogin_current_account">当前账号:%1$s</string>
     <string name="license_relogin_dialog_body">当前账号:%1$s。重新登录后需要再次输入新激活码。</string>
     <string name="license_relogin_confirm">确认</string>
     <string name="license_relogin_cancel">取消</string>

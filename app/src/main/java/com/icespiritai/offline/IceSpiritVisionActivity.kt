@@ -229,6 +229,27 @@ class IceSpiritVisionActivity : ComponentActivity() {
         ttsController.release()
     }
 
+    /**
+     * Clear the persisted license and force the gate to re-render. Wired to the
+     * "切换账号 / 重新登录" card in Settings.
+     *
+     * `runBlocking` is intentional: `recreate()` MUST run *after* `clear()`
+     * completes (the recreated Activity re-creates its `LicenseViewModel`
+     * which reads the now-empty DataStore and surfaces the gate). A
+     * fire-and-forget `lifecycleScope.launch { clear(); recreate() }` would
+     * race against the lifecycle tear-down — `recreate()` triggered before
+     * the DataStore write lands leaves the user still licensed. The clear
+     * itself is a single `DataStore.edit { remove(KEY) }` round-trip (~50 ms
+     * blocking on the main thread is acceptable for a one-shot, user-
+     * triggered action).
+     */
+    fun reloginLicense() {
+        kotlinx.coroutines.runBlocking {
+            LicenseStore(applicationContext).clear()
+        }
+        recreate()
+    }
+
     private fun handleUpdateActionIntent(intent: Intent?) {
         intent ?: return
         when (intent.action) {
