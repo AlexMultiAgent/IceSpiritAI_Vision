@@ -110,12 +110,12 @@ android {
         // can decode it at runtime — Task 8 will mint the real key.
         val licensePublicKey = providers.environmentVariable("ICESPIRITAI_LICENSE_PUBLIC_KEY")
             .orElse(providers.gradleProperty("ICESPIRITAI_LICENSE_PUBLIC_KEY"))
-            .orElse("MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE4o9Y87ydEJ3SsR+CZZpiW3sFpi20wgSv1w5SN95SESoeiMVMzoOeSolgwF++5sUWlv9qMcf3w08b+ZdMPEsyuw==")
+            .orElse("MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEjGC6Fj3l+SCW/gKggJL5AF08Ol/Vf2prrY1FjY3ABaFgIYCQ2mWwDLD5LABSpL8Iz/al8w2ksSrKJS0tWfrApg==")
             .get()
 
         val licenseKeyFingerprint = providers.environmentVariable("ICESPIRITAI_LICENSE_KEY_FINGERPRINT")
             .orElse(providers.gradleProperty("ICESPIRITAI_LICENSE_KEY_FINGERPRINT"))
-            .orElse("0000000000000000")
+            .orElse("eb8ddcfb3b282a30")
             .get()
 
         buildConfigField("String", "LICENSE_PUBLIC_KEY", "\"$licensePublicKey\"")
