@@ -47,6 +47,7 @@ object LicenseCodec {
         if (payload.u.length != 6) return null
         if (payload.n.isBlank()) return null
         if (payload.e != 0L && payload.e.toString().length != 8) return null
+        if (payload.d.length > 16) return null
 
         return Parsed(payload, payloadBytes, signature)
     }

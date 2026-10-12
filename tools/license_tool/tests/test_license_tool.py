@@ -25,19 +25,21 @@ def test_prefix_is_ics1():
 
 def test_roundtrip_with_expire_date(keypair, tmp_path):
     sk, pk, _ = keypair
-    code = issue(sk, uid="a1b2c3", name="acme", expire=20270630, ledger_dir=tmp_path)
+    code = issue(sk, uid="a1b2c3", name="acme", expire=20270630, ledger_dir=tmp_path, d="advertising")
     parsed = parse(code)
     assert parsed.payload.v == 1
     assert parsed.payload.u == "a1b2c3"
     assert parsed.payload.n == "acme"
     assert parsed.payload.e == 20270630
+    assert parsed.payload.d == "advertising"
 
 
 def test_roundtrip_with_permanent(keypair, tmp_path):
     sk, pk, _ = keypair
-    code = issue(sk, uid="x9y8z7", name="demo", expire=0, ledger_dir=tmp_path)
+    code = issue(sk, uid="x9y8z7", name="demo", expire=0, ledger_dir=tmp_path, d="advertising")
     parsed = parse(code)
     assert parsed.payload.e == 0
+    assert parsed.payload.d == "advertising"
 
 
 def test_rejects_mismatched_prefix():
@@ -52,37 +54,111 @@ def test_rejects_wrong_segments():
 def test_renew_rejects_shorter_expire(keypair, tmp_path):
     from license_tool import issue, renew, Ledger, ParseException
     sk, pk, _ = keypair
-    code1 = issue(sk, uid="a1b2c3", name="acme", expire=20270630, ledger_dir=tmp_path)
-    code2 = renew(sk, uid="a1b2c3", expire=20271231, ledger_dir=tmp_path)
+    code1 = issue(sk, uid="a1b2c3", name="acme", expire=20270630, ledger_dir=tmp_path, d="advertising")
+    code2 = renew(sk, name="acme", expire=20271231, ledger_dir=tmp_path, d="advertising")
     assert code2 != code1
     with pytest.raises(ParseException) as ei:
-        renew(sk, uid="a1b2c3", expire=20270101, ledger_dir=tmp_path)
+        renew(sk, name="acme", expire=20270101, ledger_dir=tmp_path, d="advertising")
     assert "已续到更晚" in str(ei.value) or "永久" in str(ei.value)
 
 
 def test_renew_to_permanent(keypair, tmp_path):
     from license_tool import issue, renew
     sk, pk, _ = keypair
-    issue(sk, uid="a1b2c3", name="acme", expire=20270630, ledger_dir=tmp_path)
-    code = renew(sk, uid="a1b2c3", expire=0, ledger_dir=tmp_path)
+    issue(sk, uid="a1b2c3", name="acme", expire=20270630, ledger_dir=tmp_path, d="advertising")
+    code = renew(sk, name="acme", expire=0, ledger_dir=tmp_path, d="advertising")
     parsed = parse(code)
     assert parsed.payload.e == 0
+    assert parsed.payload.d == "advertising"
 
 
 def test_new_rejects_uid_reuse(keypair, tmp_path):
     from license_tool import issue, new, ParseException
     sk, pk, _ = keypair
-    issue(sk, uid="a1b2c3", name="acme", expire=20270630, ledger_dir=tmp_path)
+    issue(sk, uid="a1b2c3", name="acme", expire=20270630, ledger_dir=tmp_path, d="advertising")
     with pytest.raises(ParseException) as ei:
-        new(sk, uid="a1b2c3", name="other", expire=20280101, ledger_dir=tmp_path)
+        new(sk, uid="a1b2c3", name="other", expire=20280101, ledger_dir=tmp_path, d="advertising")
     assert "uid" in str(ei.value) and "已存在" in str(ei.value)
 
 
 def test_info_does_not_require_private_key(keypair, tmp_path):
     from license_tool import issue, info
     sk, pk, _ = keypair
-    code = issue(sk, uid="a1b2c3", name="acme", expire=20270630, ledger_dir=tmp_path)
+    code = issue(sk, uid="a1b2c3", name="acme", expire=20270630, ledger_dir=tmp_path, d="advertising")
     info_text = info(code)
     assert "a1b2c3" in info_text
     assert "acme" in info_text
     assert "20270630" in info_text
+    assert "advertising" in info_text
+
+
+def test_renew_rejects_when_department_differs(keypair, tmp_path):
+    """renew d 与台账里 name 的 d 不一致 → 拒绝(跨处室续期被禁止)"""
+    from license_tool import issue, renew, ParseException
+    sk, pk, _ = keypair
+    issue(sk, uid="acc001", name="acme", expire=20270630, d="advertising", ledger_dir=tmp_path)
+    with pytest.raises(ParseException) as ei:
+        renew(sk, "acme", expire=20271231, d="food", ledger_dir=tmp_path)
+    msg = str(ei.value)
+    assert "跨处室" in msg or "不能由" in msg
+
+
+def test_renew_allows_same_department(keypair, tmp_path):
+    """renew d 一致 → 通过"""
+    from license_tool import issue, renew
+    sk, pk, _ = keypair
+    issue(sk, uid="acc002", name="acme2", expire=20270630, d="advertising", ledger_dir=tmp_path)
+    code = renew(sk, "acme2", expire=20271231, d="advertising", ledger_dir=tmp_path)
+    parsed = parse(code)
+    assert parsed.payload.d == "advertising"
+    assert parsed.payload.n == "acme2"
+
+
+def test_renew_missing_name_raises(keypair, tmp_path):
+    """台账里没有这个 name,renew 应当拒绝"""
+    from license_tool import renew, ParseException
+    sk, pk, _ = keypair
+    with pytest.raises(ParseException) as ei:
+        renew(sk, "ghost-user", expire=20271231, d="advertising", ledger_dir=tmp_path)
+    assert "不存在" in str(ei.value)
+
+
+def test_payload_d_field_in_omitted_dict():
+    """Payload.asdict() 应当包含 d(防止 json 输出漂移)"""
+    from license_tool import Payload
+    import dataclasses
+    p = Payload(v=1, u="a1b2c3", n="acme", e=20270630, d="food")
+    d = dataclasses.asdict(p)
+    assert d["d"] == "food"
+    assert d["u"] == "a1b2c3"
+
+
+def test_ledger_persists_d_column(keypair, tmp_path):
+    """台账 CSV 应当写出 d 列,旧文件可兼容读取(无 d → 视为默认)"""
+    from license_tool import issue, Ledger
+    sk, pk, _ = keypair
+    issue(sk, uid="a1b2c3", name="acme", expire=20270630, ledger_dir=tmp_path, d="food")
+    csv_path = tmp_path / "许可证台账.csv"
+    text = csv_path.read_text(encoding="utf-8")
+    assert "dept,d" in text.splitlines()[0] or text.splitlines()[0].endswith(",d"), \
+        f"CSV header missing d column: {text.splitlines()[0]!r}"
+    assert ",food" in text
+
+    rows = Ledger(tmp_path).rows()
+    food_rows = [r for r in rows if r.get("uid") == "a1b2c3"]
+    assert food_rows
+    assert food_rows[-1]["d"] == "food"
+
+
+def test_legacy_csv_without_d_column_reads_as_advertising(tmp_path):
+    """legacy 6-列 CSV(无 d)应当被读出,d 自动 fallback 到默认值"""
+    csv_path = tmp_path / "许可证台账.csv"
+    csv_path.write_text(
+        "ts,op,uid,name,issued_expire,note\n"
+        "2026-10-01T10:00:00,new,ab0001,acme,20270630,\n",
+        encoding="utf-8",
+    )
+    from license_tool import _read_ledger
+    rows = _read_ledger(tmp_path)
+    assert len(rows) == 1
+    assert rows[0]["d"] == "advertising"

@@ -10,14 +10,15 @@ class LicenseCodecTest {
 
     @Test
     fun parses_well_formed_string() {
-        // 真实合法 ICS1:{"v":1,"u":"a1b2c3","n":"acme","e":20270630} base64url + dummy signature
-        val code = "ICS1.eyJ2IjoxLCJ1IjoiYTFiMmMzIiwibiI6ImFjbWUiLCJlIjoyMDI3MDYzMH0.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        // 真实合法 ICS1:{"v":1,"u":"a1b2c3","n":"acme","e":20270630,"d":"advertising"} base64url + dummy signature
+        val code = "ICS1.eyJ2IjoxLCJ1IjoiYTFiMmMzIiwibiI6ImFjbWUiLCJlIjoyMDI3MDYzMCwiZCI6ImFkdmVydGlzaW5nIn0.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
         val result = LicenseCodec.parse(code)
         assertNotNull(result)
         assertEquals("ICS1", LicenseCodec.PREFIX)
         assertEquals("a1b2c3", result!!.payload.u)
         assertEquals("acme", result.payload.n)
         assertEquals(20270630L, result.payload.e)
+        assertEquals("advertising", result.payload.d)
     }
 
     @Test
@@ -40,7 +41,7 @@ class LicenseCodecTest {
     @Test
     fun rejects_payload_with_invalid_field_values() {
         // u 长度 ≠ 6 → 拒绝
-        val code = "ICS1.eyJ2IjoxLCJ1IjoiYWJjIiwibiI6ImFjbWUiLCJlIjoyMDI3MDYzMH0.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        val code = "ICS1.eyJ2IjoxLCJ1IjoiYWJjIiwibiI6ImFjbWUiLCJlIjoyMDI3MDYzMCwiZCI6ImFkdmVydGlzaW5nIn0.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
         assertNull(LicenseCodec.parse(code))
     }
 

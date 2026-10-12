@@ -22,8 +22,8 @@ class LicenseVerifierTest {
         return s.sign()
     }
 
-    private fun makeCode(kp: java.security.KeyPair, e: Long = 20270630, u: String = "a1b2c3", n: String = "acme"): String {
-        val p = LicensePayload(1, u, n, e)
+    private fun makeCode(kp: java.security.KeyPair, e: Long = 20270630, u: String = "a1b2c3", n: String = "acme", d: String = "advertising"): String {
+        val p = LicensePayload(1, u, n, e, d)
         val bytes = LicenseCodec.encodePayload(p)
         val sig = sign(kp.private, bytes)
         return LicenseCodec.format(bytes, sig)

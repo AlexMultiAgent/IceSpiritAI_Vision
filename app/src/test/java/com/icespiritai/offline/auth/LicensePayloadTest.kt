@@ -5,7 +5,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class LicensePayloadTest {
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
 
     @Test
     fun roundtrips_with_expire_date() {
@@ -24,7 +27,27 @@ class LicensePayloadTest {
     fun roundtrips_with_permanent_zero() {
         val original = LicensePayload(v = 1, u = "x9y8z7", n = "demo", e = 0)
         val encoded = json.encodeToString(LicensePayload.serializer(), original)
-        assertEquals("""{"v":1,"u":"x9y8z7","n":"demo","e":0}""", encoded)
+        assertEquals("""{"v":1,"u":"x9y8z7","n":"demo","e":0,"d":"advertising"}""", encoded)
+    }
+
+    @Test
+    fun roundtrips_with_department_field() {
+        val original = LicensePayload(v = 1, u = "a1b2c3", n = "acme", e = 20270630, d = "food")
+        val encoded = json.encodeToString(LicensePayload.serializer(), original)
+        val decoded = json.decodeFromString(LicensePayload.serializer(), encoded)
+        assertEquals(original, decoded)
+        assertEquals("food", decoded.d)
+    }
+
+    @Test
+    fun defaults_department_to_advertising_when_missing_in_input() {
+        // 旧签发器(没有 d 字段)生成的码 — Kotlin 端必须有合理 fallback。
+        // 注:LicenseCodec 的 Json 配置 ignoreUnknownKeys=true,所以这里解析没有问题;
+        // 真实生产路径走的是 LicenseCodec.parse,会触发 d.length 校验 — 但若 d 字段不存在,
+        // 严格模式 (ignoreUnknownKeys=false) 直接拒掉,所以这个回退路径只是给 unit test 用。
+        val legacy = """{"v":1,"u":"a1b2c3","n":"acme","e":20270630}"""
+        val decoded = json.decodeFromString(LicensePayload.serializer(), legacy)
+        assertEquals("advertising", decoded.d)
     }
 
     @Test

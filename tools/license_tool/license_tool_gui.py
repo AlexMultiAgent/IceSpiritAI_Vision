@@ -12,7 +12,7 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTextEdit, QMessageBox,
-    QFileDialog, QGroupBox, QFormLayout, QInputDialog
+    QFileDialog, QGroupBox, QFormLayout, QInputDialog, QComboBox
 )
 
 # PyInstaller 冻结后,__file__ 指向 %TEMP%/_MEIxxxxxx/ 解压目录(每次启动换)。
@@ -25,6 +25,16 @@ else:
     # 源码运行(Python 直接调 license_tool_gui.py)
     TOOL_DIR = Path(__file__).parent.resolve()
     LICENSE_TOOL = TOOL_DIR / "license_tool.py"
+
+
+# 管理处室 → 部门 key 映射。
+# 跟 license_tool.py 的 DEFAULT_DEPARTMENT / Payload.d 字段对齐。
+# 新增部门需开发者改代码 + 发新 .exe;不在此处的下拉值不会被签发器写出。
+DEPARTMENTS: list[tuple[str, str]] = [
+    ("广告处", "advertising"),
+    # 未来扩展:
+    # ("食品口", "food"),
+]
 
 
 class _InputCancelled(Exception):
@@ -62,8 +72,12 @@ class LicenseToolGUI(QMainWindow):
         self.name_input.setPlaceholderText("用户名 / 机构代号")
         self.expire_input = QLineEdit()
         self.expire_input.setPlaceholderText("yyyyMMdd,留空或 0 表示永久")
+        self.dept_combo = QComboBox()
+        for label, key in DEPARTMENTS:
+            self.dept_combo.addItem(label, key)
         form_layout.addRow("UID:", self.uid_input)
         form_layout.addRow("名称:", self.name_input)
+        form_layout.addRow("管理处室:", self.dept_combo)
         form_layout.addRow("到期日:", self.expire_input)
         form.setLayout(form_layout)
         root.addWidget(form)
@@ -107,31 +121,40 @@ class LicenseToolGUI(QMainWindow):
         except Exception as e:
             return 1, str(e)
 
+    def _current_dept_key(self) -> str:
+        """从下拉框读当前选中的部门 key;若下拉为空(理论上不会),回退到广告处。"""
+        data = self.dept_combo.currentData()
+        return data or "advertising"
+
     def do_new(self):
-        if not self._check_inputs(require_name=True):
+        if not self._check_inputs(require_name=True, require_dept=False):
             return
         try:
             expire = self._parse_expire()
         except _InputCancelled:
             return
+        d = self._current_dept_key()
         rc, out = self._run_tool([
             "new",
             "--uid", self.uid_input.text().strip(),
             "--name", self.name_input.text().strip(),
+            "--d", d,
             "--expire", expire
         ])
         self._show_result(rc, out)
 
     def do_renew(self):
-        if not self._check_inputs(require_name=False):
+        if not self._check_inputs(require_name=True, require_dept=False):
             return
         try:
             expire = self._parse_expire()
         except _InputCancelled:
             return
+        d = self._current_dept_key()
         rc, out = self._run_tool([
             "renew",
-            "--uid", self.uid_input.text().strip(),
+            "--name", self.name_input.text().strip(),
+            "--d", d,
             "--expire", expire
         ])
         self._show_result(rc, out)
@@ -150,17 +173,23 @@ class LicenseToolGUI(QMainWindow):
         rc, out = self._run_tool(["verify", "--code", code.strip()])
         self._show_result(rc, out)
 
-    def _check_inputs(self, require_name: bool) -> bool:
+    def _check_inputs(self, require_name: bool, require_dept: bool = True) -> bool:
         if self.pem_path is None:
             QMessageBox.warning(self, "缺少私钥", "请先选择私钥 PEM 文件")
             return False
         uid = self.uid_input.text().strip()
-        if len(uid) != 6:
-            QMessageBox.warning(self, "UID 错", "UID 必须是 6 位")
-            return False
-        if require_name and not self.name_input.text().strip():
-            QMessageBox.warning(self, "缺少名称", "请输入用户名 / 机构代号")
-            return False
+        # 续期按 name(不再需要 uid);仅签发新码时校验 uid 长度。
+        if require_name:
+            if not self.name_input.text().strip():
+                QMessageBox.warning(self, "缺少名称", "请输入用户名 / 机构代号")
+                return False
+            if not self.dept_combo.currentData() and require_dept:
+                QMessageBox.warning(self, "缺少管理处室", "请选择管理处室")
+                return False
+        else:
+            if len(uid) != 6:
+                QMessageBox.warning(self, "UID 错", "UID 必须是 6 位")
+                return False
         return True
 
     def _parse_expire(self) -> str:
