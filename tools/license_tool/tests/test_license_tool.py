@@ -141,3 +141,38 @@ def test_legacy_csv_without_d_column_reads_as_ad(tmp_path):
     rows = _read_ledger(tmp_path)
     assert len(rows) == 1
     assert rows[0]["d"] == "ad"
+
+
+def test_compute_expire_permanent():
+    from license_tool import compute_expire_yyyymmdd
+    assert compute_expire_yyyymmdd("0") == 0
+    assert compute_expire_yyyymmdd("永久") == 0
+    assert compute_expire_yyyymmdd("permanent") == 0
+
+
+def test_compute_expire_one_month():
+    from license_tool import compute_expire_yyyymmdd
+    from datetime import date, timedelta
+    today = date(2026, 1, 1)
+    expected = int((today + timedelta(days=30)).strftime("%Y%m%d"))
+    assert compute_expire_yyyymmdd("1m", today=today) == expected
+    assert compute_expire_yyyymmdd("1月", today=today) == expected
+
+
+def test_compute_expire_one_year():
+    from license_tool import compute_expire_yyyymmdd
+    from datetime import date
+    today = date(2026, 1, 1)
+    assert compute_expire_yyyymmdd("1y", today=today) == 20270101
+    assert compute_expire_yyyymmdd("1年", today=today) == 20270101
+
+
+def test_compute_expire_raw_yyyymmdd_passthrough():
+    from license_tool import compute_expire_yyyymmdd
+    assert compute_expire_yyyymmdd("20270630") == 20270630
+
+
+def test_compute_expire_invalid_raises():
+    from license_tool import compute_expire_yyyymmdd, ParseException
+    with pytest.raises(ParseException):
+        compute_expire_yyyymmdd("xx")

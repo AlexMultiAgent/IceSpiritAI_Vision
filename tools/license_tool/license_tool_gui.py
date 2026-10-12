@@ -37,11 +37,6 @@ DEPARTMENTS: list[tuple[str, str]] = [
 ]
 
 
-class _InputCancelled(Exception):
-    """当用户输入被合法取消(到期日格式错)时抛出,避免 ValueError 触发 SystemExit(0)。"""
-    pass
-
-
 class LicenseToolGUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -68,14 +63,23 @@ class LicenseToolGUI(QMainWindow):
         form_layout = QFormLayout()
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("用户名 / 机构代号")
-        self.expire_input = QLineEdit()
-        self.expire_input.setPlaceholderText("yyyyMMdd,留空或 0 表示永久")
+        self.expire_combo = QComboBox()
+        # (label, preset_key) — preset_key is what compute_expire_yyyymmdd understands
+        self.expire_combo.addItem("1 个月", "1m")
+        self.expire_combo.addItem("3 个月", "3m")
+        self.expire_combo.addItem("半年", "6m")
+        self.expire_combo.addItem("1 年", "1y")
+        self.expire_combo.addItem("2 年", "2y")
+        self.expire_combo.addItem("5 年", "5y")
+        self.expire_combo.addItem("永久", "0")
+        # default = 1 year (most common)
+        self.expire_combo.setCurrentIndex(3)
         self.dept_combo = QComboBox()
         for label, key in DEPARTMENTS:
             self.dept_combo.addItem(label, key)
         form_layout.addRow("名称:", self.name_input)
         form_layout.addRow("管理处室:", self.dept_combo)
-        form_layout.addRow("到期日:", self.expire_input)
+        form_layout.addRow("到期日:", self.expire_combo)
         form.setLayout(form_layout)
         root.addWidget(form)
 
@@ -124,32 +128,26 @@ class LicenseToolGUI(QMainWindow):
     def do_new(self):
         if not self._check_inputs(require_name=True, require_dept=False):
             return
-        try:
-            expire = self._parse_expire()
-        except _InputCancelled:
-            return
+        expire_preset = self._parse_expire()
         d = self._current_dept_key()
         rc, out = self._run_tool([
             "new",
             "--name", self.name_input.text().strip(),
             "--d", d,
-            "--expire", expire
+            "--expire", expire_preset
         ])
         self._show_result(rc, out)
 
     def do_renew(self):
         if not self._check_inputs(require_name=True, require_dept=False):
             return
-        try:
-            expire = self._parse_expire()
-        except _InputCancelled:
-            return
+        expire_preset = self._parse_expire()
         d = self._current_dept_key()
         rc, out = self._run_tool([
             "renew",
             "--name", self.name_input.text().strip(),
             "--d", d,
-            "--expire", expire
+            "--expire", expire_preset
         ])
         self._show_result(rc, out)
 
@@ -175,13 +173,8 @@ class LicenseToolGUI(QMainWindow):
         return True
 
     def _parse_expire(self) -> str:
-        raw = self.expire_input.text().strip()
-        if raw in ("", "0", "永久", "permanent"):
-            return "0"
-        if len(raw) == 8 and raw.isdigit():
-            return raw
-        QMessageBox.warning(self, "到期日错", "格式必须是 yyyyMMdd,或留空 / 0 表示永久")
-        raise _InputCancelled()
+        """Read expire preset key from combo (returns '1m' / '0' / etc)."""
+        return self.expire_combo.currentData() or "0"
 
     def _show_result(self, rc: int, out: str):
         prefix = "✓ OK" if rc == 0 else "✗ FAIL"

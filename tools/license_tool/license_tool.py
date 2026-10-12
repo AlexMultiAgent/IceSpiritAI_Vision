@@ -8,6 +8,7 @@ import dataclasses
 import datetime
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -190,6 +191,46 @@ def _current_expiry_for(ledger_dir: Path, name: str) -> Optional[int]:
     return last
 
 
+def compute_expire_yyyymmdd(preset: str, today=None) -> int:
+    """preset 字符串 → yyyymmdd int(0 = 永久)
+
+    Accepted preset values:
+    - "0" / "permanent" / "永久" → 0
+    - "1m" / "1月" → 30 天后
+    - "3m" / "3月" → 90 天后
+    - "6m" / "半年" → 180 天后
+    - "1y" / "1年" → 365 天后
+    - "2y" / "2年" → 730 天后
+    - "5y" / "5年" → 1825 天后
+    - "<8 digits>" → int (raw yyyyMMdd passthrough for backward compat)
+    """
+    from datetime import date, timedelta
+    if today is None:
+        today = date.today()
+
+    s = preset.strip()
+    if s in ("0", "permanent", "永久"):
+        return 0
+    if s in ("1m", "1月"):
+        return int((today + timedelta(days=30)).strftime("%Y%m%d"))
+    if s in ("3m", "3月"):
+        return int((today + timedelta(days=90)).strftime("%Y%m%d"))
+    if s in ("6m", "半年"):
+        return int((today + timedelta(days=180)).strftime("%Y%m%d"))
+    if s in ("1y", "1年"):
+        return int((today + timedelta(days=365)).strftime("%Y%m%d"))
+    if s in ("2y", "2年"):
+        return int((today + timedelta(days=730)).strftime("%Y%m%d"))
+    if s in ("5y", "5年"):
+        return int((today + timedelta(days=1825)).strftime("%Y%m%d"))
+    # Raw 8-digit yyyyMMdd (backward compat for CLI scripts / 老用法)
+    if len(s) == 8 and s.isdigit():
+        return int(s)
+    raise ParseException(
+        f"无效到期日 preset={preset!r};允许: 0/1月/3月/半年/1年/2年/5年/永久 或 yyyyMMdd"
+    )
+
+
 def _current_d_for(ledger_dir: Path, name: str) -> Optional[str]:
     """返回台账中 name 最近一次(new / renew)签发所用的 d(部门 key)。
     用于 renew 跨处室拒签。"""
@@ -280,7 +321,7 @@ def _cli():
     p_new = sub.add_parser("new")
     p_new.add_argument("--name", required=True)
     p_new.add_argument("--d", default=DEFAULT_DEPARTMENT, help=f"管理处室 key(默认 {DEFAULT_DEPARTMENT})")
-    p_new.add_argument("--expire", required=True, type=int, help="yyyyMMdd,0=永久")
+    p_new.add_argument("--expire", required=True, help="preset (1月/3月/半年/1年/2年/5年/永久/0) or yyyyMMdd")
     p_new.add_argument("--pem", required=True)
     p_new.add_argument("--ledger-dir", default=".")
     p_new.add_argument("--note", default="")
@@ -288,7 +329,7 @@ def _cli():
     p_renew = sub.add_parser("renew")
     p_renew.add_argument("--name", required=True, help="按用户名续期(跨处室续期被禁止)")
     p_renew.add_argument("--d", default=DEFAULT_DEPARTMENT, help=f"管理处室 key(默认 {DEFAULT_DEPARTMENT})")
-    p_renew.add_argument("--expire", required=True, type=int)
+    p_renew.add_argument("--expire", required=True, help="preset (1月/3月/半年/1年/2年/5年/永久/0) or yyyyMMdd")
     p_renew.add_argument("--pem", required=True)
     p_renew.add_argument("--ledger-dir", default=".")
     p_renew.add_argument("--note", default="")
@@ -299,13 +340,22 @@ def _cli():
 
     args = parser.parse_args()
 
+    # Convert expire preset (string) to yyyymmdd int (used by new + renew)
+    expire_int = None
+    if args.cmd in ("new", "renew"):
+        try:
+            expire_int = compute_expire_yyyymmdd(args.expire)
+        except ParseException as e:
+            print(str(e))
+            sys.exit(1)
+
     if args.cmd == "new":
         sk = _load_private_key(args.pem)
-        code = new(sk, args.name, args.expire, Path(args.ledger_dir), d=args.d, note=args.note)
+        code = new(sk, args.name, expire_int, Path(args.ledger_dir), d=args.d, note=args.note)
         print(code)
     elif args.cmd == "renew":
         sk = _load_private_key(args.pem)
-        code = renew(sk, args.name, args.expire, Path(args.ledger_dir), d=args.d, note=args.note)
+        code = renew(sk, args.name, expire_int, Path(args.ledger_dir), d=args.d, note=args.note)
         print(code)
     elif args.cmd == "verify":
         sk = _load_private_key(args.pem)
