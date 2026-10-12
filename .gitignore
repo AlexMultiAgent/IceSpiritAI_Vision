@@ -184,3 +184,8 @@ docs/glasses/*.apk
 # .tmp_audit subdir stabilizes into a real tool, move it to tools/ and
 # add a tracked entry instead.
 .tmp_audit/
+
+# 激活码工具本地文件(开发机与市局广告处电脑)
+tools/license_tool/icespiritai-license-private.pem
+tools/license_tool/许可证台账.csv
+tools/license_tool/*.dpapi
