@@ -38,18 +38,24 @@ def build():
     if r.returncode != 0:
         sys.exit(r.returncode)
 
-    # 复制 README + 占位 PEM(留空 PEM,提示填入真实私钥)
-    (OUTPUT_DIR / "README.txt").write_text(
-        "冰灵锐目 激活码签发工具\n"
-        "========================\n\n"
-        "1. 双击「SignTool.exe」(可右键改名为中文,如「签发工具.exe」)\n"
-        "2. 点击「选择私钥 PEM 文件」,选你的 icespiritai-license-private.pem\n"
-        "3. 填 UID / 名称 / 到期日 → 签发或续期\n"
-        "4. 签出的码发给客户(微信 / 邮件)\n\n"
-        "台账文件:许可证台账.csv(同 .exe 所在目录)\n"
-        "私钥备份:请妥善保管,丢失 = 所有已激活客户需重发版\n",
-        encoding="utf-8",
-    )
+    # 复制 README.txt 为完整安装使用说明(给市局广告处,无需打开 docs/)
+    readme_source = HERE / "INSTALL.md"
+    if readme_source.exists():
+        readme_content = readme_source.read_text(encoding="utf-8")
+        # 转纯文本:从最长的前缀开始替换,避免 # 残留
+        plain = readme_content
+        plain = plain.replace("### ", "    ")
+        plain = plain.replace("## ", "==== ")
+        plain = plain.replace("# ", "")
+        plain = plain.replace("**", "")
+        plain = plain.replace("`", "")
+        (OUTPUT_DIR / "README.txt").write_text(plain, encoding="utf-8")
+    else:
+        (OUTPUT_DIR / "README.txt").write_text(
+            "冰灵锐目 激活码签发工具\n========================\n\n"
+            "请参考 INSTALL.md\n",
+            encoding="utf-8",
+        )
     print(f"\n[OK] Done. Output: {OUTPUT_DIR}")
 
 
