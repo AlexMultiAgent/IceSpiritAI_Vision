@@ -261,19 +261,6 @@ def sign_payload(sk, payload: Payload) -> str:
     return _format(payload_bytes, signature)
 
 
-def info(code: str) -> str:
-    p = parse(code)
-    if p is None:
-        raise ParseException("激活码格式错误")
-    expire_str = "永久" if p.payload.is_permanent() else str(p.payload.e)
-    return (
-        f"name    : {p.payload.n}\n"
-        f"expire  : {expire_str}\n"
-        f"dept    : {p.payload.d}\n"
-        f"version : {p.payload.v}"
-    )
-
-
 def verify(code: str, public_key) -> bool:
     p = parse(code)
     if p is None:
@@ -306,9 +293,6 @@ def _cli():
     p_renew.add_argument("--ledger-dir", default=".")
     p_renew.add_argument("--note", default="")
 
-    p_info = sub.add_parser("info")
-    p_info.add_argument("--code", required=True)
-
     p_verify = sub.add_parser("verify")
     p_verify.add_argument("--code", required=True)
     p_verify.add_argument("--pem", required=True)
@@ -323,8 +307,6 @@ def _cli():
         sk = _load_private_key(args.pem)
         code = renew(sk, args.name, args.expire, Path(args.ledger_dir), d=args.d, note=args.note)
         print(code)
-    elif args.cmd == "info":
-        print(info(args.code))
     elif args.cmd == "verify":
         sk = _load_private_key(args.pem)
         pk = sk.public_key()

@@ -85,11 +85,9 @@ class LicenseToolGUI(QMainWindow):
         new_btn.clicked.connect(self.do_new)
         renew_btn = QPushButton("续期")
         renew_btn.clicked.connect(self.do_renew)
-        info_btn = QPushButton("查询码信息(仅解析,不验签)")
-        info_btn.clicked.connect(self.do_info)
         verify_btn = QPushButton("完整验签")
         verify_btn.clicked.connect(self.do_verify)
-        for b in [new_btn, renew_btn, info_btn, verify_btn]:
+        for b in [new_btn, renew_btn, verify_btn]:
             btn_row.addWidget(b)
         root.addLayout(btn_row)
 
@@ -153,13 +151,6 @@ class LicenseToolGUI(QMainWindow):
             "--d", d,
             "--expire", expire
         ])
-        self._show_result(rc, out)
-
-    def do_info(self):
-        code, ok = QInputDialog.getMultiLineText(self, "查询码信息", "粘贴激活码:")
-        if not ok or not code.strip():
-            return
-        rc, out = self._run_tool(["info", "--code", code.strip()])
         self._show_result(rc, out)
 
     def do_verify(self):

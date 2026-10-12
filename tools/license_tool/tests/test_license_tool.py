@@ -81,16 +81,6 @@ def test_new_rejects_name_reuse(keypair, tmp_path):
     assert "name" in str(ei.value) and "已存在" in str(ei.value)
 
 
-def test_info_does_not_require_private_key(keypair, tmp_path):
-    from license_tool import issue, info
-    sk, pk, _ = keypair
-    code = issue(sk, name="acme", expire=20270630, ledger_dir=tmp_path, d="ad")
-    info_text = info(code)
-    assert "acme" in info_text
-    assert "20270630" in info_text
-    assert "ad" in info_text
-
-
 def test_renew_rejects_when_department_differs(keypair, tmp_path):
     """renew d 与台账里 name 的 d 不一致 → 拒绝(跨处室续期被禁止)"""
     from license_tool import issue, renew, ParseException
