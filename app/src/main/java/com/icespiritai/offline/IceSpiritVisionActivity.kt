@@ -8,13 +8,18 @@ import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icespiritai.offline.BuildConfig
+import com.icespiritai.offline.auth.LicenseState
+import com.icespiritai.offline.auth.LicenseStore
+import com.icespiritai.offline.auth.LicenseViewModel
 import com.icespiritai.offline.settings.SettingsRepository
+import com.icespiritai.offline.ui.auth.LicenseGateScreen
 import com.icespiritai.offline.tts.AndroidTtsEngine
 import com.icespiritai.offline.tts.TtsController
 import com.icespiritai.offline.tts.TtsModelInstaller
@@ -87,6 +92,27 @@ class IceSpiritVisionActivity : ComponentActivity() {
         )
 
         setContent {
+            // License gate: until LicenseState.Active is reached we render ONLY
+            // the LicenseGateScreen — no NavHost, no theme provider, no
+            // disclaimer overlay. Reason: a freshly installed (unlicensed)
+            // user must not see a half-rendered home screen or get hit with
+            // a disclaimer dialog before they even know what app they're
+            // activating. The gate is a transient state, not part of the
+            // app's design — leaving it unthemed is intentional.
+            val licenseVm = remember {
+                LicenseViewModel(
+                    LicenseStore(applicationContext),
+                    todayProvider = {
+                        // "2026-10-12" -> 20261012 (the yyyymmdd int that
+                        // LicenseVerifier compares against the payload's
+                        // expiry). Available on API 26+; minSdk=26 here.
+                        java.time.LocalDate.now()
+                            .toString().replace("-", "").toLong()
+                    }
+                )
+            }
+            val licenseState by licenseVm.state.collectAsState()
+
             val themeMode by settings.themeMode.collectAsStateWithLifecycle(
                 // First-frame placeholder before the first DataStore read
                 // returns. Matches the factory default (SYSTEM) so a
@@ -122,43 +148,50 @@ class IceSpiritVisionActivity : ComponentActivity() {
             // instead of always rendering the EmptyTtsState branch.
             val engines by ttsController.engines.collectAsStateWithLifecycle()
 
-            IceSpiritVisionTheme(themeMode = themeMode, ttsController = ttsController) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    IceSpiritNavHost(
-                        ttsState = ttsState,
-                        onSpeakToggle = { ttsController.toggle() },
-                        ttsController = ttsController,
-                        ttsEnabled = ttsSetting.enabled,
-                        onSetTtsEnabled = { enabled ->
-                            // ttsController.setEnabled delegates to
-                            // TtsSettingRepository.setEnabled via the
-                            // TtsSettingRepositoryAdapter; we just need
-                            // a CoroutineScope. lifecycleScope is the
-                            // Activity-scoped scope, fine for a single
-                            // DataStore edit (low-frequency UI event).
-                            lifecycleScope.launch {
-                                ttsController.setEnabled(enabled)
-                            }
-                        },
-                        currentEngineLabel = currentEngineLabel,
-                        // Bug 2 fix (v0.1.61): thread the persisted package
-                        // name and the live engine list to the picker so
-                        // tapping a row actually flips the highlighted
-                        // selection and persists via setEnginePackage.
-                        currentEnginePackage = ttsSetting.enginePackage,
-                        engines = engines,
-                        // Bug 4 fix (v0.1.61): route every row tap through
-                        // engineClick, which decides download-vs-select
-                        // based on the row's installation status. The
-                        // picker no longer has a separate "下载" CTA —
-                        // tapping the local-engine row when not yet
-                        // installed kicks off the ONNX download.
-                        onEngineClick = { pkg -> ttsController.engineClick(pkg) },
-                    )
-                    if (!disclaimerAccepted) {
-                        DisclaimerDialog(onAcknowledge = {
-                            lifecycleScope.launch { settings.acceptDisclaimer() }
-                        })
+            if (licenseState !is LicenseState.Active) {
+                // Unlicensed: render ONLY the gate. No theme, no disclaimer,
+                // no NavHost — keeps the transition to the licensed flow
+                // clean and avoids a half-rendered home screen flash.
+                LicenseGateScreen(vm = licenseVm)
+            } else {
+                IceSpiritVisionTheme(themeMode = themeMode, ttsController = ttsController) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        IceSpiritNavHost(
+                            ttsState = ttsState,
+                            onSpeakToggle = { ttsController.toggle() },
+                            ttsController = ttsController,
+                            ttsEnabled = ttsSetting.enabled,
+                            onSetTtsEnabled = { enabled ->
+                                // ttsController.setEnabled delegates to
+                                // TtsSettingRepository.setEnabled via the
+                                // TtsSettingRepositoryAdapter; we just need
+                                // a CoroutineScope. lifecycleScope is the
+                                // Activity-scoped scope, fine for a single
+                                // DataStore edit (low-frequency UI event).
+                                lifecycleScope.launch {
+                                    ttsController.setEnabled(enabled)
+                                }
+                            },
+                            currentEngineLabel = currentEngineLabel,
+                            // Bug 2 fix (v0.1.61): thread the persisted package
+                            // name and the live engine list to the picker so
+                            // tapping a row actually flips the highlighted
+                            // selection and persists via setEnginePackage.
+                            currentEnginePackage = ttsSetting.enginePackage,
+                            engines = engines,
+                            // Bug 4 fix (v0.1.61): route every row tap through
+                            // engineClick, which decides download-vs-select
+                            // based on the row's installation status. The
+                            // picker no longer has a separate "下载" CTA —
+                            // tapping the local-engine row when not yet
+                            // installed kicks off the ONNX download.
+                            onEngineClick = { pkg -> ttsController.engineClick(pkg) },
+                        )
+                        if (!disclaimerAccepted) {
+                            DisclaimerDialog(onAcknowledge = {
+                                lifecycleScope.launch { settings.acceptDisclaimer() }
+                            })
+                        }
                     }
                 }
             }
