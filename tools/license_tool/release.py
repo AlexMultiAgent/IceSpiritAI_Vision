@@ -15,13 +15,19 @@ OUTPUT_DIR = Path("D:/icevision-license-tool").resolve()
 
 def build():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    # 清理上次产物
+    # 清理上次产物(本地 + 输出目录里的旧 .exe,避免堆积乱码 / 不同哈希的版本)
     dist = HERE / "dist"
     build = HERE / "build"
     if dist.exists():
         shutil.rmtree(dist)
     if build.exists():
         shutil.rmtree(build)
+    # 输出目录里的 .exe 都清掉,只留 README/INSTALL/PEM 模板
+    for old_exe in OUTPUT_DIR.glob("*.exe"):
+        try:
+            old_exe.unlink()
+        except OSError:
+            pass
 
     cmd = [
         sys.executable, "-m", "PyInstaller",
