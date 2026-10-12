@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 CODE_PREFIX = "ICS1"
 PAYLOAD_VERSION = 1
-DEFAULT_DEPARTMENT = "advertising"
+DEFAULT_DEPARTMENT = "ad"
 
 
 class LicenseError(Exception):
@@ -119,7 +119,7 @@ def parse(code: str) -> Optional[ParsedLicense]:
         return None
     if payload.e != 0 and (payload.e < 20250101 or payload.e > 20991231):
         return None
-    if len(payload.d) > 16:
+    if len(payload.d) > 8:
         return None
     return ParsedLicense(payload=payload, payload_bytes=payload_bytes, signature=signature)
 

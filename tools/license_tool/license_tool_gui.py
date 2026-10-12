@@ -31,7 +31,7 @@ else:
 # 跟 license_tool.py 的 DEFAULT_DEPARTMENT / Payload.d 字段对齐。
 # 新增部门需开发者改代码 + 发新 .exe;不在此处的下拉值不会被签发器写出。
 DEPARTMENTS: list[tuple[str, str]] = [
-    ("广告处", "advertising"),
+    ("广告处", "ad"),
     # 未来扩展:
     # ("食品口", "food"),
 ]
@@ -124,7 +124,7 @@ class LicenseToolGUI(QMainWindow):
     def _current_dept_key(self) -> str:
         """从下拉框读当前选中的部门 key;若下拉为空(理论上不会),回退到广告处。"""
         data = self.dept_combo.currentData()
-        return data or "advertising"
+        return data or "ad"
 
     def do_new(self):
         if not self._check_inputs(require_name=True, require_dept=False):

@@ -110,7 +110,7 @@ class LicenseInteropTest {
                     "new",
                     "--uid", "intop1",
                     "--name", "interoptest",
-                    "--d", "advertising",
+                    "--d", "ad",
                     "--expire", "20270630",
                     "--pem", pemFile.absolutePath,
                     "--ledger-dir", keyDir.absolutePath

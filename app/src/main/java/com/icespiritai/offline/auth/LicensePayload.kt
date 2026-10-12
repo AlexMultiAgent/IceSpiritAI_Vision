@@ -8,7 +8,7 @@ data class LicensePayload(
     val u: String,
     val n: String,
     val e: Long,
-    val d: String = "advertising"
+    val d: String = "ad"
 ) {
     fun isPermanent(): Boolean = e == 0L
 
