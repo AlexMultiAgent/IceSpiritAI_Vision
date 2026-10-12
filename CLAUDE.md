@@ -429,3 +429,29 @@ Settings 新增「长报告摘要」Switch(默认 OFF):`TtsSetting.longReportSum
 ## 应用内吉祥物素材
 
 首页 Idle 预览区的胸像占位图由 `冰灵（男）形象/戴智能眼镜.jpg` 经 `tools/generate_mascot_asset.py` 生成(**rembg `isnet-general-use` 出 matte** → 补洞 → 去阶梯 → 边缘带反解 JPEG 混色 → 紧裁缩放),输出 `app/src/main/res/drawable-nodpi/mascot_glasses_bust.png`(透明底),由 `ImagePreview` 以**固定 120dp**(`IdleMascotSize`)居中显示 —— 空态装饰图用固定 dp 而不是容器百分比,否则平板 / 折叠屏上会变成广告牌(旧实现 45% 容器高 = 258dp / 774px)。**这张图不能用颜色泛洪抠**(白衬衫前襟 / 半透明镜片会被咬穿,三种阈值法均已实测失败),脚本内的 `--engine chroma` 只是别的素材的应急回退;选型理由与验收清单见 [`docs/knowledge/mascot-ui-asset.md`](docs/knowledge/mascot-ui-asset.md)。
+
+## 激活码 (license) 工具链(2026-10-11 起)
+
+本 App 自 v0.5.16 起需要激活码才能使用,激活码由 ECDSA P-256 私钥离线签发,App 用 `BuildConfig.LICENSE_PUBLIC_KEY` 验签。
+
+| 概念 | 位置 |
+|---|---|
+| 私钥(开发机) | `~/.gradle/icespiritai-license-private.pem`(chmod 600) |
+| 私钥(备份) | `/d/keystores/icespiritai-license-private.pem` |
+| 公钥 | `app/build.gradle.kts:buildConfigField LICENSE_PUBLIC_KEY` |
+| 公钥指纹 | `app/build.gradle.kts:buildConfigField LICENSE_KEY_FINGERPRINT` |
+| 签码工具源码 | `tools/license_tool/license_tool.py`(纯函数)+ `license_tool_gui.py`(PySide6) |
+| 打包脚本 | `tools/license_tool/release.py` → 输出 `/d/icevision-license-tool/签发工具.exe` |
+| 台账 | `许可证台账.csv`(工具同目录,gitignored) |
+
+**加客户 / 续期 0 发版**:跑 .exe 输入 uid / 名称 / 到期日,签完直接发给客户。
+
+**renew 拒绝缩短期限**(策略):若新 expire 早于台账当前值,抛 `LicenseError`。
+
+**uid 不可复用**(策略):uid 已存在时 `new` 拒绝,必须用 `renew`。
+
+**失钥 = 所有客户需重发版**:多份离线备份 + DPAPI 本机加密。
+
+**App 内任何「请联系您的销售」字样统一改为「请联系市局广告处」**(2026-10-11 主君口径)。
+
+详见 [`docs/superpowers/specs/2026-10-11-license-gate-design.md`](docs/superpowers/specs/2026-10-11-license-gate-design.md)。
