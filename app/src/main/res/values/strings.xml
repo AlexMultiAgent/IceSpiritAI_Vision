@@ -260,6 +260,22 @@
     <string name="tts_disclaimer_body_3">请将本应用作为现场辅助工具使用,不要作为最终合规判定依据。</string>
     <string name="tts_disclaimer_ack">我了解</string>
 
+    <!-- License gate (§4.4) -->
+    <string name="license_gate_title">激活冰灵锐目</string>
+    <string name="license_gate_subtitle">首次使用请向市局广告处索取</string>
+    <string name="license_gate_username_hint">用户名</string>
+    <string name="license_gate_code_hint">激活码</string>
+    <string name="license_gate_login">登录</string>
+    <string name="license_error_parse_failed">激活码格式错误,请检查是否复制完整</string>
+    <string name="license_error_signature_mismatch">激活码无效,请联系市局广告处</string>
+    <string name="license_error_username_mismatch">用户名与激活码不匹配,请联系市局广告处</string>
+    <string name="license_error_expired">激活码已于 %1$s 到期,请联系市局广告处续期</string>
+    <string name="license_relogin_button">切换账号 / 重新登录</string>
+    <string name="license_relogin_dialog_title">重新登录</string>
+    <string name="license_relogin_dialog_body">当前账号:%1$s。重新登录后需要再次输入新激活码。</string>
+    <string name="license_relogin_confirm">确认</string>
+    <string name="license_relogin_cancel">取消</string>
+
     <!-- ResultPanel 0-hit footer (§6.3) -->
     <string name="tts_result_panel_footer_disclaimer">⚠ AI 识别仅供参考,实际以现场判断为准</string>
 
