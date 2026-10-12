@@ -15,8 +15,16 @@ from PySide6.QtWidgets import (
     QFileDialog, QGroupBox, QFormLayout, QInputDialog
 )
 
-TOOL_DIR = Path(__file__).parent.resolve()
-LICENSE_TOOL = TOOL_DIR / "license_tool.py"
+# PyInstaller 冻结后,__file__ 指向 %TEMP%/_MEIxxxxxx/ 解压目录(每次启动换)。
+# 必须用 sys.executable 拿真正的 .exe 路径,这样台账 / README 都落在 .exe 同目录。
+if getattr(sys, "frozen", False):
+    # 运行在 PyInstaller 冻结的 .exe 里
+    TOOL_DIR = Path(sys.executable).parent.resolve()
+    LICENSE_TOOL = TOOL_DIR / "license_tool.py"  # GUI 仅用其文件名做 subprocess 入口,文件未必真的存在于 TOOL_DIR(只在源码运行时),无需担心
+else:
+    # 源码运行(Python 直接调 license_tool_gui.py)
+    TOOL_DIR = Path(__file__).parent.resolve()
+    LICENSE_TOOL = TOOL_DIR / "license_tool.py"
 
 
 class _InputCancelled(Exception):
