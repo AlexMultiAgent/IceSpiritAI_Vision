@@ -10,7 +10,7 @@ from pathlib import Path
 
 HERE = Path(__file__).parent.resolve()
 SPEC = HERE / "license_tool_gui.py"
-OUTPUT_DIR = Path("/d/icevision-license-tool")
+OUTPUT_DIR = Path("D:/icevision-license-tool").resolve()
 
 
 def build():
