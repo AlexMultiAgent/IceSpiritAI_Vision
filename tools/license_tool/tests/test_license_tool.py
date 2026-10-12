@@ -23,9 +23,9 @@ def test_prefix_is_ics1():
     assert CODE_PREFIX == "ICS1"
 
 
-def test_roundtrip_with_expire_date(keypair):
+def test_roundtrip_with_expire_date(keypair, tmp_path):
     sk, pk, _ = keypair
-    code = issue(sk, uid="a1b2c3", name="acme", expire=20270630)
+    code = issue(sk, uid="a1b2c3", name="acme", expire=20270630, ledger_dir=tmp_path)
     parsed = parse(code)
     assert parsed.payload.v == 1
     assert parsed.payload.u == "a1b2c3"
@@ -33,9 +33,9 @@ def test_roundtrip_with_expire_date(keypair):
     assert parsed.payload.e == 20270630
 
 
-def test_roundtrip_with_permanent(keypair):
+def test_roundtrip_with_permanent(keypair, tmp_path):
     sk, pk, _ = keypair
-    code = issue(sk, uid="x9y8z7", name="demo", expire=0)
+    code = issue(sk, uid="x9y8z7", name="demo", expire=0, ledger_dir=tmp_path)
     parsed = parse(code)
     assert parsed.payload.e == 0
 
