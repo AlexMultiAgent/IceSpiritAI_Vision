@@ -65,8 +65,13 @@ class LicenseToolGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("冰灵锐目 激活码签发工具")
-        self.resize(820, 640)
+        self.resize(820, 720)
         self.pem_path: Path | None = None
+        # 启动时若 .exe 内嵌了 PEM,自动加载 — 用户无需点"选择私钥"按钮。
+        # 源码运行模式 sys.frozen=False,无 embedded → 留 None,保持现状。
+        default_pem = self._find_default_pem()
+        if default_pem is not None:
+            self.pem_path = default_pem
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -74,7 +79,7 @@ class LicenseToolGUI(QMainWindow):
 
         # PEM 选择
         pem_row = QHBoxLayout()
-        self.pem_label = QLabel("未选择私钥")
+        self.pem_label = QLabel(str(self.pem_path) if self.pem_path else "未选择私钥")
         pem_btn = QPushButton("选择私钥 PEM 文件")
         pem_btn.clicked.connect(self.choose_pem)
         pem_row.addWidget(self.pem_label, 1)
@@ -130,11 +135,45 @@ class LicenseToolGUI(QMainWindow):
         copy_row.addWidget(self.copy_last_btn)
         root.addLayout(copy_row)
 
+        # 安全提示:PEM 内嵌于 .exe 物理文件,任何拿到副本的人都能反编译提取私钥。
+        # 显式红字 + 加粗,让分发对象(市局广告处同事)明确知道分发 .exe = 分发私钥能力。
+        if getattr(sys, 'frozen', False) and self.pem_path is not None and \
+                str(self.pem_path).startswith(str(getattr(sys, '_MEIPASS', ''))):
+            warning_label = QLabel(
+                "⚠ 安全提示:本工具的 PEM 私钥已内嵌于 .exe 物理文件中。"
+                "任何拿到 .exe 副本的人都能反编译提取私钥。"
+                "请严格控制 .exe 的分发对象,不要分享给不可信第三方。"
+            )
+            warning_label.setWordWrap(True)
+            warning_label.setStyleSheet("color: #c62828; font-weight: bold;")
+            root.addWidget(warning_label)
+
+    def _find_default_pem(self) -> "Path | None":
+        """查找默认 PEM 路径(优先级)。
+
+        1. PyInstaller --onefile 冻结 → sys._MEIPASS/license.pem(PyInstaller 在打包时由
+           release.py 的 --add-data 把 PEM 放到 bundle 根)
+        2. 否则返回 None(源码运行模式无内嵌,需要手动选 PEM)
+        """
+        if getattr(sys, 'frozen', False):
+            mei = getattr(sys, '_MEIPASS', None)
+            if mei:
+                candidate = Path(mei) / 'license.pem'
+                if candidate.exists():
+                    return candidate
+        return None
+
     def choose_pem(self):
         path, _ = QFileDialog.getOpenFileName(self, "选择私钥 PEM", str(TOOL_DIR), "PEM files (*.pem)")
         if path:
             self.pem_path = Path(path)
             self.pem_label.setText(str(self.pem_path))
+        else:
+            # 用户按 Cancel — 试 embedded PEM(.exe 内嵌的 license.pem)
+            embedded = self._find_default_pem()
+            if embedded is not None:
+                self.pem_path = embedded
+                self.pem_label.setText(f"[内嵌] {self.pem_path}")
 
     def _require_inputs(self, require_name: bool) -> tuple[bool, object | None, str, str, int]:
         """集中校验 PEM + name + 部门 + 到期日;返回 (ok, sk, name, d, expire_int)
