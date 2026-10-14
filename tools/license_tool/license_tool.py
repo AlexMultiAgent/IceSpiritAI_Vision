@@ -134,28 +134,36 @@ def _ledger_path(ledger_dir: Path) -> Path:
     return ledger_dir / "许可证台账.csv"
 
 
-# CSV 表头:ts,op,name,issued_expire,note,d
+# CSV 表头:中文,管理员一眼能看懂。Excel / 记事本开 BOM 头 UTF-8 后正常显示。
 # V2 移除 uid 列(UID == name,签发器只按 name 追踪)。旧 V1 台账(7 列含 uid)不向后兼容 —
 # 本地 test_state,无生产用户,直接重写。
-_LEDGER_HEADER = "ts,op,name,issued_expire,note,d"
+_LEDGER_HEADER = "签发时间,操作,名称,到期日,备注,签发处室"
 
 
 def _read_ledger(ledger_dir: Path) -> list[dict]:
+    """读台账 csv(自动剥 BOM;legacy 文件缺 d 列视为默认)。"""
     p = _ledger_path(ledger_dir)
     if not p.exists():
         return []
-    rows = []
-    with p.open("r", encoding="utf-8-sig") as f:  # utf-8-sig 自动剥 BOM
-        header = f.readline().strip().split(",")
-        for line in f:
-            line = line.rstrip("\n")
-            if not line.strip():
-                continue
-            fields = line.split(",")
-            row = dict(zip(header, fields))
-            if "d" not in row:
-                row["d"] = DEFAULT_DEPARTMENT
-            rows.append(row)
+    import csv as _csv
+    with p.open("r", encoding="utf-8-sig", newline="") as f:  # utf-8-sig 自动剥 BOM
+        reader = _csv.DictReader(f)
+        rows = []
+        for row in reader:
+            # 字段名映射:CSV header 是中文("签发时间,操作,名称,到期日,备注,签发处室"),
+            # 下游代码用英文 key。legacy 兼容(旧 V1 文件有 uid 列,或缺 d 列 → 视为默认)。
+            mapped = {}
+            for k, v in row.items():
+                if k == "签发时间": mapped["ts"] = v
+                elif k == "操作": mapped["op"] = v
+                elif k == "名称": mapped["name"] = v
+                elif k == "到期日": mapped["issued_expire"] = v
+                elif k == "备注": mapped["note"] = v
+                elif k == "签发处室": mapped["d"] = v
+                elif k is None or k == "": pass  # DictReader 给无 header 列填 None,跳过
+                else: mapped[k] = v  # legacy uid 等保留
+            mapped.setdefault("d", DEFAULT_DEPARTMENT)
+            rows.append(mapped)
     return rows
 
 

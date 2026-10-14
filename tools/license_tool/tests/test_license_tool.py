@@ -113,14 +113,15 @@ def test_renew_missing_name_raises(keypair, tmp_path):
 
 
 def test_ledger_persists_d_column(keypair, tmp_path):
-    """台账 CSV 应当写出 d 列,旧文件可兼容读取(无 d → 视为默认)"""
+    """台账 CSV 应当写出 d 列(中文「签发处室」),旧文件可兼容读取(无 d → 视为默认)"""
     from license_tool import issue, Ledger
     sk, pk, _ = keypair
     issue(sk, name="acme", expire=20270630, ledger_dir=tmp_path, d="food")
     csv_path = tmp_path / "许可证台账.csv"
     text = csv_path.read_text(encoding="utf-8")
-    assert "dept,d" in text.splitlines()[0] or text.splitlines()[0].endswith(",d"), \
-        f"CSV header missing d column: {text.splitlines()[0]!r}"
+    # header 是中文「签发处室」最后列
+    assert "签发处室" in text.splitlines()[0], \
+        f"CSV header missing 签发处室 column: {text.splitlines()[0]!r}"
     assert ",food" in text
 
     rows = Ledger(tmp_path).rows()
