@@ -79,7 +79,7 @@ class LicenseToolGUI(QMainWindow):
 
         # PEM 选择
         pem_row = QHBoxLayout()
-        self.pem_label = QLabel(str(self.pem_path) if self.pem_path else "未选择私钥")
+        self.pem_label = QLabel(self._format_pem_label(self.pem_path))
         pem_btn = QPushButton("选择私钥 PEM 文件")
         pem_btn.clicked.connect(self.choose_pem)
         pem_row.addWidget(self.pem_label, 1)
@@ -148,6 +148,15 @@ class LicenseToolGUI(QMainWindow):
             warning_label.setStyleSheet("color: #c62828; font-weight: bold;")
             root.addWidget(warning_label)
 
+    def _format_pem_label(self, pem_path: "Path | None") -> str:
+        """PEM 路径显示文案:frozen 模式 + MEIPASS 内嵌 → 加 [内嵌] 前缀让用户一眼看清来源。"""
+        if pem_path is None:
+            return "未选择私钥"
+        if getattr(sys, 'frozen', False) and \
+                str(pem_path).startswith(str(getattr(sys, '_MEIPASS', ''))):
+            return f"[内嵌] {pem_path}"
+        return str(pem_path)
+
     def _find_default_pem(self) -> "Path | None":
         """查找默认 PEM 路径(优先级)。
 
@@ -167,13 +176,13 @@ class LicenseToolGUI(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(self, "选择私钥 PEM", str(TOOL_DIR), "PEM files (*.pem)")
         if path:
             self.pem_path = Path(path)
-            self.pem_label.setText(str(self.pem_path))
+            self.pem_label.setText(self._format_pem_label(self.pem_path))
         else:
             # 用户按 Cancel — 试 embedded PEM(.exe 内嵌的 license.pem)
             embedded = self._find_default_pem()
             if embedded is not None:
                 self.pem_path = embedded
-                self.pem_label.setText(f"[内嵌] {self.pem_path}")
+                self.pem_label.setText(self._format_pem_label(self.pem_path))
 
     def _require_inputs(self, require_name: bool) -> tuple[bool, object | None, str, str, int]:
         """集中校验 PEM + name + 部门 + 到期日;返回 (ok, sk, name, d, expire_int)
