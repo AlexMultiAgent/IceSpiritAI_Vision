@@ -1,11 +1,10 @@
 """
 冰灵锐目 激活码签发工具 — GUI 包装
 
-UI 通过 subprocess 调用 license_tool.py 的纯函数层,核心契约在 commit 6e01395。
-依赖:PySide6 + cryptography(随工具一起打包)
+UI 调用 license_tool.py 的纯函数层(in-process, 不走 subprocess — 避免打包问题)。
+依赖: PySide6 + cryptography(随工具一起打包)
 """
 from __future__ import annotations
-import subprocess
 import sys
 from pathlib import Path
 
@@ -15,25 +14,49 @@ from PySide6.QtWidgets import (
     QFileDialog, QGroupBox, QFormLayout, QInputDialog, QComboBox
 )
 
-# PyInstaller 冻结后,__file__ 指向 %TEMP%/_MEIxxxxxx/ 解压目录(每次启动换)。
-# 必须用 sys.executable 拿真正的 .exe 路径,这样台账 / README 都落在 .exe 同目录。
-if getattr(sys, "frozen", False):
-    # 运行在 PyInstaller 冻结的 .exe 里
+
+# ----- 导入 license_tool 的核心 -----
+def _import_license_tool():
+    """导入 license_tool 模块,兼容源码运行 + PyInstaller 冻结两种场景
+
+    PyInstaller 冻结时,gui 与 license_tool.py 被 --add-data 一起打进 .exe 根目录,
+    直接 `import license_tool` 即可。源码运行时按文件路径动态加载,不依赖 PYTHONPATH。
+    """
+    if getattr(sys, 'frozen', False):
+        # PyInstaller 冻结 — license_tool.py 与 gui 一起被 bundler 收进来,直接 import
+        import license_tool as lt
+        return lt
+    else:
+        # 源码运行 — 显式按路径 import
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "license_tool", str(Path(__file__).parent / "license_tool.py")
+        )
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Cannot find license_tool.py at {Path(__file__).parent}")
+        lt = importlib.util.module_from_spec(spec)
+        # 必须先注册到 sys.modules,Python 3.12 的 @dataclasses 会查 sys.modules[cls.__module__]
+        # 否则 _process_class 在 dataclasses.py 里 ns = sys.modules.get(...) 取 None 直接崩。
+        sys.modules["license_tool"] = lt
+        spec.loader.exec_module(lt)
+        return lt
+
+
+_lt = _import_license_tool()
+
+
+# ----- 路径:TOOL_DIR 用于台账(在 .exe 同目录)-----
+if getattr(sys, 'frozen', False):
     TOOL_DIR = Path(sys.executable).parent.resolve()
-    LICENSE_TOOL = TOOL_DIR / "license_tool.py"  # GUI 仅用其文件名做 subprocess 入口,文件未必真的存在于 TOOL_DIR(只在源码运行时),无需担心
 else:
-    # 源码运行(Python 直接调 license_tool_gui.py)
     TOOL_DIR = Path(__file__).parent.resolve()
-    LICENSE_TOOL = TOOL_DIR / "license_tool.py"
 
 
-# 管理处室 → 部门 key 映射。
-# 跟 license_tool.py 的 DEFAULT_DEPARTMENT / Payload.d 字段对齐。
-# 新增部门需开发者改代码 + 发新 .exe;不在此处的下拉值不会被签发器写出。
+# 管理处室下拉数据源
 DEPARTMENTS: list[tuple[str, str]] = [
+    # (label, d-key) — d-key 与 license_tool.Payload.d 字段对齐
     ("广告处", "ad"),
-    # 未来扩展:
-    # ("食品口", "food"),
+    # 未来: ("食品口", "food"),
 ]
 
 
@@ -43,7 +66,6 @@ class LicenseToolGUI(QMainWindow):
         self.setWindowTitle("冰灵锐目 激活码签发工具")
         self.resize(820, 640)
         self.pem_path: Path | None = None
-        self.ledger_dir: Path = TOOL_DIR
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -62,21 +84,15 @@ class LicenseToolGUI(QMainWindow):
         form = QGroupBox("签发 / 续期")
         form_layout = QFormLayout()
         self.name_input = QLineEdit()
-        self.name_input.setPlaceholderText("用户名 / 机构代号")
-        self.expire_combo = QComboBox()
-        # (label, preset_key) — preset_key is what compute_expire_yyyymmdd understands
-        self.expire_combo.addItem("1 个月", "1m")
-        self.expire_combo.addItem("3 个月", "3m")
-        self.expire_combo.addItem("半年", "6m")
-        self.expire_combo.addItem("1 年", "1y")
-        self.expire_combo.addItem("2 年", "2y")
-        self.expire_combo.addItem("5 年", "5y")
-        self.expire_combo.addItem("永久", "0")
-        # default = 1 year (most common)
-        self.expire_combo.setCurrentIndex(3)
+        self.name_input.setPlaceholderText("区县局用户名(签发给谁)")
         self.dept_combo = QComboBox()
         for label, key in DEPARTMENTS:
             self.dept_combo.addItem(label, key)
+        self.expire_combo = QComboBox()
+        for label, key in [("1 个月", "1m"), ("3 个月", "3m"), ("半年", "6m"),
+                           ("1 年", "1y"), ("2 年", "2y"), ("5 年", "5y"), ("永久", "0")]:
+            self.expire_combo.addItem(label, key)
+        self.expire_combo.setCurrentIndex(3)  # 默认 1 年
         form_layout.addRow("名称:", self.name_input)
         form_layout.addRow("管理处室:", self.dept_combo)
         form_layout.addRow("到期日:", self.expire_combo)
@@ -98,6 +114,9 @@ class LicenseToolGUI(QMainWindow):
         # 结果区
         self.result_area = QTextEdit()
         self.result_area.setReadOnly(True)
+        self.result_area.setAcceptRichText(False)  # plain text
+        # 不换行 — ICS1 完整可见(横向滚动)
+        self.result_area.setLineWrapMode(QTextEdit.NoWrap)
         root.addWidget(self.result_area, 1)
 
     def choose_pem(self):
@@ -106,79 +125,82 @@ class LicenseToolGUI(QMainWindow):
             self.pem_path = Path(path)
             self.pem_label.setText(str(self.pem_path))
 
-    def _run_tool(self, args: list[str]) -> tuple[int, str]:
-        if self.pem_path is None:
-            return 1, "请先选择私钥 PEM 文件"
-        cmd = [sys.executable, str(LICENSE_TOOL), *args,
-               "--pem", str(self.pem_path),
-               "--ledger-dir", str(self.ledger_dir)]
-        try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            return r.returncode, r.stdout + r.stderr
-        except subprocess.TimeoutExpired:
-            return 1, "工具调用超时(10s)"
-        except Exception as e:
-            return 1, str(e)
+    def _require_inputs(self, require_name: bool) -> tuple[bool, object | None, str, str, int]:
+        """集中校验 PEM + name + 部门 + 到期日;返回 (ok, sk, name, d, expire_int)
 
-    def _current_dept_key(self) -> str:
-        """从下拉框读当前选中的部门 key;若下拉为空(理论上不会),回退到广告处。"""
-        data = self.dept_combo.currentData()
-        return data or "ad"
+        expire_int 已由 preset ("1y" 等) 经 compute_expire_yyyymmdd 转换为 yyyymmdd int。
+        """
+        if self.pem_path is None:
+            QMessageBox.warning(self, "缺少私钥", "请先选择私钥 PEM 文件")
+            return False, None, "", "", 0
+        if require_name and not self.name_input.text().strip():
+            QMessageBox.warning(self, "缺少名称", "请输入区县局用户名")
+            return False, None, "", "", 0
+        try:
+            sk = _lt._load_private_key(str(self.pem_path))
+        except Exception as e:
+            QMessageBox.critical(self, "私钥加载失败", str(e))
+            return False, None, "", "", 0
+        name = self.name_input.text().strip()
+        d = self.dept_combo.currentData() or "ad"
+        preset = self.expire_combo.currentData() or "1y"
+        try:
+            expire_int = _lt.compute_expire_yyyymmdd(preset)
+        except _lt.ParseException as e:
+            QMessageBox.critical(self, "到期日无效", str(e))
+            return False, None, "", "", 0
+        return True, sk, name, d, expire_int
 
     def do_new(self):
-        if not self._check_inputs(require_name=True, require_dept=False):
+        ok, sk, name, d, expire_int = self._require_inputs(require_name=True)
+        if not ok:
             return
-        expire_preset = self._parse_expire()
-        d = self._current_dept_key()
-        rc, out = self._run_tool([
-            "new",
-            "--name", self.name_input.text().strip(),
-            "--d", d,
-            "--expire", expire_preset
-        ])
-        self._show_result(rc, out)
+        try:
+            code = _lt.new(sk, name=name, expire=expire_int, ledger_dir=TOOL_DIR, d=d)
+        except _lt.ParseException as e:
+            self._show_result(False, str(e))
+            return
+        self._show_result(True, code)
+        self.result_area.append("--- 复制上面的 ICS1 字符串给客户 ---")
 
     def do_renew(self):
-        if not self._check_inputs(require_name=True, require_dept=False):
+        ok, sk, name, d, expire_int = self._require_inputs(require_name=True)
+        if not ok:
             return
-        expire_preset = self._parse_expire()
-        d = self._current_dept_key()
-        rc, out = self._run_tool([
-            "renew",
-            "--name", self.name_input.text().strip(),
-            "--d", d,
-            "--expire", expire_preset
-        ])
-        self._show_result(rc, out)
+        try:
+            code = _lt.renew(sk, name=name, expire=expire_int, ledger_dir=TOOL_DIR, d=d)
+        except _lt.ParseException as e:
+            self._show_result(False, str(e))
+            return
+        self._show_result(True, code)
+        self.result_area.append("--- 续期成功, 复制上面的 ICS1 字符串给客户 ---")
 
     def do_verify(self):
+        if self.pem_path is None:
+            QMessageBox.warning(self, "缺少私钥", "请先选择私钥 PEM 文件")
+            return
+        try:
+            sk = _lt._load_private_key(str(self.pem_path))
+            pk = sk.public_key()
+        except Exception as e:
+            QMessageBox.critical(self, "私钥加载失败", str(e))
+            return
         code, ok = QInputDialog.getMultiLineText(self, "完整验签", "粘贴激活码:")
         if not ok or not code.strip():
             return
-        rc, out = self._run_tool(["verify", "--code", code.strip()])
-        self._show_result(rc, out)
+        code = code.strip()
+        try:
+            ok = _lt.verify(code, pk)
+            display = code if len(code) <= 80 else code[:80] + "..."
+            self._show_result(ok, display)
 
-    def _check_inputs(self, require_name: bool, require_dept: bool = True) -> bool:
-        if self.pem_path is None:
-            QMessageBox.warning(self, "缺少私钥", "请先选择私钥 PEM 文件")
-            return False
-        # V2: 签发 / 续期都按 name 走,不再有 uid 输入项。续期按 name 查台账。
-        if require_name:
-            if not self.name_input.text().strip():
-                QMessageBox.warning(self, "缺少名称", "请输入用户名 / 机构代号")
-                return False
-            if not self.dept_combo.currentData() and require_dept:
-                QMessageBox.warning(self, "缺少管理处室", "请选择管理处室")
-                return False
-        return True
+        except _lt.ParseException as e:
+            self._show_result(False, str(e))
 
-    def _parse_expire(self) -> str:
-        """Read expire preset key from combo (returns '1m' / '0' / etc)."""
-        return self.expire_combo.currentData() or "0"
-
-    def _show_result(self, rc: int, out: str):
-        prefix = "✓ OK" if rc == 0 else "✗ FAIL"
-        self.result_area.append(f"[{prefix}]\n{out.rstrip()}\n{'-' * 60}")
+    def _show_result(self, ok: bool, text: str):
+        prefix = "✓ OK" if ok else "✗ FAIL"
+        # plain text append — 不 wrap(用 setLineWrapMode(QTextEdit.NoWrap) 已设)
+        self.result_area.append(f"[{prefix}] {text}")
 
 
 def main():
