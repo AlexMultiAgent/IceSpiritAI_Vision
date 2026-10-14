@@ -145,7 +145,7 @@ def _read_ledger(ledger_dir: Path) -> list[dict]:
     if not p.exists():
         return []
     rows = []
-    with p.open("r", encoding="utf-8") as f:
+    with p.open("r", encoding="utf-8-sig") as f:  # utf-8-sig 自动剥 BOM
         header = f.readline().strip().split(",")
         for line in f:
             line = line.rstrip("\n")
@@ -164,7 +164,9 @@ def _append_ledger(ledger_dir: Path, op: str, name: str, expire: int, note: str 
     is_new = not p.exists()
     with p.open("a", encoding="utf-8", newline="\n") as f:
         if is_new:
-            f.write(_LEDGER_HEADER + "\n")
+            # UTF-8 BOM:Windows 记事本/Excel 默认按 GBK 读中文会乱码;加 BOM 让它们识别 UTF-8。
+            # (header 含中文「签发时间」;旧 legacy 文件无 BOM 已存在,读取兼容。)
+            f.write("﻿" + _LEDGER_HEADER + "\n")
         ts = datetime.datetime.now().isoformat(timespec="seconds")
         f.write(f"{ts},{op},{name},{expire},{note},{d}\n")
 

@@ -49,6 +49,7 @@ def build():
         "--onefile",
         "--windowed",
         "--name", "SignTool",
+        "--icon", str(HERE / "SignTool.ico"),
         "--distpath", str(OUTPUT_DIR),
         "--workpath", str(HERE / "build"),
         "--specpath", str(HERE),
