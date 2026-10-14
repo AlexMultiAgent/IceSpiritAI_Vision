@@ -8,6 +8,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTextEdit, QMessageBox,
@@ -119,6 +120,16 @@ class LicenseToolGUI(QMainWindow):
         self.result_area.setLineWrapMode(QTextEdit.NoWrap)
         root.addWidget(self.result_area, 1)
 
+        # 复制按钮行 — 复制最近一次签发/续期成功的 ICS1 字符串
+        self._last_success_code: str | None = None
+        copy_row = QHBoxLayout()
+        copy_row.addStretch(1)
+        self.copy_last_btn = QPushButton("复制 ICS1 字符串")
+        self.copy_last_btn.setEnabled(False)
+        self.copy_last_btn.clicked.connect(self.copy_last_success)
+        copy_row.addWidget(self.copy_last_btn)
+        root.addLayout(copy_row)
+
     def choose_pem(self):
         path, _ = QFileDialog.getOpenFileName(self, "选择私钥 PEM", str(TOOL_DIR), "PEM files (*.pem)")
         if path:
@@ -192,15 +203,30 @@ class LicenseToolGUI(QMainWindow):
         try:
             ok = _lt.verify(code, pk)
             display = code if len(code) <= 80 else code[:80] + "..."
-            self._show_result(ok, display)
+            self._show_result(ok, display, signing=False)
 
         except _lt.ParseException as e:
             self._show_result(False, str(e))
 
-    def _show_result(self, ok: bool, text: str):
+    def _show_result(self, ok: bool, text: str, *, signing: bool = True):
+        """显示一条结果到 result_area;`signing=True` 且 ok=True 表示来自签发/续期(完整 ICS1) — 更新 copy 按钮。
+        verify 走 signing=False,不污染最近一次成功签发记录。
+        """
         prefix = "✓ OK" if ok else "✗ FAIL"
         # plain text append — 不 wrap(用 setLineWrapMode(QTextEdit.NoWrap) 已设)
         self.result_area.append(f"[{prefix}] {text}")
+        # 失败不清空上次成功 — 用户可能要保留
+        if signing and ok and text.startswith("ICS1."):
+            self._last_success_code = text
+            self.copy_last_btn.setEnabled(True)
+            self.copy_last_btn.setText("复制 ICS1 字符串")
+
+    def copy_last_success(self):
+        if not self._last_success_code:
+            return
+        QApplication.clipboard().setText(self._last_success_code)
+        self.copy_last_btn.setText("✓ 已复制!")
+        QTimer.singleShot(1500, lambda: self.copy_last_btn.setText("复制 ICS1 字符串"))
 
 
 def main():
