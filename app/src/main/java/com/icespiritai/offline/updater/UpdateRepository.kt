@@ -198,10 +198,7 @@ object UpdateRepository {
         context.startForegroundService(intent)
     }
 
-    private fun sha256Short(s: String): String {
-        val md = java.security.MessageDigest.getInstance("SHA-256")
-        return md.digest(s.toByteArray()).joinToString("") { "%02x".format(it) }.take(16)
-    }
+    private fun sha256Short(s: String): String = com.icespiritai.offline.util.Hashing.sha256Short(s)
 
     /**
      * Service callbacks — invoked by [UpdateDownloadService] at terminal points

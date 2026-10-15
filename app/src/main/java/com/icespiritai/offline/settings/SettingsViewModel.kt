@@ -367,10 +367,7 @@ class SettingsViewModel(
         UpdateRepository.markCancelled(downloadId)
     }
 
-    private fun sha256Short(s: String): String {
-        val md = java.security.MessageDigest.getInstance("SHA-256")
-        return md.digest(s.toByteArray()).joinToString("") { "%02x".format(it) }.take(16)
-    }
+    private fun sha256Short(s: String): String = com.icespiritai.offline.util.Hashing.sha256Short(s)
 
     /**
      * Hand the APK file off to the system installer. If the user hasn't yet

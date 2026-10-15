@@ -189,3 +189,10 @@ docs/glasses/*.apk
 tools/license_tool/icespiritai-license-private.pem
 tools/license_tool/许可证台账.csv
 tools/license_tool/*.dpapi
+
+# adb shell am dumps / debug captures — one-off binary output from
+# `adb shell am ...` invocations, never meant for the repo. 2026-10-15
+# had a 17 KB `am.bin` at the project root from a forgotten debug
+# session; this rule prevents recurrence.
+am.bin
+am.*.bin
