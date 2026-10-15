@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -70,7 +71,7 @@ class IceSpiritVisionViewModelTabTest {
     @get:Rule
     val instantTaskRule = InstantTaskExecutorRule()
 
-    private val dispatcher = StandardTestDispatcher()
+    private val dispatcher = UnconfinedTestDispatcher()
 
     @Before
     fun setUp() {
@@ -102,7 +103,14 @@ class IceSpiritVisionViewModelTabTest {
 
     @Test
     fun setTab_returnsTrueOnActualChange_returnsFalseOnSameValue() {
-        val vm = newViewModel()
+        // C6 fix: VM's initialValue is now RuleTab.DEFAULT_VISIBLE_FEATURES
+        // ({AdSignage} only), so the test must explicitly enable FoodLabeling
+        // for the setTab(FoodLabeling) call to be valid. Use a source where
+        // BOTH tabs are visible so the routing behavior is what we're
+        // actually testing, not the visibility gate.
+        val source = FakeThemeSettingsSource(MutableStateFlow(ThemeMode.SYSTEM))
+        source.visibleFeaturesBacking.value = RuleTab.entries.toSet()
+        val vm = newViewModel(source)
         // first switch — actual change
         assertTrue("AdSignage -> FoodLabeling must report changed=true", vm.setTab(RuleTab.FoodLabeling))
         assertEquals(RuleTab.FoodLabeling, vm.currentTab.value)
@@ -231,7 +239,13 @@ class IceSpiritVisionViewModelTabTest {
         // 原 HomeScreen caller-side `if (setTab) reset()` 会导致 tab 切换也走
         // reset 路径,与 spec 矛盾。修复后 caller-side reset() 删除,setTab
         // 内部按 spec 决策。
-        val vm = newViewModel()
+        //
+        // C6 fix: VM's initialValue is now DEFAULT_VISIBLE_FEATURES
+        // ({AdSignage} only). Set both tabs visible so the test exercises
+        // the tab-switch path, not the visibility-gate rejection.
+        val source = FakeThemeSettingsSource(MutableStateFlow(ThemeMode.SYSTEM))
+        source.visibleFeaturesBacking.value = RuleTab.entries.toSet()
+        val vm = newViewModel(source)
         val stuckUri = Uri.parse("content://stuck-report")
         vm.setPendingUri(stuckUri)
 

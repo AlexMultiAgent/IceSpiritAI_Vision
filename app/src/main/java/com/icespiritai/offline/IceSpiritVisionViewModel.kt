@@ -111,7 +111,15 @@ class IceSpiritVisionViewModel(
     val visibleFeatures: StateFlow<Set<RuleTab>> = settingsSource.visibleFeatures.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
-        initialValue = RuleTab.entries.toSet(),
+        // C6 fix (2026-10-15): the previous initialValue was
+        // `RuleTab.entries.toSet()` (all four tabs), while the persisted
+        // default in SettingsRepository is `RuleTab.DEFAULT_VISIBLE_FEATURES`
+        // (just {AdSignage} — see v0.5.5 pivot). On every cold start the
+        // RuleTabBar briefly rendered all four tabs and then snapped to
+        // {AdSignage} the moment DataStore's first emission landed. Match
+        // the persisted default so the visible set is stable from the
+        // very first frame.
+        initialValue = RuleTab.DEFAULT_VISIBLE_FEATURES,
     )
 
     /**
