@@ -99,6 +99,22 @@ class GlassesWifiProbe(private val context: Context) {
             return@withContext Report(failedPhase = "ssid", error = "眼镜未下发 AP SSID")
         }
 
+        // A3 fix: the previous code's `runCatching { cm.requestNetwork(...) }`
+        // swallowed SecurityException as just another "系统未连接该 AP" failure
+        // and left the user with no idea their location permission was missing.
+        // Fail-fast here with a message that names the actual cause and tells
+        // them which settings page to open.
+        val missingPerms = GlassesPermissions.wifiMissing(context)
+        if (missingPerms.isNotEmpty()) {
+            Log.w(TAG, "wifiProbe: missing runtime permissions $missingPerms")
+            return@withContext Report(
+                ssid = ssid,
+                failedPhase = "permission",
+                error = "缺少权限: ${missingPerms.joinToString { it.substringAfterLast('.') }}。" +
+                    "请到「设置 → 应用 → 冰灵锐目 → 权限」授予定位/附近 Wi-Fi 设备权限后重试。",
+            )
+        }
+
         val startedAt = System.currentTimeMillis()
         val scan = waitForSsid(ssid, ssidTimeoutMs)
         Log.i(

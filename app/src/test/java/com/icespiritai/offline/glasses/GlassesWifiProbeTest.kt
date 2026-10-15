@@ -5,11 +5,8 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * The FTP parsing the Wi-Fi probe depends on.
- *
- * The listing format is the one Android's `FtpServer`-style servers (and the
- * glasses' own) emit for `LIST`, i.e. `ls -l` columns:
- * `-rw-r--r-- 1 1000 1000 34019 Sep 17 12:51 IMG_0001.JPG`.
+ * The FTP parsing the Wi-Fi probe depends on, plus the runtime-permission
+ * gate the probe's [run] entry enforces.
  */
 class GlassesWifiProbeTest {
 
@@ -55,5 +52,16 @@ class GlassesWifiProbeTest {
 
         assertEquals("20260917", entry?.name)
         assertEquals(4_096L, entry?.size)
+    }
+
+    @Test
+    fun wifiRequired_isEmptyOnPreS() {
+        // Robolectric defaults to API 33 (TIRAMISU), so we can't easily
+        // exercise pre-S here. The test still documents the contract —
+        // an empty set on legacy API means no runtime request needed.
+        val perms = GlassesPermissions.wifiRequired()
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) {
+            assertEquals(0, perms.size)
+        }
     }
 }
