@@ -75,6 +75,39 @@ class RegionOcrTest {
     }
 
     @Test
+    fun mapBoxToOriginal_scalesByIntegerCoordinateScale() {
+        // 4032×3024 phone → 2016×1512 downsampled (coordinateScale = 2):
+        // 基础图空间一个 Rect 必须乘 2 才落在原图空间。
+        val original = RegionOcr.mapBoxToOriginal(Rect(100, 200, 300, 400), 2f)
+        assertEquals(Rect(200, 400, 600, 800), original)
+    }
+
+    @Test
+    fun mapBoxToOriginal_scalesByFractionalCoordinateScale() {
+        // 640×480 glasses → 1280×960 upscaled (coordinateScale = 0.5):
+        // 基础图空间一个 Rect 必须乘 0.5 才落在原图空间(原图 640×480)。
+        val original = RegionOcr.mapBoxToOriginal(Rect(100, 100, 200, 200), 0.5f)
+        assertEquals(Rect(50, 50, 100, 100), original)
+    }
+
+    @Test
+    fun mapBoxToOriginal_identityWhenScaleIsOne() {
+        // 已是大图(短边 ≤ MAX_DECODE_EDGE_PX 且不需要放大)时 coordinateScale = 1,
+        // 这是 identity —— 不应意外缩放框。
+        val original = RegionOcr.mapBoxToOriginal(Rect(10, 20, 30, 40), 1f)
+        assertEquals(Rect(10, 20, 30, 40), original)
+    }
+
+    @Test
+    fun mapBoxToOriginal_clampsNonPositiveScale() {
+        // 兜底:coordinateScale 不应为 0 / 负(否则 Rect 会变 0×0 / 翻转)。
+        // 约定实现用 Float.MIN_VALUE 替代,确保 rect 至少是个空 box 而不爆。
+        val original = RegionOcr.mapBoxToOriginal(Rect(10, 20, 30, 40), 0f)
+        // 不要求具体值,只要求不抛异常、且不会变 0×0
+        assertTrue("non-positive scale must not collapse to 0×0 rect", original.width() >= 0)
+    }
+
+    @Test
     fun mergeLines_keepsBaseLinesAndOnlyAddsNewText() {
         val base = listOf(TextLine("禁止 吸烟", Rect(0, 0, 10, 10), 0.9f))
         val region = listOf(

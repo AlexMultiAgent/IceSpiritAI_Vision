@@ -88,7 +88,9 @@ class RegionOcrRunner(
             )
             val result = ocrEngine.recognize(uri)
             val lines = result.lineBoxes.map { line ->
-                line.copy(box = RegionOcr.mapBoxToBase(line.box, crop))
+                val baseBox = RegionOcr.mapBoxToBase(line.box, crop)
+                val originalBox = RegionOcr.mapBoxToOriginal(baseBox, loaded.coordinateScale)
+                line.copy(box = originalBox)
             }
             Log.i(
                 TAG,

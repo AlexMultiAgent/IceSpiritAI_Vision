@@ -104,6 +104,31 @@ internal object RegionOcr {
     }
 
     /**
+     * 把基础图坐标 (BitmapLoader 的 [com.icespiritai.offline.ocr.BitmapLoader.DownsampledBitmap]
+     * 空间, 由 RegionOcrRunner 的 MAX_DECODE_EDGE_PX 决定) 乘回**原图**坐标。
+     *
+     * Bug A2 fix: PaddleOcrEngine 的 `lineBoxes` 是 `loaded.coordinateScale` 之后
+     * 已经在原图空间(见 [PaddleOcrEngine.kt:315] 的 `toTextLine(loaded.coordinateScale)`),
+     * 而 RegionOcrRunner 的 [mapBoxToBase] 只回到降采样空间(短边 ≤ 2048 / 眼镜 1280)。
+     * 这两套坐标系在 ViewModel.mergeLines 处直接合并会让 region 高亮框落错位置:
+     * - 手机 4032×3024 → coordinateScale ≈ 2.0,region 框会缩到原图一半
+     * - 眼镜 640×480 → coordinateScale ≈ 0.5,region 框会放大到原图 2 倍
+     *
+     * @param box 基础图坐标系(由 [mapBoxToBase] 返回或同等方法得出)
+     * @param coordinateScale BitmapLoader 的 `sample / factor`,**正数**;0/负数用
+     *   `Float.MIN_VALUE` 兜底避免除零(理论上不会发生)
+     */
+    fun mapBoxToOriginal(box: Rect, coordinateScale: Float): Rect {
+        val s = if (coordinateScale > 0f) coordinateScale else Float.MIN_VALUE
+        return Rect(
+            (box.left * s).roundToInt(),
+            (box.top * s).roundToInt(),
+            (box.right * s).roundToInt(),
+            (box.bottom * s).roundToInt(),
+        )
+    }
+
+    /**
      * 把局部识别的行并入整图结果。
      *
      * 去重按**归一化文本**（去空格）比对，并且把"包含关系"也算重复：
