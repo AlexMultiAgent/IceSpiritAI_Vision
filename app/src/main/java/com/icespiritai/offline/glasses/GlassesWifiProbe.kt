@@ -437,7 +437,17 @@ class GlassesWifiProbe(private val context: Context) {
     internal companion object {
         const val TAG = "GlassesCapture"
 
-        /** OEM `MediaSyncManager.downloadMediaFiles` credentials. */
+        /**
+         * OEM `MediaSyncManager.downloadMediaFiles` credentials — copied
+         * verbatim from the vendor APK, **not** a credential we set or
+         * own. The Beken BK7258 soft-AP on the glasses' side accepts this
+         * pair on its built-in FTP server; using any other username /
+         * password simply gets a `530 Login incorrect` reply. We have no
+         * way to rotate it and no reason to: the FTP listener is bound
+         * to the glasses' own SSID, which is the same network the phone
+         * just joined via [buildRequest], so the attack surface is the
+         * physical proximity of anyone in Wi-Fi range of the glasses.
+         */
         const val FTP_USER = "bk7258"
         const val FTP_PASSWORD = "123456"
 
