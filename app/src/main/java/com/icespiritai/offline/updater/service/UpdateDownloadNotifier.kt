@@ -30,6 +30,36 @@ class UpdateDownloadNotifier(private val context: Context) {
 
     private fun notifId(record: DownloadRecord) = 0xF001 + record.downloadId.hashCode()
 
+    /**
+     * Minimal notification for [android.app.Service.startForeground] BEFORE
+     * the real [DownloadRecord] is loaded from DataStore. A4 fix: the previous
+     * code awaited the DataStore read inside a coroutine, then called
+     * `startForeground` — but cold-start disk IO can blow the 5-second
+     * `startForegroundService` contract and trigger
+     * `ForegroundServiceDidNotStartInTimeException`. Posting this placeholder
+     * synchronously at the start of `onStartCommand` keeps the contract safe;
+     * the real progress notification replaces it once the record is loaded.
+     */
+    fun buildPlaceholderNotification(downloadId: String): Notification {
+        val cancelPi = PendingIntent.getService(
+            context, notifIdFor(downloadId),
+            Intent(UpdateDownloadActions.ACTION_CANCEL).setClass(context, UpdateDownloadService::class.java)
+                .putExtra(UpdateDownloadActions.EXTRA_DOWNLOAD_ID, downloadId),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        return NotificationCompat.Builder(context, UpdateDownloadActions.CHANNEL_ONGOING)
+            .setSmallIcon(R.drawable.ic_stat_download)
+            .setContentTitle(context.getString(R.string.update_notif_title))
+            .setContentText(context.getString(R.string.update_notif_preparing))
+            .setProgress(0, 0, true)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .addAction(R.drawable.ic_cancel, context.getString(R.string.update_cancel), cancelPi)
+            .build()
+    }
+
+    private fun notifIdFor(downloadId: String) = 0xF001 + downloadId.hashCode()
+
     fun buildProgressNotification(record: DownloadRecord, written: Long): Notification {
         val pct = if (record.totalBytes > 0) (written * 100 / record.totalBytes).toInt() else 0
         val cancelPi = PendingIntent.getService(

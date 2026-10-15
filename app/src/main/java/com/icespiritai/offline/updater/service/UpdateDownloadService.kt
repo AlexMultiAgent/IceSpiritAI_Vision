@@ -100,6 +100,17 @@ class UpdateDownloadService : Service() {
         val effectiveDest = destPath ?: ""
         if (inFlight.putIfAbsent(id, effectiveDest) != null) return
 
+        // A4 fix: startForeground MUST run within ~5s of startForegroundService
+        // or the system kills us with ForegroundServiceDidNotStartInTimeException.
+        // The old code did `stateStore.get(id)` (suspending DataStore read) on
+        // the IO scope before calling startForeground — cold-start disk IO
+        // can easily blow that window on slow devices. Post a placeholder
+        // notification SYNCHRONOUSLY here so the contract is satisfied no
+        // matter how long the DataStore read takes; the real progress
+        // notification replaces it once the record is loaded.
+        val placeholder = notifier.buildPlaceholderNotification(id)
+        startForeground(0xF001 + id.hashCode(), placeholder)
+
         scope.launch {
             val persisted = stateStore.get(id)
             val freshMetadataMissing = url == null || destPath == null || certSha == null
@@ -139,9 +150,12 @@ class UpdateDownloadService : Service() {
             )
             val effective = persisted ?: record.also { stateStore.upsert(it) }
 
-            // startForeground must be called within 5 seconds
+            // Replace the A4 placeholder notification with the real progress
+            // one. Same notifIdFor() so the system updates the existing
+            // foreground notification rather than posting a new one.
             val initialNotif = notifier.buildProgressNotification(effective, written = effective.bytesWritten)
-            startForeground(notifIdFor(effective), initialNotif)
+            getSystemService(NotificationManager::class.java)
+                ?.notify(notifIdFor(effective), initialNotif)
 
             val resumeFrom = if (resume && effective.bytesWritten > 0 &&
                 File(effective.destPath).length() == effective.bytesWritten) effective.bytesWritten else null

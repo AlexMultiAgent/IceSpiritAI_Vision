@@ -131,6 +131,7 @@
     <string name="ocr_text_label">识别文字: %1$s</string>
 
     <string name="action_export">导出</string>
+    <string name="export_failed_toast">导出失败</string>
 
     <string name="settings_title">设置</string>
     <string name="settings_appearance">外观</string>
@@ -193,6 +194,7 @@
     <string name="update_channel_ready">可安装更新</string>
     <string name="update_channel_failed">下载失败</string>
     <string name="update_notif_title">下载更新中</string>
+    <string name="update_notif_preparing">准备下载…</string>
     <string name="update_notif_progress">%1$.1f / %2$.1f MB (%3$d%%)</string>
     <string name="update_notif_verifying">验证签名...</string>
     <string name="update_notif_ready_title">可安装新版本 v%1$s</string>
