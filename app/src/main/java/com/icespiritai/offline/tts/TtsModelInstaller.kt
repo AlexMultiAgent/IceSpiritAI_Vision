@@ -247,6 +247,14 @@ open class TtsModelInstaller(
     }
 
     protected open suspend fun fetchDescriptors(): List<FileDescriptor> = withContext(Dispatchers.IO) {
+        // B2 fix: anchor sha256 in BuildConfig (compiled into the APK),
+        // not in the JSON descriptor. A MITM on the JSON channel could
+        // otherwise hand us a backdoored model with its own matching
+        // sha256. The JSON now only carries URL + size (best-effort);
+        // sha256 is the contract that [downloadWithResume] verifies the
+        // downloaded bytes against.
+        val pinnedModelSha = com.icespiritai.offline.BuildConfig.TTS_MODEL_SHA256
+        val pinnedVocoderSha = com.icespiritai.offline.BuildConfig.TTS_VOCODER_SHA256
         try {
             val raw = httpGet(jsonUrl)
             val obj = JSONObject(raw)
@@ -254,11 +262,29 @@ open class TtsModelInstaller(
             val vocoderUrl = obj.getString("vocoderUrl")
             val modelSize = obj.getLong("modelSize")
             val vocoderSize = obj.getLong("vocoderSize")
-            val modelSha = obj.getString("modelSha256")
-            val vocoderSha = obj.getString("vocoderSha256")
+            // Sanity log: surface any drift between the JSON-reported
+            // hash and the BuildConfig-pinned one. If they disagree, we
+            // still trust BuildConfig (sha256 is the security anchor);
+            // the JSON is informational and we keep going.
+            val jsonModelSha = obj.optString("modelSha256", "")
+            val jsonVocoderSha = obj.optString("vocoderSha256", "")
+            if (jsonModelSha.isNotEmpty() && jsonModelSha != pinnedModelSha) {
+                Log.w(
+                    TAG,
+                    "fetchDescriptors: JSON modelSha256 (${jsonModelSha.take(8)}…) " +
+                        "!= BuildConfig.TTS_MODEL_SHA256 (${pinnedModelSha.take(8)}…); trusting BuildConfig",
+                )
+            }
+            if (jsonVocoderSha.isNotEmpty() && jsonVocoderSha != pinnedVocoderSha) {
+                Log.w(
+                    TAG,
+                    "fetchDescriptors: JSON vocoderSha256 (${jsonVocoderSha.take(8)}…) " +
+                        "!= BuildConfig.TTS_VOCODER_SHA256 (${pinnedVocoderSha.take(8)}…); trusting BuildConfig",
+                )
+            }
             listOf(
-                FileDescriptor(ACOUSTIC_MODEL_FILE, modelUrl, modelSize, modelSha),
-                FileDescriptor(VOCODER_FILE, vocoderUrl, vocoderSize, vocoderSha),
+                FileDescriptor(ACOUSTIC_MODEL_FILE, modelUrl, modelSize, pinnedModelSha),
+                FileDescriptor(VOCODER_FILE, vocoderUrl, vocoderSize, pinnedVocoderSha),
             )
         } catch (t: Throwable) {
             Log.w(TAG, "fetchDescriptors: JSON fetch failed (${t.message}); using fallback constants")

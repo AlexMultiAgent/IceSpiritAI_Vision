@@ -129,6 +129,25 @@ android {
         // ONNX bundle. See TtsModelInstaller for fetch + sha256 verify.
         buildConfigField("String", "TTS_MODEL_JSON_URL",
             "\"http://125.211.45.14:3000/giteaadmin/Model/releases/download/latest/sherpa-onnx-matcha-zh-baker-latest.json\"")
+
+        // B2 fix: anchor the TTS model/vocoder sha256 in BuildConfig so a
+        // man-in-the-middle on the JSON channel can't swap the bundled
+        // model for a backdoored one. The JSON only carries URL + size
+        // (and the size is best-effort); sha256 is the contract that
+        // [TtsModelInstaller.downloadWithResume] verifies against the
+        // downloaded bytes. The default values here are the real hashes
+        // shipped in TtsModelInstaller.FallbackDescriptors (re-verified
+        // 2026-09-08 via `sha256sum` against the giteaadmin/Model
+        // attachment bytes). Override with -PTtsModelSha256=… /
+        // -PTtsVocoderSha256=… if you swap the model release.
+        val ttsModelSha = providers.gradleProperty("ttsModelSha256")
+            .orElse("0e1a49219d253f7f8c2d3b3b0594505ddac9cb3c5042fb573ecfaddd341c4395")
+            .get()
+        val ttsVocoderSha = providers.gradleProperty("ttsVocoderSha256")
+            .orElse("0574a135aa1db2de6e181050db2ec528496cacd4a4701fc5d7faf9f9804c0081")
+            .get()
+        buildConfigField("String", "TTS_MODEL_SHA256", "\"$ttsModelSha\"")
+        buildConfigField("String", "TTS_VOCODER_SHA256", "\"$ttsVocoderSha\"")
     }
 
     signingConfigs {
