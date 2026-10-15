@@ -52,7 +52,13 @@
 
 **单连接限制(v1)**:同一时刻只持一个 `BluetoothGatt` 引用(plan §D1)。`BluetoothController.connect()` 在覆盖前会 `gatt?.close()` 释放无线电 slot,避免 reference leak。如要支持"一手机多眼镜"是 v2 范畴(每个眼镜一个 Controller + Repository 实例)。
 
-**完全离线硬约束**:BLE 链路是数据搬运通道,**不连任何外网模型**。OCR(PP-OCRv6_small 本地 ONNX)、规则(本地 JSON)、TTS(本地 Android TTS 或 sherpa-onnx)全离线。Manifest 的 `INTERNET` 权限仅给 in-app update(`UpdateDownloadService` 拉新 APK),不参与识别链路。
+**完全离线硬约束**:BLE 链路是数据搬运通道,**不连任何外网模型**。OCR(PP-OCRv6_small 本地 ONNX)、规则(本地 JSON)、TTS(本地 sherpa-onnx)全离线。`INTERNET` 权限的真实使用点:
+
+- in-app update(`UpdateDownloadService` 拉新 APK + `vision-latest.json`,Gitea 125.211.45.14:3000)
+- TTS 模型首装下载(`TtsModelInstaller` 拉 sherpa-onnx ONNX bundle,同源 Gitea)
+- 智能眼镜固件 OTA 检查(`GlassesFirmwareService` 游客登录 `s1.deepvision-tek.com`,推送升级 URL 到眼镜)
+
+识别链路不联网 —— OCR / 规则 / TTS 推理 / 取图协议全部本地。
 
 **未实现(v1 不做)**:Foreground Service(锁屏场景)、in-app 配对、跨 BLE 进程 AIDL、圈选再识、`onConnectionUpdated` 回调(compileSdk 37 SDK stub 不暴露该方法,已 KDoc 说明)。
 
