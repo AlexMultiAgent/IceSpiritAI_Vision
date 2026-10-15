@@ -132,6 +132,12 @@ class BluetoothController(
          */
         private const val FA12_CCCD_RETRY_DELAY_MS: Long = 200L
 
+        // A6 fix: bound the time we wait for `g.writeDescriptor` to be
+        // confirmed by onDescriptorWrite. 5s is plenty on a healthy stack
+        // (real ack is <100ms on the nova 6); the old unbounded await
+        // could hang 90s for an outer ConnectState timeout to recover.
+        private const val CCCD_WRITE_TIMEOUT_MS: Long = 5_000L
+
         /**
          * Emission buffer for the FA12 notify flow. Sized for a whole
          * photo, not for "a brief consumer stall": at the documented
@@ -403,10 +409,6 @@ class BluetoothController(
      * is still open until [BluetoothGattCallback.onConnectionStateChange]
      * fires with `STATE_DISCONNECTED`; [release] is what fully tears down.
      */
-    fun disconnect() {
-        gatt?.disconnect()
-    }
-
     /**
      * Hint the Android BLE stack to prefer a faster connection interval
      * (HIGH = 7.5–15 ms) or revert to BALANCED (~40 ms).
@@ -747,8 +749,26 @@ class BluetoothController(
         cacheDesc(desc)
         desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
         pendingDescriptorWrite = CompletableDeferred()
-        g.writeDescriptor(desc)
-        return pendingDescriptorWrite!!.await()
+        // A6 fix: `g.writeDescriptor` returning false (e.g. protocol stack
+        // reject, GATT busy, queue full) is not surfaced to the callback, so
+        // pendingDescriptorWrite would otherwise never complete and we'd hang
+        // here forever (the outer 90s ConnectState timeout would eventually
+        // give up, but that wastes 90s of user time on a recoverable error).
+        // Bounded await: if the OS doesn't confirm in 5s, treat as failure
+        // and let the connection-state machine decide whether to reconnect.
+        val submitted = g.writeDescriptor(desc)
+        if (!submitted) {
+            Log.w(TAG, "enableNotify($charUuid): g.writeDescriptor refused (GATT busy?)")
+            pendingDescriptorWrite = null
+            return false
+        }
+        return withTimeoutOrNull(CCCD_WRITE_TIMEOUT_MS) {
+            pendingDescriptorWrite?.await()
+        } ?: run {
+            Log.w(TAG, "enableNotify($charUuid): CCCD write timed out after ${CCCD_WRITE_TIMEOUT_MS}ms")
+            pendingDescriptorWrite = null
+            false
+        }
     }
 
     private suspend fun writeCharacteristic(
