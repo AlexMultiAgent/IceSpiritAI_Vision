@@ -40,8 +40,8 @@ import java.security.MessageDigest
  *
  * Resume: a sidecar `.meta` file tracks per-file `{downloadedBytes,
  * totalBytes, sha256}` and a `Range: bytes=N-` header is sent on
- * restart. SHA-256 mismatch deletes both `.partial` and `.meta`
- * (mirrors TtsEngineInstaller.revert semantics).
+ * restart. SHA-256 mismatch deletes both `.partial` and `.meta`(保持两个文件
+ * 的生命周期对齐:任何一个失效,另一个也作废,不留半残留状态)。
  *
  * Progress: a [StateFlow]<[InstallState]> mirrors the existing
  * `InstallState` enum so the picker UI can show download bytes /

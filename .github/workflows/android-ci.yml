@@ -35,3 +35,12 @@ jobs:
       # (downloaded by `tools/download-ppocr-models.sh`, gitignored).
       - name: Compile + unit tests (ice_ocr_rules profile)
         run: ./gradlew compileDebugSources compileDebugUnitTestKotlin -PmodelProfile=ice_ocr_rules --no-daemon
+
+      # Lint gate (shell profile). The 44 issue-ids disabled in app/lint.xml
+      # (GradleDetector / CommentDetector / AppBundleLocaleChangesDetector /
+      # ByteOrderMarkDetector) sidestep the AGP 9.3 + Kotlin 2.4.10 FIR crash
+      # on `.gradle.kts` — see docs/knowledge/lint-vital-fir-crash.md. With
+      # those skip-listed, `lintDebug` runs cleanly and acts as the PR-time
+      # gate for everything else (UnusedAttribute, MissingClass, etc.).
+      - name: Lint (shell profile)
+        run: ./gradlew lintDebug -PmodelProfile=shell --no-daemon

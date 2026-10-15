@@ -1,5 +1,6 @@
 package com.icespiritai.offline.updater
 
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
@@ -174,6 +175,140 @@ class CancelFromNotificationTest {
         // Explicit Unit return so runBlocking-block satisfies JUnit's
         // "Method ... should be void" rule even when the compiler infers
         // a non-Unit tail expression (Log.i etc. return Int).
+        Unit
+    }
+
+    @Test
+    fun cancel_intent_with_cleared_stateStore_still_stops_fgs() = runBlocking {
+        // Regression for the handleCancel early-return bug:
+        //
+        //   val record = stateStore.get(id) ?: return@launch   ← BUG
+        //
+        // When the cert-pin-mismatch path (UpdateDownloadService.onDownloadComplete
+        // line 316) deletes the DataStore record, or a cold-start cleanup wipes
+        // it before the user/system cancels, this `?: return@launch` skips BOTH
+        // cleanup() AND stopForeground+stopSelf. The FGS notification stays on
+        // screen and the service keeps running — exactly the symptom the bug
+        // report described.
+        //
+        // The fix moves stopForeground/stopSelf outside the conditional so the
+        // FGS always tears down; cleanup() only runs when the DataStore record
+        // is still around (matches production semantics).
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        val store = AppGraph.downloadStateStore(ctx)
+        val nm = ctx.getSystemService(NotificationManager::class.java)
+
+        val downloadId = "d-cancel-cleared-state"
+        val updateDir = File(ctx.cacheDir, "update").apply { mkdirs() }
+        val partial = File(updateDir, "$downloadId.apk")
+        partial.writeBytes(ByteArray(1024) { 0x42 })
+        // Mirror the service's notifIdFor() formula (line 342 in
+        // UpdateDownloadService) so we look up the right active notification.
+        val notifId = 0xF001 + downloadId.hashCode()
+
+        try {
+            // 1. Seed DataStore record so handleDownload can start the FGS.
+            store.upsert(
+                DownloadRecord(
+                    downloadId = downloadId,
+                    url = "http://127.0.0.1:1/never-listens.apk",
+                    destPath = partial.absolutePath,
+                    bytesWritten = 1024L,
+                    totalBytes = 0L,
+                    etag = null,
+                    signerCertSha256 = "deadbeef".repeat(8),
+                    stage = DownloadStage.Downloading,
+                    versionName = "0.0.0-test",
+                    startedAtEpochMs = System.currentTimeMillis(),
+                ),
+            )
+
+            // 2. Start the FGS with ACTION_DOWNLOAD + unreachable URL.
+            val downloadIntent = Intent(UpdateDownloadActions.ACTION_DOWNLOAD).apply {
+                setClass(ctx, UpdateDownloadService::class.java)
+                putExtra(UpdateDownloadActions.EXTRA_DOWNLOAD_ID, downloadId)
+                putExtra(UpdateDownloadActions.EXTRA_URL, "http://127.0.0.1:1/never-listens.apk")
+                putExtra(UpdateDownloadActions.EXTRA_DEST_PATH, partial.absolutePath)
+                putExtra(UpdateDownloadActions.EXTRA_SIGNER_CERT_SHA256, "deadbeef".repeat(8))
+                putExtra(UpdateDownloadActions.EXTRA_VERSION_NAME, "0.0.0-test")
+                putExtra(UpdateDownloadActions.EXTRA_RESUME, false)
+            }
+            try {
+                ctx.startForegroundService(downloadIntent)
+            } catch (e: Exception) {
+                android.util.Log.w(
+                    "CancelFromNotificationTest",
+                    "startForegroundService(ACTION_DOWNLOAD) blocked: " +
+                        "${e.javaClass.simpleName}: ${e.message}",
+                )
+                store.delete(downloadId)
+                partial.delete()
+                return@runBlocking
+            }
+
+            // 3. Let the service enter its retry loop (2s is enough on emu +
+            //    physical devices for the first HttpURLConnection attempt to
+            //    fail with connection-refused and the FGS to settle).
+            Thread.sleep(2_000L)
+
+            // 4. Reproduce the bug: wipe the DataStore record BEFORE the
+            //    cancel arrives. This is the production edge case where
+            //    handleCancel's stateStore.get(id) returns null because the
+            //    record was deleted out from under the FGS — e.g. the
+            //    cert-pin-mismatch path at UpdateDownloadService.kt:316.
+            assertNotNull(
+                "precondition: DataStore had a record for $downloadId before cleanup",
+                store.get(downloadId),
+            )
+            store.delete(downloadId)
+            assertNull(
+                "precondition: DataStore is empty for $downloadId before cancel",
+                store.get(downloadId),
+            )
+
+            // 5. Cancel.
+            val cancelIntent = Intent(UpdateDownloadActions.ACTION_CANCEL).apply {
+                setClass(ctx, UpdateDownloadService::class.java)
+                putExtra(UpdateDownloadActions.EXTRA_DOWNLOAD_ID, downloadId)
+            }
+            ctx.startService(cancelIntent)
+
+            // 6. The handleCancel coroutine runs on Dispatchers.IO; allow it
+            //    + Service teardown + onDestroy's inFlight sweep to all settle.
+            Thread.sleep(1_500L)
+
+            // 7. PRIMARY ASSERT (the bug):
+            //    The FGS notification must be gone. Without the fix the
+            //    handleCancel launch body short-circuits on
+            //    `stateStore.get(id) ?: return@launch`, so stopForeground is
+            //    never called and the foreground notification remains
+            //    posted. With the fix stopForeground/stopSelf run
+            //    unconditionally, the system tears down the FGS, and the
+            //    notification disappears.
+            val active = nm?.activeNotifications?.any { it.id == notifId } == true
+            assertFalse(
+                "FGS notification (notifId=0x${notifId.toString(16)}) must be " +
+                    "cleared after cancel even when stateStore was empty for " +
+                    "$downloadId. The handleCancel early-return path must call " +
+                    "stopForeground regardless so the system tears down the FGS. " +
+                    "Sticky active notification = bug not fixed.",
+                active,
+            )
+
+            // 8. SECONDARY ASSERT: partial file is reaped via onDestroy's
+            //    inFlight sweep AFTER stopSelf triggers Service teardown
+            //    (cleanup() itself doesn't run here because stateStore was
+            //    empty — the inFlight map is the only remaining pointer to
+            //    the partial path). Both states must converge post-cancel.
+            assertFalse(
+                "Partial file at ${partial.absolutePath} must be removed after " +
+                    "cancel triggers service teardown (onDestroy inFlight sweep)",
+                partial.exists(),
+            )
+        } finally {
+            runCatching { partial.delete() }
+            runCatching { store.delete(downloadId) }
+        }
         Unit
     }
 }

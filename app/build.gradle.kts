@@ -89,11 +89,12 @@ android {
         buildConfigField("String", "UPDATE_JSON_URL",
             "\"http://125.211.45.14:3000/giteaadmin/vision-app/releases/download/latest/vision-latest.json\"")
 
-        // P0-HEALTH-1: TtsEngineInstaller.fetchReleaseInfo 与此 URL 同源拼接
-        // `/giteaadmin/Model/releases/download/${tag}/icespirit-tts-engine.apk`。
-        // 独立字段(而非从 UPDATE_JSON_URL substring)是为了让 release-info 的
-        // Gitea host 在 vision-app release JSON 与 TTS engine APK 之间保持单一
-        // 源 —— 改 gitea 域名 / 切换 https 时两处同步。
+        // TTS 模型 / 引擎 APK 下载与此 URL 同源拼接
+        // `/giteaadmin/Model/releases/download/${tag}/<...>`(sherpa-onnx ONNX
+        // bundle 或独立 TTS engine APK)。独立字段(而非从 UPDATE_JSON_URL
+        // substring)是为了让 release-info 与 TTS 资源的 Gitea host 在
+        // vision-app release JSON 与 Model 仓库之间保持单一源 —— 改 gitea
+        // 域名 / 切换 https 时两处同步。
         buildConfigField("String", "UPDATE_JSON_URL_BASE",
             "\"http://125.211.45.14:3000\"")
 
@@ -1243,10 +1244,10 @@ dependencies {
     // because Compose reads it only in debug variants.
     testImplementation(platform(libs.compose.bom))
     testImplementation(libs.compose.ui.test.junit4)
-    // Real org.json impl for TtsEngineInstallerTest (parseReleaseJson /
-    // readMeta / writeMeta). Without this, `isReturnDefaultValues = true`
-    // would have org.json.JSONObject return null instead of throwing,
-    // masking the JSON parse in plain JVM tests.
+    // Real org.json impl for TtsModelInstallerTest (writeMeta / readMeta).
+    // Without this, `isReturnDefaultValues = true` would have
+    // org.json.JSONObject return null instead of throwing, masking the JSON
+    // parse in plain JVM tests.
     testImplementation("org.json:json:20240303")
 
     // Instrumentation tests (for SDK smoke test + Compose UI test)

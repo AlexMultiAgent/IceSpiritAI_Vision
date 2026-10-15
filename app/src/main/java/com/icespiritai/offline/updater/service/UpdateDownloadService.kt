@@ -205,7 +205,7 @@ class UpdateDownloadService : Service() {
                 // the Android-default readTimeout=0 leaves ins.read blocking
                 // forever on a slow segment / half-open TCP / cgroup freeze.
                 // connectTimeout=15 s, readTimeout=30 s — same pattern as
-                // TtsModelInstaller (30s/60s) and TtsEngineInstaller (30s/60s).
+                // TtsModelInstaller (30s/60s).
                 openConnection = {
                     (URL(record.url).openConnection() as HttpURLConnection).apply {
                         connectTimeout = 15_000
@@ -325,9 +325,24 @@ class UpdateDownloadService : Service() {
     private fun handleCancel(intent: Intent) {
         val id = intent.getStringExtra(UpdateDownloadActions.EXTRA_DOWNLOAD_ID) ?: return
         scope.launch {
-            val record = stateStore.get(id) ?: return@launch
-            cleanup(record)
-            UpdateRepository.onDownloadCancelled(record)
+            val record = stateStore.get(id)
+            if (record != null) {
+                cleanup(record)
+                UpdateRepository.onDownloadCancelled(record)
+            }
+            // Edge case (regression for the FGS-stuck bug):
+            // stateStore may have been wiped out from under us by the
+            // cert-pin-mismatch path (onDownloadComplete Mismatch branch
+            // above deletes the record) or by a cold-start cleanup that
+            // left an orphan in [inFlight]. In either case the user's
+            // intent is "stop this download" — the FGS must die so the
+            // system removes the foreground notification, and the partial
+            // file (if any) is reaped by [onDestroy]'s inFlight sweep
+            // triggered by stopSelf. stopForeground/stopSelf therefore
+            // run unconditionally; cleanup() + onDownloadCancelled() are
+            // best-effort and only fire when the DataStore record still
+            // matches. Regression covered by
+            // `CancelFromNotificationTest.cancel_intent_with_cleared_stateStore_still_stops_fgs`.
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
