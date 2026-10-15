@@ -3,13 +3,22 @@
 // Both rule domains (ad_signage + food_label) are staged for every profile so
 // the runtime loader can hydrate either domain regardless of the active model.
 // shell           → ad_signage_rules.json + food_label_rules.json = {"version":1,"rules":[]} (skeleton)
-// ice_ocr_rules   → ad_signage_rules.json (129 rules / v9) + food_label_rules.json (66 rules / v4)
+// ice_ocr_rules   → ad_signage_rules.json (189 rules / v28) + food_label_rules.json (95 rules / v5)
 // ice_vision      → same as shell (Phase 2+)
 //
 // Counts above MUST match the committed source-of-truth JSON in
 // app/src/main/assets/rules/. Bump them when shipping a rule audit. A drift
 // here is a documentation-only bug (no runtime impact) but trips up future
-// audit readers — see the ad_signage_v9 audit in commit 8b20e98.
+// audit readers — see the ad_signage_v9 audit in commit 8b20e98, the
+// ad_signage_v20 → v22 → v28 sequence (2026-09-04 → 2026-09-30 → 2026-10-15),
+// and the food_label v4 → v5 bump.
+//
+// To re-verify the count before bumping this comment:
+//   rg '"id":' app/src/main/assets/rules/ad_signage_rules.json | wc -l
+//   rg '"id":' app/src/main/assets/rules/food_label_rules.json | wc -l
+//   head -1 app/src/main/assets/rules/ad_signage_rules.json  # "version": N
+//   head -1 app/src/main/assets/rules/food_label_rules.json  # "version": N
+//
 // Source files at app/src/main/assets/rules/ are NEVER mutated.
 // AGP picks up only from app/build/generated/assets/rules/ via a reconfigured
 // assets sourceSet (see app/build.gradle.kts hook).
@@ -154,10 +163,18 @@ val copyOcrModelsAssets = tasks.register<Copy>("copyOcrModelsAssets") {
         // OfflineTts to load. Exclude the ONNX model files explicitly
         // (those are downloaded at runtime by TtsModelInstaller, not
         // bundled into the APK).
+        //
+        // C1 fix (2026-10-15): the jieba `dict/**` tree (14 MB of
+        // hmm_model + pos_dict + jieba.dict.*) was copied into every
+        // profile's APK, but sherpa-onnx OfflineTts (Matcha-zh-baker)
+        // never reads it — the synthesizer uses `lexicon.txt` + the
+        // espeak rule fst + the Matcha ONNX acoustic model. Dropping
+        // the dict include saves ~14 MB on every profile without
+        // changing TTS behavior. Verified with `assembleDebug
+        // -PmodelProfile=ice_ocr_rules` + an OfflineTts init probe.
         include("tts/**/*.txt")
         include("tts/**/*.fst")
         include("tts/**/espeak-ng-data/**/*")
-        include("tts/**/dict/**/*")
         // Drop the .gitkeep placeholder so it doesn't leak into the APK.
         exclude("**/.gitkeep")
     }
@@ -211,7 +228,7 @@ data class ProfileServices(val profile: String, val factoryFqn: String)
 
 val profileServices: ProfileServices = when (modelProfileValue) {
     "ice_ocr_rules" -> ProfileServices("ice_ocr_rules", "com.icespiritai.offline.ocr.PaddleOcrEngineFactory")
-    else -> ProfileServices("shell", "com.icespiritai.offline.ocr.FakeOcrEngineFactory")
+    else -> ProfileServices("shell", "com.icespiritai.offline.ocr.ShellStubOcrEngineFactory")
 }
 
 val servicesJarDir = layout.buildDirectory.dir("generated/services-jar")

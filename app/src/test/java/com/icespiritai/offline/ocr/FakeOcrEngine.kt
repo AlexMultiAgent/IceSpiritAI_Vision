@@ -7,6 +7,17 @@ import com.icespiritai.offline.domain.OcrResult
 import com.icespiritai.offline.domain.TextLine
 import kotlinx.coroutines.delay
 
+/**
+ * Test-only OcrEngine with canned output. Lives in `src/test/` (not
+ * `src/main/` or any profile sourceSet) so it stays decoupled from
+ * `modelProfile` — `testDebugUnitTestKotlin -PmodelProfile=ice_ocr_rules`
+ * compiles even when `src/shell/` is not on the classpath.
+ *
+ * The shell-profile runtime stub is a separate class
+ * ([com.icespiritai.offline.ocr.ShellStubOcrEngine]) that ships inside
+ * `src/main/`; tests use this [FakeOcrEngine] directly via constructor
+ * injection (no ServiceLoader roundtrip) for predictable assertions.
+ */
 class FakeOcrEngine(
     private val cannedText: String = "",
     private val cannedConfidence: Float = 1.0f,

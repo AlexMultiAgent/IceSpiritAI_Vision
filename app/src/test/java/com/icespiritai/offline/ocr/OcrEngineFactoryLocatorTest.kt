@@ -1,9 +1,11 @@
 package com.icespiritai.offline.ocr
 
 import androidx.test.core.app.ApplicationProvider
+import com.icespiritai.offline.BuildConfig
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -14,10 +16,20 @@ import org.robolectric.annotation.Config
 class OcrEngineFactoryLocatorTest {
 
     @Test
-    fun locator_discoversFakeOcrEngineFactory_whenPresentOnClasspath() {
-        val engine = OcrEngineFactoryLocator.create(ApplicationProvider.getApplicationContext())
+    fun create_withFakeFactory_producesFakeOcrEngine() {
+        // The shell profile is the only one that allows Fake-prefixed
+        // factories; under ice_ocr_rules the marker check would correctly
+        // reject this injection. Same for the ShellStub check below.
+        assumeTrue(
+            "Fake/Stub factory is shell-profile-only; skip under ${BuildConfig.MODEL_PROFILE}",
+            BuildConfig.MODEL_PROFILE == "shell",
+        )
+        val engine = OcrEngineFactoryLocator.create(
+            ApplicationProvider.getApplicationContext(),
+            FakeOcrEngineFactory(),
+        )
         assertTrue(
-            "Expected FakeOcrEngine when FakeOcrEngineFactory is on classpath, got ${engine::class.simpleName}",
+            "Expected FakeOcrEngine when FakeOcrEngineFactory is injected, got ${engine::class.simpleName}",
             engine is FakeOcrEngine,
         )
     }
@@ -37,10 +49,31 @@ class OcrEngineFactoryLocatorTest {
      * device.
      */
     @Test
-    fun markersFor_shell_acceptsFake() {
-        // shell profile's only source today is FakeOcrEngineFactory; no
-        // expansion needed (no ONNX or Paddle here).
-        assertEquals(listOf("Fake"), OcrEngineFactoryLocator.markersFor("shell"))
+    fun markersFor_shell_acceptsFakeAndStub() {
+        // shell profile's two valid sources today: FakeOcrEngineFactory
+        // (test-only) and ShellStubOcrEngineFactory (runtime). Both must
+        // pass the profile guard.
+        val markers = OcrEngineFactoryLocator.markersFor("shell")
+        assertTrue("shell must accept Fake-prefixed factories, got $markers",
+            markers.any { it.contains("Fake") })
+        assertTrue("shell must accept Stub-prefixed factories, got $markers",
+            markers.any { it.contains("Stub") })
+    }
+
+    @Test
+    fun create_withShellStubFactory_producesShellStubEngine() {
+        assumeTrue(
+            "Stub factory is shell-profile-only; skip under ${BuildConfig.MODEL_PROFILE}",
+            BuildConfig.MODEL_PROFILE == "shell",
+        )
+        val engine = OcrEngineFactoryLocator.create(
+            ApplicationProvider.getApplicationContext(),
+            ShellStubOcrEngineFactory(),
+        )
+        assertTrue(
+            "Expected ShellStubOcrEngine when ShellStubOcrEngineFactory is injected, got ${engine::class.simpleName}",
+            engine is ShellStubOcrEngine,
+        )
     }
 
     /**
