@@ -27,3 +27,11 @@ jobs:
 
       - name: Unit tests (shell profile)
         run: ./gradlew testDebugUnitTest -PmodelProfile=shell --no-daemon
+
+      # A5 follow-up: also compile (but don't run) under `ice_ocr_rules`
+      # so PaddleOcrEngine and friends get hit at every PR — without this,
+      # those classes only get compiled on release day. Skips the full APK
+      # build because that needs ONNX models the CI runner doesn't have
+      # (downloaded by `tools/download-ppocr-models.sh`, gitignored).
+      - name: Compile + unit tests (ice_ocr_rules profile)
+        run: ./gradlew compileDebugSources compileDebugUnitTestKotlin -PmodelProfile=ice_ocr_rules --no-daemon
