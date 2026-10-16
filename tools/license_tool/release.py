@@ -87,6 +87,17 @@ def build():
     readme_source = HERE / "INSTALL.md"
     if readme_source.exists():
         readme_content = readme_source.read_text(encoding="utf-8")
+        # 跳过 INSTALL.md 顶部 H1 行(交付说明头部 embedded_notice 已经写了标题,
+        # 再保留 H1 会让 shipped README.txt 第 1 行之后多一行重复标题)。
+        # 顺带跳过 H1 之前的 blockquote / 空行(transform 前的 trim)。
+        lines = readme_content.splitlines()
+        while lines and (not lines[0].strip() or lines[0].lstrip().startswith(">")):
+            lines.pop(0)
+        if lines and lines[0].startswith("# "):
+            lines.pop(0)
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        readme_content = "\n".join(lines)
         # 转纯文本:从最长的前缀开始替换,避免 # 残留
         plain = readme_content
         plain = plain.replace("### ", "    ")

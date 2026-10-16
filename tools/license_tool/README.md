@@ -1,36 +1,38 @@
-# 冰灵锐目 激活码签发工具
+# icevision-license-tool — 开发者文档
 
-## 用途
+> 给开发者 / 维护者看的工程说明。**操作员使用说明请看 [INSTALL.md](./INSTALL.md)** —— 那份是经 `release.py` 拼装后交付给市局广告处的 `readme.txt` 源文件。
 
-为冰灵锐目 App 离线签发 / 续期激活码。市局广告处独立使用,无需联网。
+## 文件清单
 
-## 快速开始
+| 文件 | 职责 |
+|---|---|
+| `license_tool.py` | 纯函数库:签发 / 续期 / 验签 / payload 编解码,无 UI 依赖,pytest 单测覆盖 |
+| `license_tool_gui.py` | PySide6 GUI 包装,UI 调用 `license_tool.py` 的纯函数层(in-process import) |
+| `release.py` | PyInstaller 打包脚本 → `D:/icevision-license-tool/SignTool.exe` + 拼装 `OUTPUT_DIR/README.txt` |
+| `INSTALL.md` | 操作员文档源,经 `release.py` 头部 `embedded_notice` + markdown→plain transform → `OUTPUT_DIR/README.txt` |
+| `tests/` | pytest 单测,覆盖 `license_tool.py` 纯函数 |
 
-1. 双击 `签发工具.exe`
-2. 首次运行会要求导入私钥:
-   - 点击「选择私钥 PEM 文件」
-   - 选开发方提供的 `icespiritai-license-private.pem`(PEM 格式明文 ECDSA P-256)
-   - DPAPI 自动加密存到 `%APPDATA%\IceSpiritAI\license_key.dpapi`(绑本机 + 当前用户)
-3. 填表:
-   - UID: 6 位,如 `a1b2c3`(已签发的 uid 不能复用)
-   - 名称: 用户名 / 机构代号
-   - 到期日: `yyyyMMdd`,留空或 `0` 表示永久
-4. 点「签发新码」或「续期」
-5. 输出的 ICS1 开头的字符串复制给客户(微信 / 邮件)
+## PEM 私钥分发模型(v0.5.18 起)
 
-## 注意事项
+`release.py` 通过 `PyInstaller --add-data license.pem` 把私钥打进 `SignTool.exe` bundle 根,运行时由 `license_tool_gui._find_default_pem()` 自动从 `sys._MEIPASS/license.pem` 读取。
 
-- **uid 不能复用**:已签发的 uid 必须用「续期」,不能再次「签发新码」
-- **续期不能缩短期限**:新到期日必须晚于当前值,否则工具拒绝
-- **每台电脑只能绑定一把私钥**:换电脑需要重新导入 PEM
-- **私钥丢失 = 所有已激活客户需重发版**,请妥善备份多份
-- **台账** `许可证台账.csv` 与 .exe 同目录,记录每次签发 / 续期
+- **任何拿到 .exe 副本的人都能反编译提取私钥、用同一私钥签发 / 续期任意码**
+- 仅限市局广告处内部分发(主君 2026-10-11 显式接受的 trade-off,见 `docs/superpowers/specs/2026-10-11-license-gate-design.md`)
+- 失 .exe 控制权 = 失私钥 → 必须联系开发者重新生成 ECDSA P-256 密钥对 + 重打 .exe + App 端换 `BuildConfig.LICENSE_PUBLIC_KEY` + 发新版本,旧码全部失效
+- bureau-side 操作员文档不教 `openssl ecparam` 自救 —— App 公钥不在 bureau 手里,自救无效
 
-## 校验现有码
+## 开发与发布
 
-- 「查询码信息」:只解析,不验签(不需私钥,给销售助理查用)
-- 「完整验签」:验签 + 确认是否到期(需要私钥)
+- **本地改完代码**:跑 `python release.py build` 重新打包 .exe + 拼装 `OUTPUT_DIR/README.txt`(仅 Python,不需要 JDK)
+- **运营改文档**:只改 `INSTALL.md`,然后 `python release.py build` 重跑 transform 输出到 `OUTPUT_DIR/README.txt`
+- **加新规则 / 类别 / 字段**:`license_tool.py` 纯函数层加单测 → `release.py` 改 → 重新 build
 
-## 私钥备份建议
+## .gitignore
 
-请在收到 PEM 文件后,至少做 2 份离线备份(密码保险柜 / 加密 U 盘),原因:本工具仅在 Windows 本机运行,绑 DPAPI,丢失本机 + 丢失私钥 = 无法恢复。
+`tools/license_tool/.gitignore` 排除:
+
+- `build/`(PyInstaller 中间产物)
+- `dist/`(PyInstaller 输出)
+- `__pycache__/`
+- `*.spec.bak`
+- `license.pem`(`release.py` build 期间从 `D:/keystores/icespiritai-license-private.pem` 临时复制,build 完即 unlink)

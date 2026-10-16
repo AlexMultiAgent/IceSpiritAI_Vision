@@ -449,7 +449,8 @@ Settings 新增「长报告摘要」Switch(默认 OFF):`TtsSetting.longReportSum
 | 公钥 | `app/build.gradle.kts:buildConfigField LICENSE_PUBLIC_KEY` |
 | 公钥指纹 | `app/build.gradle.kts:buildConfigField LICENSE_KEY_FINGERPRINT` |
 | 签码工具源码 | `tools/license_tool/license_tool.py`(纯函数)+ `license_tool_gui.py`(PySide6) |
-| 打包脚本 | `tools/license_tool/release.py` → 输出 `/d/icevision-license-tool/签发工具.exe` |
+| 打包脚本 | `tools/license_tool/release.py` → 输出 `/d/icevision-license-tool/SignTool.exe`(**v0.5.18 起 PEM 通过 `--add-data license.pem` 内嵌于 .exe**,主君显式接受 trade-off) |
+| 操作员文档源 | `tools/license_tool/INSTALL.md` → 经 `release.py` 头部 `embedded_notice` 拼装 + markdown→plain transform → `OUTPUT_DIR/README.txt`(交付给市局广告处) |
 | 台账 | `许可证台账.csv`(工具同目录,gitignored) |
 
 **加客户 / 续期 0 发版**:跑 .exe 输入 uid / 名称 / 到期日,签完直接发给客户。
@@ -458,7 +459,7 @@ Settings 新增「长报告摘要」Switch(默认 OFF):`TtsSetting.longReportSum
 
 **uid 不可复用**(策略):uid 已存在时 `new` 拒绝,必须用 `renew`。
 
-**失钥 = 所有客户需重发版**:多份离线备份 + DPAPI 本机加密。
+**失 .exe 控制权 = 失私钥 = 所有客户需重发版**:PEM 已内嵌于 `SignTool.exe`,任何拿到 .exe 副本的人都能反编译提取私钥、用同一私钥签发 / 续期任意码。bureau 端不能独立恢复,必须联系开发者:重新生成 ECDSA P-256 密钥对 + 重新打 .exe + App 端换公钥(`BuildConfig.LICENSE_PUBLIC_KEY`)+ 发新版本 → 旧码全部失效。bureau-side FAQ 不再教 `openssl ecparam` 自救 —— 救不了(没法换 App 公钥)。
 
 **App 内任何「请联系您的销售」字样统一改为「请联系市局广告处」**(2026-10-11 主君口径)。
 
