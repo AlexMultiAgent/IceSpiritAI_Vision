@@ -48,7 +48,7 @@ def build():
         sys.executable, "-m", "PyInstaller",
         "--onefile",
         "--windowed",
-        "--name", "SignTool",
+        "--name", "签发工具",
         "--icon", str(HERE / "SignTool.ico"),
         "--distpath", str(OUTPUT_DIR),
         "--workpath", str(HERE / "build"),
