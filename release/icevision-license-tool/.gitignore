@@ -1,4 +1,11 @@
-# Release artifacts under release/icevision-license-tool/ track the current shipped
-# SignTool.exe + README.txt only. 许可证台账.csv is customer data (uid / 名称 / 到期日
-# / 签发处室 历史),永远不进 git。
+# Release artifacts under release/icevision-license-tool/ — bureau 的 .exe + 操作员
+# README 走 D:/icevision-license-tool/ 目录拷贝交付(由 tools/license_tool/release.py
+# 构建产出),git 只留 README.txt 作 archive / 审计。
+#
+# 不进 git 的:
+#   - 许可证台账.csv:客户数据(uid / 名称 / 到期日 / 签发处室 历史)
+#   - *.exe:PyInstaller 产物(53 MB 二进制,不入 git history;每次更新也不 push)
+
 许可证台账.csv
+签发工具.exe
+SignTool.exe
