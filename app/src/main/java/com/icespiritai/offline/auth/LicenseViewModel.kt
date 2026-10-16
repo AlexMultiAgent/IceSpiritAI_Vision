@@ -29,33 +29,43 @@ class LicenseViewModel internal constructor(
     private val _state = MutableStateFlow<LicenseState>(LicenseState.Idle)
     val state: StateFlow<LicenseState> = _state.asStateFlow()
 
-    init {
-        viewModelScope.launch {
-            val code = store.observeCode().firstOrNull()
-            if (code != null) {
-                val r = verifier.verify(code, today = todayProvider())
-                if (r is VerifyResult.Valid) {
-                    _state.value = LicenseState.Active(r.payload)
-                } else {
-                    // 之前激活过但现在签名/到期错 → 不阻塞用户重新登录
-                    _state.value = LicenseState.Idle
-                }
-            }
+    /**
+     * 当前这次「读已存激活码 + 验签」的 Job 句柄。
+     *
+     * 之所以把句柄暴露出来(`internal`,只给同 module 的测试用):这次读取在
+     * `viewModelScope`(Main.immediate)上启动,却是在 DataStore 的 IO 线程上
+     * 完成,最后要回到 Main 写 [state]。测试如果在它回来之前就
+     * `Dispatchers.resetMain()`,那条协程会撞上 `TestMainDispatcher` 的并发检查,
+     * 报 `IllegalStateException: Dispatchers.Main is used concurrently with setting it`
+     * —— 2026-10-15 审计里全量单测偶发变红的就是这一条。测试 [Job.join] 这个句柄
+     * 之后再拆 Main 调度器,teardown 才是确定性的。生产代码不使用这个句柄。
+     */
+    internal var initialLoadJob: Job = viewModelScope.launch { loadStoredCode(verifier) }
+        private set
+
+    /**
+     * 读一次已保存的激活码并按 [v] 验签。
+     *
+     * 没有存过码 → 什么都不做(保持 [LicenseState.Idle],等用户输入);
+     * 存过但现在验签不过(换钥 / 过期 / 损坏)→ 也保持 Idle,不阻塞重新登录。
+     */
+    private suspend fun loadStoredCode(v: LicenseVerifier) {
+        val code = store.observeCode().firstOrNull() ?: return
+        val r = v.verify(code, today = todayProvider())
+        if (r is VerifyResult.Valid) {
+            _state.value = LicenseState.Active(r.payload)
+        } else {
+            _state.value = LicenseState.Idle
         }
     }
 
     /** 测试用 setter,允许注入 verifier.重新跑一遍验签. */
     fun setVerifier(v: LicenseVerifier) {
         this.verifier = v
-        viewModelScope.launch {
-            val code = store.observeCode().firstOrNull()
-            if (code != null) {
-                val r = v.verify(code, today = todayProvider())
-                if (r is VerifyResult.Valid) {
-                    _state.value = LicenseState.Active(r.payload)
-                }
-            }
-        }
+        // 先收掉上一次读取:两次并发读取会各自写 _state,后落定的那次可能覆盖
+        // 掉结果;调用方(测试)也只需要 join [initialLoadJob] 这一个句柄。
+        initialLoadJob.cancel()
+        initialLoadJob = viewModelScope.launch { loadStoredCode(v) }
     }
 
     /**

@@ -79,7 +79,7 @@
 |---|---|
 | UI tab 渲染 | [RuleTabBar.kt](app/src/main/java/com/icespiritai/offline/ui/home/RuleTabBar.kt) `visibleTabs: Set<RuleTab>` 为**必填参数**(无默认值),`TabRow` 按 `RuleTab.entries.filter { it in visibleTabs }` 渲染;`selected !in visibleTabs` 时自动 coerce 到首个可见 tab |
 | ViewModel 路由 | [IceSpiritVisionViewModel.kt](app/src/main/java/com/icespiritai/offline/IceSpiritVisionViewModel.kt) `matcherFor(tab)` 双分支保留,`FoodLabelRuleMatcher` 已可路由;`setTab` / `startAnalysis` 对 `tab !in visibleFeatures` 走拒绝分支 |
-| 规则 + 加载器 | `AdSignageRuleLoader` + `FoodLabelRuleLoader` 双装载入口保留;`food_label_rules.json`(95 条 / v5,v0.2.0 增量 29 条覆盖 8 部法规)+ `ad_signage_rules.json`(189 条 / v20,14 个类别:absolute / agricultural / cosmetic / education / finance / internet_ad / medical / minor / outdoor / pesticide / realestate / restricted / signage / veterinary)均随 APK 出 |
+| 规则 + 加载器 | `AdSignageRuleLoader` + `FoodLabelRuleLoader` 双装载入口保留;`food_label_rules.json`(95 条 / v5,v0.2.0 增量 29 条覆盖 8 部法规)+ `ad_signage_rules.json`(189 条 / v28,14 个类别:absolute / agricultural / cosmetic / education / finance / internet_ad / medical / minor / outdoor / pesticide / realestate / restricted / signage / veterinary)均随 APK 出 |
 | 知识库 | [知识库/](知识库/) 双域 markdown 完整保留(`广告业务/` + `食品标签/`);`广告业务/` 是成熟参考,`食品标签/` 按同一模式跟进 |
 | 测试 | [FoodLabelRuleMatcherTest.kt](app/src/test/java/com/icespiritai/offline/rules/FoodLabelRuleMatcherTest.kt) + [IceSpiritVisionViewModelTabTest.kt](app/src/test/java/com/icespiritai/offline/IceSpiritVisionViewModelTabTest.kt) 双 tab 路由断言保留 |
 | 打磨策略 | ad_signage_rules.json 关键词命中 / 严重度分级 / category 显示 / 证据包导出全部以"可复制到下一个视觉判别域"为标尺优化 —— 该标尺达标后,v0.1.69 以同样模式启用 FoodLabeling tab |
@@ -137,7 +137,7 @@ Gradle property `modelProfile` 控制当前构建启用哪个模型配置:
 | Profile | 状态 | 含义 |
 | --- | --- | --- |
 | `shell` | **默认 / 首版** | 仅展示骨架;UI 可跑,Fake OCR + slim rules,APK 不带模型 |
-| `ice_ocr_rules` | Phase 1(shipped) | **PP-OCRv6_small**(2026-08-20 升级,rec dict 18708 条)经 PaddleOCR v3.7.0 SDK(走 ONNX Runtime + OpenCV)+ AdSignageRuleMatcher + FoodLabelRuleMatcher 已接入;rules JSON 从 `assets/rules/ad_signage_rules.json`(广告招牌 189 条 / v20 / 14 类,含 2026-08-27 新增 `ad_signage_signage_food_safety_implication` 暗示安全性规则)与 `assets/rules/food_label_rules.json`(食品标识 95 条 / v5)出;ONNX 模型(bundled in APK)在 `assets/models/{det,rec}/inference.onnx` + `inference.yml` |
+| `ice_ocr_rules` | Phase 1(shipped) | **PP-OCRv6_small**(2026-08-20 升级,rec dict 18708 条)经 PaddleOCR v3.7.0 SDK(走 ONNX Runtime + OpenCV)+ AdSignageRuleMatcher + FoodLabelRuleMatcher 已接入;rules JSON 从 `assets/rules/ad_signage_rules.json`(广告招牌 189 条 / v28 / 14 类,含 2026-08-27 新增 `ad_signage_signage_food_safety_implication` 暗示安全性规则)与 `assets/rules/food_label_rules.json`(食品标识 95 条 / v5)出;ONNX 模型(bundled in APK)在 `assets/models/{det,rec}/inference.onnx` + `inference.yml` |
 | `ice_vision` | 未来 | 多标签 + 法规依据的端侧 VLM |
 
 切换方式:`./gradlew assembleDebug -PmodelProfile=<name>`;**发版必须显式带 `ice_ocr_rules`**
@@ -148,14 +148,16 @@ APK 没有 ONNX 模型、没有 Paddle/OpenCV native 库(约 38 MB 而非 ~75 MB
 
 ### profile → sourceSet 拆分
 
-每个 profile 独占一个 `src/<profile>/java/` 目录,放该 profile 的 `OcrEngineFactory` 实现(`PaddleOcrEngine` 与 `FakeOcrEngine` 互斥编译):
+每个 profile 的 `OcrEngineFactory` 实现互斥编译:
 
 | Profile | sourceSet | 注册方式 |
 | --- | --- | --- |
-| `shell` | `app/src/shell/java/` | `FakeOcrEngineFactory` 走 `src/shell/resources/META-INF/services/...` |
+| `shell` | `app/src/main/java/com/icespiritai/offline/ocr/ShellStubOcrEngine*.kt` | `ShellStubOcrEngineFactory` 走 `buildProfileServicesJar` 生成的一行 JAR |
 | `ice_ocr_rules` | `app/src/ice_ocr_rules/java/` | `PaddleOcrEngineFactory` 走 `src/ice_ocr_rules/resources/META-INF/services/...` |
 
 `PaddleOcrEngine` 本身放在 `src/ice_ocr_rules/java/`(不是 `main/`),确保 `shell` APK 不依赖 ONNX Runtime / OpenCV / PaddleOCR AAR。
+
+**测试桩不属于任何 profile**(2026-10-15 起):`FakeOcrEngine` / `FakeOcrEngineFactory` 在 `app/src/test/java/com/icespiritai/offline/ocr/`,`FakeRuleMatcher` 在 `app/src/test/java/com/icespiritai/offline/rules/`。此前它们挂在 `src/shell/java`,于是 `-PmodelProfile=ice_ocr_rules` 下 `compileDebugUnitTestKotlin` 直接编译失败(11 个 `Unresolved reference`)—— 现在单测在任一 profile 下都能编译运行,`src/shell/` 只剩一个 `.gitkeep` 占位。
 
 **AGP 9.x 限制:** `sourceSets { create("name") }` 已被拒绝,改用 `androidComponents.onVariants { variant.sources.java?.addStaticSourceDirectory(...) }` 挂载。详见 `app/build.gradle.kts` 中 `onVariants` 块的 KDoc。
 
@@ -218,7 +220,7 @@ Phase 1 走 OCR + 规则库路线(**PP-OCRv6_small** + PaddleOCR 官方 SDK v3.7
 # 默认(骨架 APK,Fake OCR + slim rules)
 ./gradlew.bat assembleDebug -PmodelProfile=shell
 
-# Phase 1 shipped(PP-OCRv6_small + PaddleOCR v3.7.0 + 广告招牌 189 条 / 食品标识 66 条 + ONNX 模型)
+# Phase 1 shipped(PP-OCRv6_small + PaddleOCR v3.7.0 + 广告招牌 189 条 / 食品标识 95 条 + ONNX 模型)
 ./gradlew.bat assembleDebug -PmodelProfile=ice_ocr_rules
 
 # 单元测试 / Lint
@@ -229,9 +231,9 @@ Phase 1 走 OCR + 规则库路线(**PP-OCRv6_small** + PaddleOCR 官方 SDK v3.7
 ./gradlew.bat clean
 ```
 
-**CI 仅跑 `shell` profile** — 仓库 .github/workflows 不会构建 `ice_ocr_rules`(避免拉 70 MB AAR + 30 MB ONNX + 跑 5 步 pre-flight + 真机烟测)。`ice_ocr_rules` profile 的端侧回归由 [`/icevision-release`](.claude/skills/icevision-release/SKILL.md) skill 的 5 步 pre-flight + 真机烟测覆盖(local-only,见 [docs/smoke/](docs/smoke/))。本地构建任一 profile 都需要先 export `JAVA_HOME` 到 JDK 17(`§开发环境`)。
+**CI 跑两条 profile** — `.github/workflows/android-ci.yml`:`assembleDebug -PmodelProfile=shell` + `testDebugUnitTest -PmodelProfile=shell`(全量单测),外加 `compileDebugSources compileDebugUnitTestKotlin -PmodelProfile=ice_ocr_rules`(把发布路径也编一遍;不打包 APK,因为 `tools/download-ppocr-models.sh` 拉的 ONNX 不入仓)。`ice_ocr_rules` 的端侧回归仍由 [`/icevision-release`](.claude/skills/icevision-release/SKILL.md) skill 的 5 步 pre-flight + 真机烟测覆盖(local-only,见 [docs/smoke/](docs/smoke/))。本地构建任一 profile 都需要先 export `JAVA_HOME` 到 JDK 17(`§开发环境`)。
 
-**`testDebugUnitTest` 不要带 `-PmodelProfile=ice_ocr_rules`** — 单测源码里的 `FakeOcrEngine` / `FakeOcrEngineFactory` 只挂在 `src/shell/java`(`app/build.gradle.kts` 的 `androidComponents` 按 profile 选 srcDir),用 `ice_ocr_rules` 跑测试会在 `compileDebugUnitTestKotlin` 阶段报 11 个 `Unresolved reference`。构建 APK 用 `ice_ocr_rules`,跑单测用默认 profile。
+**`testDebugUnitTest` 与 `modelProfile` 无关**(2026-10-15 起):带不带 `-PmodelProfile=ice_ocr_rules` 都能编译运行 —— 测试桩已移入 `src/test/`(见 §profile → sourceSet 拆分)。发版仍必须显式带 `ice_ocr_rules`。
 
 ## Lint vital/analyze 已禁用(AGP 9.3 + Kotlin 2.4.10 FIR 崩)
 

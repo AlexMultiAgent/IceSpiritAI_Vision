@@ -4,13 +4,13 @@
 
 ## 状态
 
-**v0.1.43** — 审计 round 2 收尾:`IceSpiritVisionViewModel.reset` 同步取消(UI 即时回 Idle,消除 `cancelAndJoin` + `withContext(Default)` 在 JVM 测试下的 scheduler-blind 竞态)+ `ExportAction.share` 注入 `ioDispatcher` 参数(测试可注入 `TestDispatcher`,生产保持 `Dispatchers.IO`)+ PreToolUse hook Rule 1 正则加固(拦截 `git add --all` / `git add *` / `git add ./` 等绕过)+ Hook 自检脚本 `tools/pre-tool-use-hook-test.js`(23 case,全过)+ 文档与 build.gradle.kts / settings.gradle.kts / doc drift 多处对齐实际版本号 / SDK / 规则数。
+**v0.6.0** — 激活码签发工具独立 `.exe`(v0.6.0 发布内容见 [user-changelog](app/src/main/assets/user-changelog.md))。此后一轮审计修复:`RegionOcrRunner` 坐标空间(放大识别新增的行,图上高亮框现在落回**原图**坐标)+ 眼镜 Wi-Fi 诊断补运行时权限门控(定位 / 附近 Wi-Fi 设备,失败提示直接点名缺哪个权限)+ `UpdateDownloadService` 把 `startForeground` 提到 DataStore 读之前(消除 5 s 崩溃窗口)+ TTS 模型 sha256 锚定 `BuildConfig` + 删除 TTS 引擎 APK 明文下载安装通道、`GlassesScan` 与 14 MB jieba 词典死资源 + 单测与 `modelProfile` 解耦、CI 增编 `ice_ocr_rules`。
 
 (历史发版见 [app/src/main/assets/user-changelog.md](app/src/main/assets/user-changelog.md))
 
 | Profile | 状态 | 含义 |
 | --- | --- | --- |
-| `shell` | 默认 / 空骨架 | Fake OCR + slim rules,APK 不带模型 |
+| `shell` | 默认 / 空骨架 | ShellStub OCR + slim rules,APK 不带模型 |
 | `ice_ocr_rules` | shipped | PP-OCRv6_small + PaddleOCR v3.7.0 SDK + 广告招牌/食品标识规则库 |
 | `ice_vision` | 未来 | 端侧 VLM(多标签 + 法规依据) |
 

@@ -109,7 +109,7 @@ class GlassesWifiProbe(private val context: Context) {
             Log.w(TAG, "wifiProbe: missing runtime permissions $missingPerms")
             return@withContext Report(
                 ssid = ssid,
-                failedPhase = "permission",
+                failedPhase = WIFI_PROBE_PERMISSION_PHASE,
                 error = "缺少权限: ${missingPerms.joinToString { it.substringAfterLast('.') }}。" +
                     "请到「设置 → 应用 → 冰灵锐目 → 权限」授予定位/附近 Wi-Fi 设备权限后重试。",
             )
@@ -201,6 +201,9 @@ class GlassesWifiProbe(private val context: Context) {
         var attempts = 0
         while (System.currentTimeMillis() - startedAt < timeoutMs) {
             attempts++
+            // 诊断路径按 OEM 的做法每 2 s 触发一次扫描;framework 会静默限频,
+            // 真正兜底的是下面读 scanResults(可能拿到上一次的缓存结果)。
+            @Suppress("DEPRECATION")
             runCatching { wifi.startScan() }
             val hit = runCatching {
                 @Suppress("DEPRECATION")
@@ -453,6 +456,15 @@ class GlassesWifiProbe(private val context: Context) {
 
         /** OEM `PhotoCaptureService.downloadPhotoFromFtp` directory. */
         const val PICTURE_DIR = "/Picture"
+
+        /**
+         * [Report.failedPhase] value meaning "the runtime permission the join
+         * needs was not granted" — a dependency of the diagnostic, not a
+         * property of the glasses or the network. The Settings row keys its
+         * 「去应用设置」 affordance off this value, so the producer and the
+         * consumer share the literal instead of matching two string copies.
+         */
+        const val WIFI_PROBE_PERMISSION_PHASE = "permission"
 
         const val FTP_PORT = 21
         const val CONTROL_TIMEOUT_MS = 12_000

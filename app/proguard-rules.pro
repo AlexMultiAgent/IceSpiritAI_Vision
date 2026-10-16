@@ -6,8 +6,6 @@
 # puts META-INF/services/... into a runtimeOnly jar; ServiceLoader scans that
 # jar by FQN. R8 must not rename these classes.
 -keep class * implements com.icespiritai.offline.ocr.OcrEngineFactory { *; }
--keep class com.icespiritai.offline.ocr.FakeOcrEngineFactory { *; }
--keep class com.icespiritai.offline.ocr.PaddleOcrEngineFactory { *; }
 
 # Keep kotlinx.serialization metadata for AppVersionInfo (signerCertSha256 field
 # is decoded from JSON without an explicit KSerializer lookup; the auto-generated
