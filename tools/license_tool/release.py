@@ -28,7 +28,7 @@ _PYINSTALLER_PYTHON_HINT = (
 
 HERE = Path(__file__).parent.resolve()
 SPEC = HERE / "license_tool_gui.py"
-OUTPUT_DIR = Path("D:/icevision-license-tool").resolve()
+OUTPUT_DIR = Path("D:/GitHub/IceSpiritAI_Vision/icevision-license-tool").resolve()
 SOURCE_PEM = Path("D:/keystores/icespiritai-license-private.pem")
 # 临时内嵌文件,build 完即删(gitignored by tools/license_tool/.gitignore)
 EMBEDDED_PEM = HERE / "license.pem"
