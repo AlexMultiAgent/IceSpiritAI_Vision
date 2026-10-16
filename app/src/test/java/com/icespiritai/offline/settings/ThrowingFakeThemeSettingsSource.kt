@@ -7,19 +7,25 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Test double for [ThemeSettingsSource] whose [setVisibleFeatures] throws
- * the configured [Throwable] (typically an [java.io.IOException] from a
- * simulated DataStore write failure). Used by `SettingsViewModelTest` to
- * pin the `SettingsSnackbar.PersistFailed` emission path: the production
- * `SettingsViewModel.setFeatureVisible` wraps the upstream write in
+ * Test double for [ThemeSettingsSource] whose write setters
+ * ([setVisibleFeatures] and [setCacheCleanupEnabled]) throw the
+ * configured [Throwable] (typically an [java.io.IOException] from a
+ * simulated DataStore write failure).
+ *
+ * Used by `SettingsViewModelTest` to pin the
+ * [SettingsSnackbar.PersistFailed] emission path: the production
+ * `SettingsViewModel` wraps the upstream write in
  * `runCatching { ... }.onFailure { _snackbar.tryEmit(PersistFailed(it)) }`,
  * so a throwing fake lets us assert that contract without needing
  * Robolectric + a real corrupted DataStore on disk.
  *
  * `themeMode` / `setThemeMode` behave like [FakeThemeSettingsSource]
  * (backed by an internal [MutableStateFlow]) — irrelevant to the
- * `setFeatureVisible` test, but kept working so the ViewModel's other
- * state continues to construct cleanly.
+ * failure tests, but kept working so the ViewModel's other state
+ * continues to construct cleanly. Other setters
+ * ([setGlassesCaptureEnabled], [setAutoRetakeLowQualityGlassesShot])
+ * are no-ops so they don't disturb tests that don't care about their
+ * failure path.
  */
 internal class ThrowingFakeThemeSettingsSource(
     private val throwOnSetVisible: Throwable,
@@ -40,14 +46,17 @@ internal class ThrowingFakeThemeSettingsSource(
 
     override val enableGlassesCapture: Flow<Boolean> = MutableStateFlow(false)
     override suspend fun setGlassesCaptureEnabled(enabled: Boolean) {
-        // Mirror the production failure semantics: this fake only
-        // throws on `setVisibleFeatures`. Glasses capture is orthogonal
-        // to the failure-injection purpose.
+        // No-op: this fake's failure-injection surface is
+        // `setVisibleFeatures` and `setCacheCleanupEnabled` only.
     }
 
     override val autoRetakeLowQualityGlassesShot: Flow<Boolean> = MutableStateFlow(true)
     override suspend fun setAutoRetakeLowQualityGlassesShot(enabled: Boolean) {
-        // Same rationale as [setGlassesCaptureEnabled]: only
-        // `setVisibleFeatures` injects a failure in this fake.
+        // Same rationale as [setGlassesCaptureEnabled].
+    }
+
+    override val cacheCleanupEnabled: Flow<Boolean> = MutableStateFlow(true)
+    override suspend fun setCacheCleanupEnabled(enabled: Boolean) {
+        throw throwOnSetVisible
     }
 }

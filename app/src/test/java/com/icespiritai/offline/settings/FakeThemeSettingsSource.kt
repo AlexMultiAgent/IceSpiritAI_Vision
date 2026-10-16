@@ -52,4 +52,12 @@ internal class FakeThemeSettingsSource(
     override suspend fun setAutoRetakeLowQualityGlassesShot(enabled: Boolean) {
         autoRetakeBacking.value = enabled
     }
+
+    /** 「启动自动清理 cacheDir」默认开（与生产默认值一致）。 */
+    internal val cacheCleanupBacking = MutableStateFlow(true)
+
+    override val cacheCleanupEnabled: Flow<Boolean> = cacheCleanupBacking
+    override suspend fun setCacheCleanupEnabled(enabled: Boolean) {
+        cacheCleanupBacking.value = enabled
+    }
 }

@@ -292,6 +292,14 @@
     <string name="settings_feature_ad_signage_label">广告招牌</string>
     <string name="settings_feature_food_label_label">食品标签</string>
 
+    <!-- cacheDir cleanup (CLAUDE.md §cacheDir 清理策略) -->
+    <string name="settings_cache_cleanup_title">缓存清理</string>
+    <string name="settings_cache_cleanup_switch">启动时自动清理缓存</string>
+    <string name="settings_cache_cleanup_desc">每次冷启动时按「最近 %1$d 张 / %2$d 天」裁剪 cacheDir 下的拍照 / 取证包 / 眼镜诊断 / 下载 APK 四个目录,防止一年巡检攒下几 GB。</string>
+    <string name="settings_cache_cleanup_action_now">立即清理</string>
+    <string name="settings_cache_cleanup_summary">上次清理:删除 %1$d 个文件,释放 %2$s</string>
+    <string name="settings_cache_cleanup_summary_never">尚未执行过清理</string>
+
     <!-- TTS content enhancement (v0.3.0) — UI fallback strings -->
     <string name="tts_segment_count_prefix">共 %1$d 条违规,%2$d 条警告,%3$d 条信息</string>
     <string name="tts_segment_bucket_violation">违规:%1$s</string>

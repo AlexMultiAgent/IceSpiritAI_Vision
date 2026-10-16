@@ -10,12 +10,15 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.icespiritai.offline.BuildConfig
+import com.icespiritai.offline.cache.CacheCleanupCoordinator
+import com.icespiritai.offline.cache.CacheCleanupSummary
 import com.icespiritai.offline.ui.home.RuleTab
 import com.icespiritai.offline.updater.AppVersionInfo
 import com.icespiritai.offline.updater.UpdateCheckResult
 import com.icespiritai.offline.updater.UpdateRepository
 import com.icespiritai.offline.updater.UpdateState
 import com.icespiritai.offline.ui.theme.ThemeMode
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -26,6 +29,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 
@@ -53,6 +57,9 @@ sealed class SettingsSnackbar {
 
 class SettingsViewModel(
     private val source: ThemeSettingsSource,
+    private val coordinator: CacheCleanupCoordinator = CacheCleanupCoordinator(),
+    private val cacheDir: File = File("."),
+    private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
 
@@ -142,6 +149,51 @@ class SettingsViewModel(
                     }
                     _snackbar.tryEmit(SettingsSnackbar.PersistFailed(cause))
                 }
+        }
+    }
+
+    /**
+     * 启动时按 [com.icespiritai.offline.cache.DefaultCachePolicies] 自动裁剪
+     * cacheDir 子目录。默认开(见 [ThemeSettingsSource.cacheCleanupEnabled])。
+     * 关掉后只剩手动「立即清理」入口。
+     */
+    val cacheCleanupEnabled: StateFlow<Boolean> =
+        source.cacheCleanupEnabled.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = true,
+        )
+
+    fun setCacheCleanupEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            runCatching { source.setCacheCleanupEnabled(enabled) }
+                .onFailure { cause ->
+                    if (cause !is IOException) {
+                        Log.w(TAG, "setCacheCleanupEnabled failed", cause)
+                    }
+                    _snackbar.tryEmit(SettingsSnackbar.PersistFailed(cause))
+                }
+        }
+    }
+
+    /**
+     * 手动触发 cacheDir 清理(用户在「缓存清理」卡片里点「立即清理」)。
+     * 实际 IO 跑在 [Dispatchers.IO],完成后用 [lastCleanupSummary] 上屏。
+     * 关掉 [cacheCleanupEnabled] 也不影响此手动入口。
+     */
+    private val _lastCleanupSummary = MutableSharedFlow<CacheCleanupSummary>(
+        replay = 1,
+        extraBufferCapacity = 0,
+    )
+    val lastCleanupSummary: SharedFlow<CacheCleanupSummary> = _lastCleanupSummary.asSharedFlow()
+
+    fun runCacheCleanupNow() {
+        viewModelScope.launch {
+            val summary = withContext(ioDispatcher) {
+                coordinator.cleanup(cacheDir)
+            }
+            Log.i(TAG, "cache cleanup (manual): deleted ${summary.totalDeleted}, freed ${summary.humanBytesFreed()}")
+            _lastCleanupSummary.tryEmit(summary)
         }
     }
 
@@ -462,10 +514,16 @@ class SettingsViewModel(
 
         private const val TAG = "SettingsViewModel"
 
-        fun factory(repository: SettingsRepository) = object : androidx.lifecycle.ViewModelProvider.Factory {
+        fun factory(context: Context) = object : androidx.lifecycle.ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                return SettingsViewModel(repository) as T
+                return SettingsViewModel(
+                    source = SettingsRepository(context.applicationContext),
+                    coordinator = com.icespiritai.offline.AppGraph.cacheCleanupCoordinator(
+                        context.applicationContext,
+                    ),
+                    cacheDir = context.applicationContext.cacheDir,
+                ) as T
             }
         }
     }

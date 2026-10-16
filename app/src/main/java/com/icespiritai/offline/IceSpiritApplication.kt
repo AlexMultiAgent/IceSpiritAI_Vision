@@ -1,12 +1,14 @@
 package com.icespiritai.offline
 
 import android.app.Application
+import android.util.Log
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import com.icespiritai.offline.settings.SettingsRepository
 import com.icespiritai.offline.updater.ApkSignatureVerifier
 import com.icespiritai.offline.updater.UpdateRepository
 import com.icespiritai.offline.updater.service.UpdateDownloadNotifier
@@ -15,6 +17,7 @@ import com.icespiritai.offline.updater.service.UpdateResumeWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -100,5 +103,29 @@ class IceSpiritApplication : Application() {
             failedSink = { /* silent: no active UI on cold-start */ },
         )
         appScope.launch { coordinator.scanAndDispatch() }
+
+        // 3. cacheDir cleanup (CLAUDE.md §cacheDir 清理策略). Bounded
+        //    LRU + TTL over capture/、evidence/、wifi_probe/、update/
+        //    per DefaultCachePolicies — see CacheCleanupCoordinator.
+        //    Gated on the persisted cacheCleanupEnabled flag (default ON);
+        //    on a fresh install the .first() await pulls the production
+        //    default and proceeds without UI round-trips.
+        val cleanupCoordinator = AppGraph.cacheCleanupCoordinator(this)
+        val settingsRepo = SettingsRepository(applicationContext)
+        appScope.launch {
+            val enabled = runCatching { settingsRepo.cacheCleanupEnabled.first() }
+                .getOrDefault(true)
+            if (!enabled) return@launch
+            val summary = cleanupCoordinator.cleanup(cacheDir)
+            Log.i(
+                TAG,
+                "cache cleanup (cold start): deleted ${summary.totalDeleted}, " +
+                    "freed ${summary.humanBytesFreed()}",
+            )
+        }
+    }
+
+    private companion object {
+        const val TAG = "IceSpiritApplication"
     }
 }

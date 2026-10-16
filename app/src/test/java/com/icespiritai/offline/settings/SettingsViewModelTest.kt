@@ -1,5 +1,6 @@
 package com.icespiritai.offline.settings
 
+import com.icespiritai.offline.cache.CacheCleanupCoordinator
 import com.icespiritai.offline.ui.home.RuleTab
 import com.icespiritai.offline.ui.theme.ThemeMode
 import kotlinx.coroutines.CoroutineStart
@@ -14,8 +15,11 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.io.File
 import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -25,6 +29,8 @@ class SettingsViewModelTest {
 
     private lateinit var themeBacking: MutableStateFlow<ThemeMode>
     private lateinit var fakeSource: FakeThemeSettingsSource
+    private lateinit var coordinator: CacheCleanupCoordinator
+    private lateinit var cacheRoot: File
     private lateinit var vm: SettingsViewModel
 
     @Before
@@ -32,7 +38,17 @@ class SettingsViewModelTest {
         Dispatchers.setMain(dispatcher)
         themeBacking = MutableStateFlow(ThemeMode.SYSTEM)
         fakeSource = FakeThemeSettingsSource(themeBacking)
-        vm = SettingsViewModel(fakeSource)
+        coordinator = CacheCleanupCoordinator()
+        cacheRoot = TemporaryFolder().also { it.create() }.root
+        // Same UnconfinedTestDispatcher for both Main and "IO" — keeps
+        // runCacheCleanupNow's withContext(IO) deterministically on the
+        // test scheduler so advanceUntilIdle covers the whole flow.
+        vm = SettingsViewModel(
+            source = fakeSource,
+            coordinator = coordinator,
+            cacheDir = cacheRoot,
+            ioDispatcher = dispatcher,
+        )
     }
 
     @After
@@ -148,5 +164,61 @@ class SettingsViewModelTest {
         val persistFailed = collected.filterIsInstance<SettingsSnackbar.PersistFailed>()
         assertEquals(1, persistFailed.size)
         assertEquals("disk full", persistFailed[0].cause.message)
+    }
+
+    @Test fun `cacheCleanupEnabled defaults on`() = runTest {
+        assertEquals(true, vm.cacheCleanupEnabled.value)
+    }
+
+    @Test fun `setCacheCleanupEnabled writes via source`() = runTest(dispatcher) {
+        vm.setCacheCleanupEnabled(false)
+
+        assertEquals(false, fakeSource.cacheCleanupBacking.value)
+    }
+
+    @Test fun `setCacheCleanupEnabled source failure emits PersistFailed`() = runTest(dispatcher) {
+        // Build a throwing fake that also exposes a cacheCleanupBacking
+        // — needed to observe that the upstream StateFlow is NOT silently
+        // flipped when the write throws.
+        val throwingSource = ThrowingFakeThemeSettingsSource(IOException("disk full"))
+        val throwingVm = SettingsViewModel(throwingSource)
+
+        val collected = mutableListOf<SettingsSnackbar>()
+        val job = launch(start = CoroutineStart.UNDISPATCHED) {
+            throwingVm.snackbar.collect { collected.add(it) }
+        }
+
+        throwingVm.setCacheCleanupEnabled(false)
+        advanceUntilIdle()
+
+        job.cancel()
+        val persistFailed = collected.filterIsInstance<SettingsSnackbar.PersistFailed>()
+        assertEquals(1, persistFailed.size)
+        assertEquals("disk full", persistFailed[0].cause.message)
+    }
+
+    @Test fun `runCacheCleanupNow drives coordinator and emits summary`() = runTest(dispatcher) {
+        // Plant files in the test cacheRoot's capture/ bucket so the
+        // coordinator's first run has something to delete.
+        val captureDir = File(cacheRoot, "capture").apply { mkdirs() }
+        val stale = File(captureDir, "stale.jpg").apply {
+            writeBytes(ByteArray(100))
+            // Set mtime 100 days in the past so the default policy deletes it.
+            setLastModified(System.currentTimeMillis() - 100L * 24L * 60L * 60L * 1000L)
+        }
+
+        val collected = mutableListOf<com.icespiritai.offline.cache.CacheCleanupSummary>()
+        val job = launch(start = CoroutineStart.UNDISPATCHED) {
+            vm.lastCleanupSummary.collect { collected.add(it) }
+        }
+
+        vm.runCacheCleanupNow()
+        advanceUntilIdle()
+
+        job.cancel()
+        assertTrue("stale file deleted", !stale.exists())
+        assertEquals(1, collected.size)
+        assertTrue("at least 1 file deleted", collected[0].totalDeleted >= 1)
+        assertEquals(coordinator.lastCleanupResult!!.totalDeleted, collected[0].totalDeleted)
     }
 }

@@ -1,6 +1,8 @@
 package com.icespiritai.offline.ui.settings
 
 import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -51,14 +53,18 @@ import com.icespiritai.offline.R
 import com.icespiritai.offline.auth.LicenseCodec
 import com.icespiritai.offline.auth.LicenseStore
 import com.icespiritai.offline.glasses.GlassesDevice
+import com.icespiritai.offline.glasses.GlassesPermissions
 import com.icespiritai.offline.glasses.GlassesPhotoCaptureRepository
 import com.icespiritai.offline.glasses.GlassesFirmwareUpdater
 import com.icespiritai.offline.glasses.GlassesSystemIntents
 import com.icespiritai.offline.glasses.GlassesTarget
+import com.icespiritai.offline.glasses.GlassesWifiProbe
 import com.icespiritai.offline.glasses.resolveGlassesTarget
 import com.icespiritai.offline.settings.SettingsRepository
 import com.icespiritai.offline.settings.SettingsSnackbar
 import com.icespiritai.offline.settings.SettingsViewModel
+import com.icespiritai.offline.cache.CacheCleanupSummary
+import com.icespiritai.offline.cache.DefaultCachePolicies
 import com.icespiritai.offline.tts.TtsState
 import com.icespiritai.offline.ui.home.RuleTab
 import kotlinx.coroutines.launch
@@ -97,7 +103,7 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val viewModel: SettingsViewModel = viewModel(
-        factory = SettingsViewModel.factory(SettingsRepository(context.applicationContext)),
+        factory = SettingsViewModel.factory(context.applicationContext),
     )
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val visibleFeatures by viewModel.visibleFeatures.collectAsStateWithLifecycle()
@@ -338,6 +344,13 @@ fun SettingsScreen(
                         (context as? IceSpiritVisionActivity)?.reloginLicense()
                     },
                 )
+            }
+            // v0.5.x: cacheDir cleanup card. Switch gates the cold-start
+            // cleanup in IceSpiritApplication.onCreate; the "立即清理"
+            // button always works regardless of the Switch state and
+            // reports the most recent summary via SharedFlow.
+            Card(modifier = Modifier.fillMaxWidth()) {
+                CacheCleanupSection(viewModel = viewModel)
             }
             Spacer(modifier = Modifier.height(8.dp))
             Column(modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -710,6 +723,26 @@ private fun GlassesWifiTransferRow(
     // Local copy: a delegated `by` property cannot be smart-cast.
     val direct = probe.direct
 
+    // A3 follow-up (2026-10-15): the probe needs 定位 / 附近 Wi-Fi 设备 on
+    // API 31+ (see [GlassesPermissions.wifiRequired]). It used to be launched
+    // unasked, so `requestNetwork` hit a SecurityException that the probe's
+    // own `runCatching` folded into the generic 「系统未连接该 AP」 — the user
+    // had no idea a permission was the blocker. Ask here, then probe.
+    val wifiPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        if (grants.values.all { it }) repository.probeWifiTransfer()
+    }
+
+    fun startWifiProbe() {
+        val missing = GlassesPermissions.wifiMissing(context)
+        if (missing.isEmpty()) {
+            repository.probeWifiTransfer()
+        } else {
+            wifiPermissionLauncher.launch(missing.toTypedArray())
+        }
+    }
+
     Spacer(modifier = Modifier.height(4.dp))
     Text(
         text = stringResource(R.string.settings_glasses_wifi_desc),
@@ -735,9 +768,9 @@ private fun GlassesWifiTransferRow(
                     direct.error ?: "?",
                 )
                 hasConfig && ftp != null && ssid != null ->
-                    stringResource(R.string.settings_glasses_wifi_config, ftp!!, ssid!!)
+                    stringResource(R.string.settings_glasses_wifi_config, ftp, ssid)
                 hasConfig && ssid != null ->
-                    stringResource(R.string.settings_glasses_wifi_config, "—", ssid!!)
+                    stringResource(R.string.settings_glasses_wifi_config, "—", ssid)
                 hasConfig ->
                     stringResource(R.string.settings_glasses_wifi_config, "—", "—")
                 probe.failed -> stringResource(R.string.settings_glasses_wifi_failed)
@@ -764,8 +797,15 @@ private fun GlassesWifiTransferRow(
                 Text(stringResource(R.string.settings_glasses_wifi_action_manual))
             }
         }
-        TextButton(onClick = { repository.probeWifiTransfer() }, enabled = enabled && !busy) {
+        TextButton(onClick = { startWifiProbe() }, enabled = enabled && !busy) {
             Text(stringResource(R.string.settings_glasses_wifi_action_test))
+        }
+    }
+    // 权限被永久拒绝时上面的弹窗不会再出现 —— 给一个直接跳到应用设置页的出口,
+    // 与眼镜卡片的"去应用设置"是同一个动作。
+    if (direct?.failedPhase == GlassesWifiProbe.WIFI_PROBE_PERMISSION_PHASE && !busy) {
+        TextButton(onClick = { GlassesSystemIntents.openAppSettings(context) }) {
+            Text(stringResource(R.string.glasses_action_open_app_settings))
         }
     }
     if (probe.manualFallback && !busy) {
@@ -926,7 +966,7 @@ private fun GlassesFirmwareUpgradeRow(
                     Text(
                         stringResource(
                             R.string.settings_glasses_firmware_upgrading,
-                            ((current as GlassesFirmwareUpdater.UpgradeState.Upgrading).elapsedMs / 1000).toInt(),
+                            (current.elapsedMs / 1000).toInt(),
                         ),
                     )
                     Spacer(modifier = Modifier.height(8.dp))
@@ -1089,6 +1129,93 @@ private fun formatFirmwareSize(bytes: Long?): String = when {
     bytes >= 1024 * 1024 -> "%.1f MB".format(bytes / 1024.0 / 1024.0)
     bytes >= 1024 -> "%.0f KB".format(bytes / 1024.0)
     else -> "$bytes B"
+}
+
+/**
+ * cacheDir 清理卡片(CLAUDE.md §cacheDir 清理策略)。
+ *
+ * 一个 Switch(默认开,启动时由 IceSpiritApplication.onCreate 跑一次)+
+ * 「立即清理」按钮(走 SettingsViewModel.runCacheCleanupNow,可在 Switch
+ * 关掉时也跑)+ 「上次清理: …」页脚(读 Coordinator.lastCleanupResult)。
+ *
+ * 默认策略汇总到 desc 文案里(`capture 50 张 / 14 天` etc.,具体见
+ * [DefaultCachePolicies])。最严口径是 update 的 2 张 / 60 天 —— 下载
+ * APK 单个 75 MB,管不严一年能堆 1 GB。
+ */
+@Composable
+private fun CacheCleanupSection(viewModel: SettingsViewModel) {
+    val enabled by viewModel.cacheCleanupEnabled.collectAsStateWithLifecycle()
+    var busy by remember { mutableStateOf(false) }
+    var lastSummary by remember { mutableStateOf<CacheCleanupSummary?>(null) }
+    // VM emits lastCleanupSummary as a SharedFlow (replay=1) so a config
+    // change or process death replay after rotation still shows the most
+    // recent summary; collectAsState pulls the replayed value on first
+    // composition.
+    LaunchedEffect(viewModel) {
+        viewModel.lastCleanupSummary.collect { lastSummary = it }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.settings_cache_cleanup_title),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.settings_cache_cleanup_switch),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    text = stringResource(
+                        R.string.settings_cache_cleanup_desc,
+                        DefaultCachePolicies.capture.keepMostRecent,
+                        DefaultCachePolicies.capture.keepNewerThanDays,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = { viewModel.setCacheCleanupEnabled(it) },
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = lastSummary?.let {
+                    stringResource(
+                        R.string.settings_cache_cleanup_summary,
+                        it.totalDeleted,
+                        it.humanBytesFreed(),
+                    )
+                } ?: stringResource(R.string.settings_cache_cleanup_summary_never),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(
+                onClick = {
+                    if (!busy) {
+                        busy = true
+                        viewModel.runCacheCleanupNow()
+                    }
+                },
+                enabled = !busy,
+            ) {
+                Text(stringResource(R.string.settings_cache_cleanup_action_now))
+            }
+        }
+    }
 }
 
 private fun glassesSettingsStatus(context: Context): GlassesSettingsStatus {

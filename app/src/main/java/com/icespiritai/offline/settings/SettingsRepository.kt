@@ -41,6 +41,7 @@ class SettingsRepository(private val context: Context) : ThemeSettingsSource {
     private val visibleFeaturesKey = stringSetPreferencesKey("visible_features")
     private val enableGlassesCaptureKey = booleanPreferencesKey("enable_glasses_capture")
     private val autoRetakeGlassesKey = booleanPreferencesKey("auto_retake_low_quality_glasses")
+    private val cacheCleanupEnabledKey = booleanPreferencesKey("cache_cleanup_enabled")
 
     override val themeMode: Flow<ThemeMode> =
         context.dataStore.data
@@ -144,6 +145,23 @@ class SettingsRepository(private val context: Context) : ThemeSettingsSource {
     override suspend fun setAutoRetakeLowQualityGlassesShot(enabled: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[autoRetakeGlassesKey] = enabled
+        }
+    }
+
+    /**
+     * 启动自动清理 cacheDir(capture/、evidence/、wifi_probe/、update/)。
+     * 默认 `true`(见 [cacheCleanupEnabled] KDoc)。
+     */
+    override val cacheCleanupEnabled: Flow<Boolean> =
+        context.dataStore.data
+            .catch { e ->
+                if (e is IOException) emit(emptyPreferences()) else throw e
+            }
+            .map { it[cacheCleanupEnabledKey] ?: true }
+
+    override suspend fun setCacheCleanupEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[cacheCleanupEnabledKey] = enabled
         }
     }
 

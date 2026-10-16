@@ -63,4 +63,16 @@ interface ThemeSettingsSource {
      */
     val autoRetakeLowQualityGlassesShot: Flow<Boolean>
     suspend fun setAutoRetakeLowQualityGlassesShot(enabled: Boolean)
+
+    /**
+     * 启动时按 [com.icespiritai.offline.cache.CacheCleaner] 策略自动裁剪
+     * cacheDir 子目录(capture/、evidence/、wifi_probe/、update/)。
+     *
+     * **默认 `true`**(巡检用一年不清理能攒几 GB,见 CLAUDE.md §cacheDir 清理策略):
+     * 由 [com.icespiritai.offline.IceSpiritApplication.onCreate] 在冷启动
+     * 时跑一次(用户可手动立即清理 → [SettingsViewModel.runCacheCleanupNow])。
+     * 关闭后只保留手动入口。
+     */
+    val cacheCleanupEnabled: Flow<Boolean>
+    suspend fun setCacheCleanupEnabled(enabled: Boolean)
 }

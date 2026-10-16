@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 import com.icespiritai.offline.settings.SettingsRepository
+import com.icespiritai.offline.cache.CacheCleanupCoordinator
 import com.icespiritai.offline.glasses.BluetoothController
 import kotlinx.coroutines.launch
 import com.icespiritai.offline.glasses.GlassesDeviceStore
@@ -129,5 +130,19 @@ object AppGraph {
             service = GlassesFirmwareService(),
             scope = glassesScope(),
         ).also { glassesFirmwareUpdaterInstance = it }
+    }
+
+    /**
+     * Process-scoped cache-cleanup coordinator. Cold-start
+     * [com.icespiritai.offline.IceSpiritApplication.onCreate] and the
+     * Settings card's "立即清理" button both pull the same singleton so
+     * `lastCleanupResult` survives Activity recreation.
+     */
+    @Volatile private var cacheCleanupCoordinatorInstance: CacheCleanupCoordinator? = null
+
+    @Synchronized
+    fun cacheCleanupCoordinator(context: Context): CacheCleanupCoordinator {
+        return cacheCleanupCoordinatorInstance ?: CacheCleanupCoordinator()
+            .also { cacheCleanupCoordinatorInstance = it }
     }
 }
