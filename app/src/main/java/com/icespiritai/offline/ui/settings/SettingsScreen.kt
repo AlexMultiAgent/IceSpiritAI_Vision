@@ -1175,11 +1175,7 @@ private fun CacheCleanupSection(viewModel: SettingsViewModel) {
                     style = MaterialTheme.typography.bodyLarge,
                 )
                 Text(
-                    text = stringResource(
-                        R.string.settings_cache_cleanup_desc,
-                        DefaultCachePolicies.capture.keepMostRecent,
-                        DefaultCachePolicies.capture.keepNewerThanDays,
-                    ),
+                    text = stringResource(R.string.settings_cache_cleanup_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )

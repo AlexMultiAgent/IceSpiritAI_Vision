@@ -180,6 +180,13 @@ class SettingsViewModel(
      * 手动触发 cacheDir 清理(用户在「缓存清理」卡片里点「立即清理」)。
      * 实际 IO 跑在 [Dispatchers.IO],完成后用 [lastCleanupSummary] 上屏。
      * 关掉 [cacheCleanupEnabled] 也不影响此手动入口。
+     *
+     * 走 [CacheCleanupCoordinator.cleanupImmediate] 而非 [cleanup] —
+     * 同样的 `keepMostRecent` 上限,但绕过 14/60 天的年龄窗口。
+     * 用户的「立即」语义应该是立刻按 count 上限砍,而不是再套一次
+     * 冷启动策略(那会让你今天刚拍/刚导的那张照片被窗口保住,显示
+     * 「删除 0」)。背景自动清理仍由 [IceSpiritApplication.onCreate]
+     * 走 [CacheCleanupCoordinator.cleanup](在机器冷启动时)。
      */
     private val _lastCleanupSummary = MutableSharedFlow<CacheCleanupSummary>(
         replay = 1,
@@ -190,7 +197,7 @@ class SettingsViewModel(
     fun runCacheCleanupNow() {
         viewModelScope.launch {
             val summary = withContext(ioDispatcher) {
-                coordinator.cleanup(cacheDir)
+                coordinator.cleanupImmediate(cacheDir)
             }
             Log.i(TAG, "cache cleanup (manual): deleted ${summary.totalDeleted}, freed ${summary.humanBytesFreed()}")
             _lastCleanupSummary.tryEmit(summary)

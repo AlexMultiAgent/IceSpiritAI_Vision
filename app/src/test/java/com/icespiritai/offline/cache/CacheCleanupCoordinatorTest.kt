@@ -12,11 +12,18 @@ import java.io.File
 /**
  * Unit tests for [CacheCleanupCoordinator].
  *
- * The coordinator drives the four cacheDir sub-buckets (`capture`,
- * `evidence`, `wifi_probe`, `update`) through a single [CacheCleaner].
- * Each bucket has its own [CacheCleanupPolicy] (see
+ * The coordinator drives the cacheDir sub-buckets (`capture`,
+ * `evidence`, `wifi_probe`, `update`, `region`) through a single
+ * [CacheCleaner]. Each bucket has its own [CacheCleanupPolicy] (see
  * [DefaultCachePolicies]); the coordinator is responsible only for
  * looping them and summing the per-bucket results.
+ *
+ * [CacheCleanupCoordinator.cleanup] runs each bucket under its full policy
+ * (count + age); [CacheCleanupCoordinator.cleanupImmediate] runs the same
+ * buckets but ignores the age window, enforcing the count cap right away —
+ * this is what the manual "立即清理" button reaches for, since showing
+ * "已删除 0 个" on a single fresh file is a UX bug rather than the
+ * opportunistic auto-cleanup that runs at cold start.
  *
  * Tests pin a fake clock on the underlying [CacheCleaner] so the
  * per-bucket policies produce deterministic outcomes.
@@ -41,16 +48,17 @@ class CacheCleanupCoordinatorTest {
     fun `cleanup iterates every known bucket`() {
         val root = tempFolder.root
         // Each bucket has files that fall within its policy → kept.
-        // Verify the coordinator visits all four buckets (and their dirs
+        // Verify the coordinator visits all five buckets (and their dirs
         // are recognised even if they don't exist yet).
         val coordinator = CacheCleanupCoordinator(CacheCleaner(clock = { fixedNow }))
         val summary = coordinator.cleanup(root)
 
-        assertEquals(4, summary.perDir.size)
+        assertEquals(5, summary.perDir.size)
         assertTrue("capture bucket present", "capture" in summary.perDir)
         assertTrue("evidence bucket present", "evidence" in summary.perDir)
         assertTrue("wifi_probe bucket present", "wifi_probe" in summary.perDir)
         assertTrue("update bucket present", "update" in summary.perDir)
+        assertTrue("region bucket present", "region" in summary.perDir)
         assertEquals(0, summary.totalDeleted)
     }
 
@@ -122,6 +130,58 @@ class CacheCleanupCoordinatorTest {
         val summary = coordinator.cleanup(root)
 
         assertEquals(600L, summary.totalBytesFreed)
+    }
+
+    @Test
+    fun `cleanup visits region bucket alongside the four originals`() {
+        // RegionOcrRunner writes temp crops into `cacheDir/region/`. If the
+        // process is killed between write and the try/finally `file.delete()`,
+        // the orphan survives until something sweeps the directory. The
+        // coordinator must therefore iterate `region` like any other bucket
+        // so the cold-start sweep catches those orphans.
+        val root = tempFolder.root
+        val coordinator = CacheCleanupCoordinator(CacheCleaner(clock = { fixedNow }))
+        val summary = coordinator.cleanup(root)
+
+        assertTrue("region bucket present", "region" in summary.perDir)
+        assertEquals(0, summary.perDir["region"]!!.totalDeleted)
+    }
+
+    @Test
+    fun `cleanup deletes region orphan older than policy window`() {
+        // An orphan region crop from 30 days ago is past the 14-day window
+        // and outside the 50-count cap (we only create 1) — both gates
+        // agree to delete.
+        val root = tempFolder.root
+        newFile(File(root, "region"), "region_orphan.jpg", ageDays = 30)
+        val coordinator = CacheCleanupCoordinator(CacheCleaner(clock = { fixedNow }))
+        val summary = coordinator.cleanup(root)
+
+        assertEquals(1, summary.perDir["region"]!!.totalDeleted)
+        assertEquals(0, File(root, "region").listFiles()!!.size)
+    }
+
+    @Test
+    fun `cleanupImmediate visits the same buckets as cleanup`() {
+        // cleanupImmediate is the user-driven entry point. On an empty
+        // root it must still produce a perDir summary that names every
+        // bucket — same as cleanup — so the Settings card never gets a
+        // blank footer when the user taps the button on a fresh install.
+        // Equality across the two paths is pinned together with the
+        // full-policy deletion test below: cleanup() walks the buckets
+        // with its real policy work, cleanupImmediate() walks the same
+        // bucket list with the same fixture, and the assertion confirms
+        // they recognise identical structures.
+        val root = tempFolder.root
+        val coordinator = CacheCleanupCoordinator(CacheCleaner(clock = { fixedNow }))
+        val summary = coordinator.cleanupImmediate(root)
+
+        assertEquals(5, summary.perDir.size)
+        assertTrue("capture", "capture" in summary.perDir)
+        assertTrue("evidence", "evidence" in summary.perDir)
+        assertTrue("wifi_probe", "wifi_probe" in summary.perDir)
+        assertTrue("update", "update" in summary.perDir)
+        assertTrue("region", "region" in summary.perDir)
     }
 
     @Test

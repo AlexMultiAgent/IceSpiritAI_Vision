@@ -135,4 +135,16 @@ object DefaultCachePolicies {
         keepMostRecent = 2,
         keepNewerThanDays = 60,
     )
+
+    /**
+     * Region OCR temp crops (`RegionOcrRunner`). The runner writes a JPEG
+     * crop into `cacheDir/region/` and deletes it in `finally` after OCR
+     * returns — but the process can be killed between write and finally,
+     * leaving an orphan crop in `region/`. Same volume profile as `capture/`
+     * (small JPEGs, occasionally written), so identical policy.
+     */
+    val region: CacheCleanupPolicy = CacheCleanupPolicy(
+        keepMostRecent = 50,
+        keepNewerThanDays = 14,
+    )
 }
