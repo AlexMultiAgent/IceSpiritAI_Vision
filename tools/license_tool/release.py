@@ -1,4 +1,4 @@
-"""
+r"""
 PyInstaller 打包 license_tool_gui.py → 签发工具.exe
 
 产物输出到 /d/icevision-license-tool/,与 release keystore 同盘。
@@ -6,12 +6,25 @@ license_tool.py 必须随 gui 一同打入 .exe 根目录(否则 in-process impo
 
 自 v0.5.18 起(用户显式接受安全 trade-off),PEM 私钥也一并内嵌进 .exe。
 任何拿到 .exe 副本的人都能反编译提取私钥 — 仅限市局广告处内部分发使用。
+
+Python 环境注意(2026-10-16):
+本机 PATH 上的 `python3` 通常是 Python 3.14(没有 PyInstaller);PyInstaller
+只装在 Python 3.12(由 pip 装在 Python312\Lib\site-packages)。直接跑
+`python3 release.py build` 会撞 No module named PyInstaller。如果当前
+Python import 不上 PyInstaller,build() 直接退出并指引到 Python 3.12 路径。
 """
 import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+# PyInstaller 3.12-only 路径(已知本机环境):如果当前 Python import 不上
+# PyInstaller,build() 入口会 exit 并指引到这里。这是 advisory,不是硬绑:
+# 未来给 3.13/3.14 装了 PyInstaller 一样能跑。
+_PYINSTALLER_PYTHON_HINT = (
+    r"C:\Users\37311\AppData\Local\Programs\Python\Python312\python.exe"
+)
 
 HERE = Path(__file__).parent.resolve()
 SPEC = HERE / "license_tool_gui.py"
@@ -22,6 +35,18 @@ EMBEDDED_PEM = HERE / "license.pem"
 
 
 def build():
+    # PyInstaller 必须是当前 Python 已安装的包,否则 subprocess 调 -m PyInstaller
+    # 会 No module named。Python 3.14 没装,Python 3.12 装了 —— 见模块顶部 docstring。
+    try:
+        import PyInstaller  # noqa: F401
+    except ImportError:
+        print(
+            f"[FATAL] 当前 Python ({sys.executable}) 没装 PyInstaller。\n"
+            f"        请用装了 PyInstaller 的 Python 跑,例如:\n"
+            f"        {_PYINSTALLER_PYTHON_HINT!r} release.py build",
+            file=sys.stderr,
+        )
+        sys.exit(2)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     # 清理上次产物(本地 + 输出目录里的旧 .exe,避免堆积乱码 / 不同哈希的版本)
     dist = HERE / "dist"
