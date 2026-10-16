@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ 备份规则。配合 AndroidManifest.xml 里
+  `android:dataExtractionRules="@xml/data_extraction_rules"`(显式) +
+  `android:allowBackup="false"`(历史遗留,云备份兼容)使用。
+
+  与 allowBackup="false" 语义对齐:cloud-backup 和 device-transfer 两路都不
+  带走任何数据。
+
+  历史:lint 32.3.0 + AGP 9.3 在 AndroidManifest 报告 [DataExtractionRules]
+  warning,要求 Android 12+ 显式声明 dataExtractionRules 资源,即便
+  allowBackup="false"。本资源就是为消除该 warning 而建。
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>
