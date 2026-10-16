@@ -1107,7 +1107,7 @@ private fun LicenseSection(
             .padding(horizontal = 16.dp, vertical = 16.dp),
     ) {
         Text(
-            text = stringResource(R.string.license_relogin_button),
+            text = stringResource(R.string.license_relogin_card_title),
             style = MaterialTheme.typography.titleMedium,
         )
         Spacer(modifier = Modifier.height(4.dp))
