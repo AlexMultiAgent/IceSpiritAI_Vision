@@ -349,6 +349,27 @@ bash tools/build-ppocr-sdk.sh # 产出 app/libs/ppocr-sdk.aar
 
 **关键边界**:`icevision-release` 发版后 smoke 校验通过 → 才调用 `project-commit` 走 Release 三段式(确保 tag SHA = APK SHA = JSON SHA,避免 v0.1.14 那种 APK live 但 JSON 旧版本的 drift)。
 
+## cacheDir 清理策略(v0.5.x 起,扩展到 v0.6.2)
+
+App 临时产物写在私有 `Context.getCacheDir()`(`/data/user/0/com.icespiritai.vision/cache/`)。**绝不接触用户相册**:全仓搜 `DCIM|MediaStore|Environment.DIRECTORY_PICTURES|getExternalStorage|/sdcard/` 唯一命中是 [HomeScreen.kt:195](app/src/main/java/com/icespiritai/offline/ui/home/HomeScreen.kt#L195) 的 `ACTION_PICK` 相册选择器 read-only Intent(用户**挑**图给 App 跑 OCR,自己相册**没有删除路径**)。安全审计可用 `adb shell run-as com.icespiritai.vision ls -la /data/data/com.icespiritai.vision/cache/` 核对。
+
+5 个桶由 [CacheCleanupCoordinator.kt](app/src/main/java/com/icespiritai/offline/cache/CacheCleanupCoordinator.kt) 的 `BUCKETS` 表硬编码,各配 `DefaultCachePolicies`(count + age AND 双门槛):
+
+| 桶 | 写入点 | 触发 |
+| --- | --- | --- |
+| `capture/` | HomeScreen.kt:243 + [GlassesPhotoCaptureRepository.kt:1221](app/src/main/java/com/icespiritai/offline/glasses/GlassesPhotoCaptureRepository.kt#L1221) | 系统相机 / 眼镜拍照 |
+| `evidence/` | [ExportAction.kt:69](app/src/main/java/com/icespiritai/offline/export/ExportAction.kt#L69) | 「导出取证包」 |
+| `wifi_probe/` | [GlassesWifiProbe.kt:314](app/src/main/java/com/icespiritai/offline/glasses/GlassesWifiProbe.kt#L314) | 「Wi-Fi 取图诊断」 |
+| `update/` | [UpdateRepository.kt:187](app/src/main/java/com/icespiritai/offline/updater/UpdateRepository.kt#L187) | 升级 APK |
+| `region/`(v0.6.2 加) | [RegionOcrRunner.kt:76](app/src/main/java/com/icespiritai/offline/ocr/RegionOcrRunner.kt#L76) | 长按图片放大识别(进程被杀会残留,by 该 runner `finally { file.delete() }` 跑不到) |
+
+两个入口共用同一张表:
+
+- **`cleanup(rootDir)`** —— 冷启动 sweep,跑 [IceSpiritApplication.onCreate](app/src/main/java/com/icespiritai/offline/IceSpiritApplication.kt#L119);受 `cacheCleanupEnabled` Settings 开关门控,默认 ON
+- **`cleanupImmediate(rootDir)`**(v0.6.2 起)—— 「立即清理」按钮走 [SettingsViewModel.runCacheCleanupNow](app/src/main/java/com/icespiritai/offline/settings/SettingsViewModel.kt#L190);现阶段与 `cleanup` 等价,**留作未来分叉 seam** —— 若「立即」按钮改成 count-only(砍掉 age 窗口/激进清空),只改这一处,调用点不动。当前等价由 [CacheCleanupCoordinatorTest.kt](app/src/test/java/com/icespiritai/offline/cache/CacheCleanupCoordinatorTest.kt) `cleanupImmediate visits the same buckets as cleanup` + `cleanupImmediate applies the same policy as cleanup` 钉死。
+
+清理动作 4 道保险([CacheCleaner.kt:55-75](app/src/main/java/com/icespiritai/offline/cache/CacheCleaner.kt#L55-L75)):目录不存在 → no-op / 只看文件不递归(`CacheCleanerTest:118-138` 钉死) / 双门槛 AND / `bytesFreed` 是删除前 `File.length()` 之和。巡检一年不清理可堆 1 GB+(每日 30 张眼镜照 × 80 KB × 365 ≈ 660 MB),`capture` 桶的 50 张 / 14 天上限即此依据。
+
 ## TTS 内容增强(v0.3.0)
 
 `ScriptBuilder` 升级为多段结构化脚本(`SegmentedScript` 纯函数 + `BuildOptions`):
@@ -409,6 +430,8 @@ Settings 新增「长报告摘要」Switch(默认 OFF):`TtsSetting.longReportSum
 - **2026-10-06 v0.5.15 — Post-release wording 改动触发 force-move tag**:发版后改 bundled asset(`user-changelog.md` / `strings.xml` / `assets/*` / `res/*` 等)会让 `assembleRelease` 重建 → 新 APK SHA ≠ release commit 时记录的 SHA → Triple-SHA drift。**前提**:先 `curl .../vision-latest.json | jq .apkCumulativeDownloads` 确认 == 0(无用户下到旧 APK,本案例 = 0);**修复**:`git tag -f v0.X.Y <new-commit>` + force-update `latest` ref → push 两 code repo。**下载数 > 0 时不要 force-move** —— 用户拿到的旧 APK 跟 tag 后的新 APK SHA 不一致,in-app update 走 cert-pin 校验会拒装,正确做法是 revert + 新发版号(v0.X.Y+1)。
 
 - **`chore(release): v0.X.Y prep` commits 是 REPLACE 不是 APPEND**:每次 prep commit 把 `## v0.X.Y` 作为顶部新 entry 写入,前一次 prep commit 的 entry 内容被覆盖(不是累加)。2026-10-04 真实事件:v0.5.12 prep → v0.5.13 prep → v0.5.14 prep 3 次后,只 v0.5.14 留下,v0.5.12 + v0.5.13 内容丢失(v0.5.15 prep commit 顺手补回)。**正确做法**:每次 prep commit 只包含当前版本自己的新 entry,不动已有 entry;需要重写历史 entry 时走单独的 `docs(changelog):` 修复 commit。
+
+- **2026-10-16 v0.6.2 — `archiveVisionRelease` 单独跑撞 gradle daemon `Unable to make progress`**:单独 `./gradlew archiveVisionRelease -PmodelProfile=ice_ocr_rules` 会撞 `Unable to make progress running work. ... 3 actionable tasks: 3 up-to-date`,`--stop` + `--no-build-cache` + `--no-daemon` 都绕不过 —— gradle cache 把 `archiveVisionRelease` 标 `UP-TO-DATE`(doLast 没跑,但 build 仍 3 个 task 排队),daemon 僵在「等子任务启动」无法推进。**绕路**:不单独跑 step 3,直接 `./gradlew uploadVisionReleaseToGitea -PmodelProfile=ice_ocr_rules --no-daemon`,`dependsOn("archiveVisionRelease")` 看到 staging 产物已存在,标 `UP-TO-DATE` 即放手,整链(`assembleRelease → generateVisionLatestJson → archiveVisionRelease → uploadVisionReleaseToGitea → verifyGiteaAttachmentsAlive`)继续走。**修复候选**:把 `uploadVisionReleaseToGitea` 的 `dependsOn("archiveVisionRelease")` 改成 `finalizedBy("verifyGiteaAttachmentsAlive")` 同样的方式(已是如此),把单 task 卡死链路解开 —— 任何 task 单独跑都 no-op-safe。
 
 ## 文档索引
 
