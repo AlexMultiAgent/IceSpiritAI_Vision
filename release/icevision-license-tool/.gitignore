@@ -1,0 +1,4 @@
+# Release artifacts under release/icevision-license-tool/ track the current shipped
+# SignTool.exe + README.txt only. 许可证台账.csv is customer data (uid / 名称 / 到期日
+# / 签发处室 历史),永远不进 git。
+许可证台账.csv
